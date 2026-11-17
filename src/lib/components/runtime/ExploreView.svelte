@@ -18,7 +18,6 @@
   import { createLifecycle, type HostScope } from '#lib/host-scope.svelte.js';
   import { enforcementTone, severityTone } from '#lib/tone.js';
   import { toast } from '#lib/stores/toast.js';
-  import Alert from '#lib/components/ui/Alert.svelte';
   import Badge from '#lib/components/ui/Badge.svelte';
   import Button from '#lib/components/ui/Button.svelte';
   import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';

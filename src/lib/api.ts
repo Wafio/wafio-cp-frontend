@@ -324,10 +324,6 @@ export async function api<T>(
   return { data: body as T };
 }
 
-// The setup wizard was removed. First-run bootstrap happens on the host with
-// `wafio migrate up` followed by `wafio admin create`; see
-// scripts/install-controlplane.sh.
-
 // SSE stream tickets
 // EventSource cannot send an Authorization header, so an SSE URL carries its
 // credential in the query string. A stream ticket is valid for one stream of
@@ -418,7 +414,6 @@ export function isTwoFactorChallenge(value: LoginResponse | null | undefined): v
 export interface TwoFactorSetup { secret: string; otpauth: string }
 /** POST /api/profile/2fa/enable; `token` replaces the session token. */
 export interface TwoFactorEnabled { message: string; backup_codes: string[]; backup_codes_warning?: string; token: string }
-export interface MessageResponse { message: string }
 /** A response that revoked every earlier token and carries this session's replacement. */
 export interface TokenReplacedResponse { message: string; token: string }
 export interface BackupCodes { backup_codes: string[] }
@@ -593,10 +588,6 @@ export async function getDefaultJA4Allowlist() {
   return api<{ source: string; items: { fingerprint: string; comment?: string }[] }>('/api/bot-defaults/ja4-allowlist');
 }
 
-export async function getDefaultJA3Blocklist() {
-  return api<{ source: string; items: { hash: string; comment?: string }[] }>('/api/bot-defaults/ja3-blocklist');
-}
-
 export async function getProject(id: string) {
   return api<Project>(`/api/projects/${id}`);
 }
@@ -685,27 +676,6 @@ export async function putProjectConfig(
 }
 
 // Dashboard / Analitik (per project, PostgreSQL/TimescaleDB)
-export interface DashboardOverview {
-  summary: { total: number; allow: number; log: number; block: number; challenge: number };
-  by_action: { key: string; count: number }[];
-  by_country: { key: string; count: number }[];
-  time_series: { bucket: number; count: number }[];
-  from_ts: number;
-  to_ts: number;
-}
-
-export async function getDashboardOverview(
-  projectId: string,
-  params?: { from_ts?: number; to_ts?: number; interval?: number }
-) {
-  const q = new URLSearchParams();
-  if (params?.from_ts != null) q.set('from_ts', String(params.from_ts));
-  if (params?.to_ts != null) q.set('to_ts', String(params.to_ts));
-  if (params?.interval != null) q.set('interval', String(params.interval));
-  const query = q.toString();
-  return api<DashboardOverview>(`/api/projects/${projectId}/dashboard/overview${query ? '?' + query : ''}`);
-}
-
 export type DecisionStrength = 'block' | 'weak';
 
 export interface DashboardLogEntry {
@@ -750,65 +720,6 @@ export async function getDashboardLogs(
   );
 }
 
-export async function getDashboardTopUris(
-  projectId: string,
-  params?: { from_ts?: number; to_ts?: number; action?: string; limit?: number }
-) {
-  const q = new URLSearchParams();
-  if (params?.from_ts != null) q.set('from_ts', String(params.from_ts));
-  if (params?.to_ts != null) q.set('to_ts', String(params.to_ts));
-  if (params?.action) q.set('action', params.action);
-  if (params?.limit != null) q.set('limit', String(params.limit));
-  const query = q.toString();
-  return api<{ top_uris: { key: string; count: number }[] }>(
-    `/api/projects/${projectId}/dashboard/top/uris${query ? '?' + query : ''}`
-  );
-}
-
-export async function getDashboardTopIps(
-  projectId: string,
-  params?: { from_ts?: number; to_ts?: number; action?: string; limit?: number }
-) {
-  const q = new URLSearchParams();
-  if (params?.from_ts != null) q.set('from_ts', String(params.from_ts));
-  if (params?.to_ts != null) q.set('to_ts', String(params.to_ts));
-  if (params?.action) q.set('action', params.action);
-  if (params?.limit != null) q.set('limit', String(params.limit));
-  const query = q.toString();
-  return api<{ top_ips: { key: string; count: number }[] }>(
-    `/api/projects/${projectId}/dashboard/top/ips${query ? '?' + query : ''}`
-  );
-}
-
-export async function getDashboardTopCountries(
-  projectId: string,
-  params?: { from_ts?: number; to_ts?: number; action?: string; limit?: number }
-) {
-  const q = new URLSearchParams();
-  if (params?.from_ts != null) q.set('from_ts', String(params.from_ts));
-  if (params?.to_ts != null) q.set('to_ts', String(params.to_ts));
-  if (params?.action) q.set('action', params.action);
-  if (params?.limit != null) q.set('limit', String(params.limit));
-  const query = q.toString();
-  return api<{ top_countries: { key: string; count: number }[] }>(
-    `/api/projects/${projectId}/dashboard/top/countries${query ? '?' + query : ''}`
-  );
-}
-
-export async function getDashboardCategories(
-  projectId: string,
-  params?: { from_ts?: number; to_ts?: number; limit?: number }
-) {
-  const q = new URLSearchParams();
-  if (params?.from_ts != null) q.set('from_ts', String(params.from_ts));
-  if (params?.to_ts != null) q.set('to_ts', String(params.to_ts));
-  if (params?.limit != null) q.set('limit', String(params.limit));
-  const query = q.toString();
-  return api<{ by_category: { key: string; count: number }[] }>(
-    `/api/projects/${projectId}/dashboard/stats/by-category${query ? '?' + query : ''}`
-  );
-}
-
 /** Stored WAF decisions per HTTP method over the whole project (no host filter). */
 export async function getDashboardByMethod(projectId: string, params: { from_ts?: number; to_ts?: number } = {}, signal?: AbortSignal) {
   const q = new URLSearchParams();
@@ -833,25 +744,6 @@ export interface GeoLocation {
   lat?: number;
   lon?: number;
   isp?: string;
-}
-
-export async function getDashboardGeo(
-  projectId: string,
-  params?: { from_ts?: number; to_ts?: number; limit?: number }
-) {
-  const q = new URLSearchParams();
-  if (params?.from_ts != null) q.set('from_ts', String(params.from_ts));
-  if (params?.to_ts != null) q.set('to_ts', String(params.to_ts));
-  if (params?.limit != null) q.set('limit', String(params.limit));
-  const query = q.toString();
-  return api<{
-    locations: GeoLocation[];
-    total_requests: number;
-    total_locations: number;
-    total_allow: number;
-    total_log: number;
-    total_block: number;
-  }>(`/api/projects/${projectId}/dashboard/geo${query ? '?' + query : ''}`);
 }
 
 // Project-level WAF events (new Overview pipeline)
@@ -963,12 +855,6 @@ export interface WAFEventTimelineBucket {
   challenges: number;
 }
 
-export async function getWAFEventsSummary(projectId: string, minutes = 60, agentId?: string) {
-  let url = `/api/projects/${projectId}/waf-events/summary?minutes=${minutes}`;
-  if (agentId) url += `&agent_id=${encodeURIComponent(agentId)}`;
-  return api<WAFEventSummary>(url);
-}
-
 export async function getWAFEventsRecent(
   projectId: string,
   params?: { action?: string; limit?: number }
@@ -979,37 +865,6 @@ export async function getWAFEventsRecent(
   const qs = q.toString();
   return api<{ decisions: WAFEventDecision[] }>(
     `/api/projects/${projectId}/waf-events/recent${qs ? '?' + qs : ''}`
-  );
-}
-
-export async function getWAFEventsTimeline(
-  projectId: string,
-  params?: { minutes?: number; bucket_seconds?: number },
-  agentId?: string
-) {
-  const q = new URLSearchParams();
-  q.set('minutes', String(params?.minutes ?? 60));
-  if (params?.bucket_seconds != null)
-    q.set('bucket_seconds', String(params.bucket_seconds));
-  if (agentId) q.set('agent_id', agentId);
-  return api<{ buckets: WAFEventTimelineBucket[] }>(
-    `/api/projects/${projectId}/waf-events/timeline?${q.toString()}`
-  );
-}
-
-export async function getWAFEventsTop(
-  projectId: string,
-  dimension: 'ips' | 'uris' | 'categories' | 'hosts',
-  params?: { minutes?: number; limit?: number; scope?: 'attackers' | 'all' },
-  agentId?: string
-) {
-  const q = new URLSearchParams();
-  q.set('minutes', String(params?.minutes ?? 60));
-  q.set('limit', String(params?.limit ?? 10));
-  if (params?.scope) q.set('scope', params.scope);
-  if (agentId) q.set('agent_id', agentId);
-  return api<{ dimension: string; rows: WAFEventTopRow[] }>(
-    `/api/projects/${projectId}/waf-events/top/${dimension}?${q.toString()}`
   );
 }
 
@@ -1285,8 +1140,6 @@ export type FleetAgent = {
   install_dir?: string;
   service_name?: string;
   service_user?: string;
-  /** Legacy agent-wide inline-proxy port override; configure listen_port per route instead. */
-  proxy_listen_port?: number;
   host_info?: {
     siem_delivery?: unknown;
     hostname?: string;
@@ -1330,13 +1183,6 @@ export async function registerFleetAgent(projectId: string, name: string, kind: 
       body: JSON.stringify({ name, kind }),
     }
   );
-}
-
-export async function deleteFleetAgent(agentId: string, opts: { force?: boolean } = {}) {
-  const qs = opts.force ? '?force=1' : '';
-  return api<{ status: string }>(`/api/fleet/agents/${agentId}${qs}`, {
-    method: 'DELETE',
-  });
 }
 
 /**
@@ -1919,14 +1765,8 @@ export async function clearEnforcementLog(projectId: string, agentId?: string, h
 
 // Apps (WAF targets)
 //
-// Prior to the Host/Agent refactor, an "application" was a mini PaaS (deploy
-// from Git, run in a container, manage env vars). That path is deprecated;
-// an App is now a pure logical WAF target: `host_header → upstream_url`
-// plus a per-app WAF Key the WAF agent presents when claiming authority.
-//
-// Legacy fields (git_url, fe_*, be_*, db_*, container_id, image_tag, …) are
-// still returned by the server during the transition window so existing
-// integrations don't explode, but the UI must not rely on them.
+// An App is a logical WAF target: `host_header → upstream_url` plus a per-app
+// WAF Key the WAF agent presents when claiming authority.
 
 export interface ProxyConfig {
   /**
@@ -2110,16 +1950,6 @@ export interface AppWAFDecisionsPage {
   from_ts: string;
   to_ts: string;
 }
-
-/** Error codes of the decision feed a filter bar can show next to its inputs. */
-export const WAF_DECISIONS_ERROR_CODES = [
-  'WAF_DECISIONS_BAD_RANGE',
-  'WAF_DECISIONS_BAD_IP',
-  'WAF_DECISIONS_BAD_CURSOR',
-  'WAF_DECISIONS_BAD_OFFSET',
-  'WAF_DECISIONS_BAD_SOURCE',
-  'WAF_DECISIONS_BAD_METHOD',
-] as const;
 
 export function appWAFDecisionsQueryString(opts: AppWAFDecisionsQuery): string {
   const params = new URLSearchParams();
@@ -2642,17 +2472,6 @@ export async function updateAgentRoute(
   );
 }
 
-export async function deleteAgentRoute(
-  projectId: string,
-  agentId: string,
-  appId: string
-) {
-  return api<{ deleted: boolean }>(
-    `/api/projects/${projectId}/agents/${agentId}/routes/${appId}`,
-    { method: 'DELETE' }
-  );
-}
-
 // ─── Agent mTLS credentials (mTLS Agent page) ──────────────────────────────
 export interface AgentMTLSCredential {
   id: string;
@@ -2702,13 +2521,6 @@ export async function revokeAgentMTLSCredential(projectId: string, credId: strin
     { method: 'DELETE' }
   );
 }
-
-// GRPC aliases, same endpoint, different name used by waf-live page
-export type AgentGRPCCredential = AgentMTLSCredential;
-export type AgentGRPCProvisionResponse = AgentMTLSProvisionResponse;
-export const listAgentGRPCCredentials = listAgentMTLSCredentials;
-export const provisionAgentGRPCCredential = provisionAgentMTLSCredential;
-export const revokeAgentGRPCCredential = revokeAgentMTLSCredential;
 
 // ── Block Window ──────────────────────────────────────────────────────────
 

@@ -18,7 +18,6 @@ export interface SettingsDraft {
 export const DEFAULT_PORT_SCAN = { enabled: false, window_ms: 10_000, max_unique_ports: 20, drop_on_detect: true } as const;
 /** Highest port-scan threshold the XDP program can reach (MAX_SCAN_PORTS, ebpf.MaxPortScanUniquePorts). */
 export const MAX_PORT_SCAN_UNIQUE_PORTS = 32;
-export const DEFAULT_PORT_POLICY: EBPFPortPolicyConfig = { enabled: false, default_ingress: 'allow', default_egress: 'allow' };
 
 /**
  * A complete configuration, or null when the agent has not reported one

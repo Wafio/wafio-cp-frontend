@@ -328,11 +328,6 @@ function finishGroup(group: AttentionGroup, root: string, fact: IncidentFacts | 
   }
 }
 
-/** Severity counts over groups' items, for the section heading. */
-export function attentionTotals(groups: AttentionGroup[]): { groups: number; items: number } {
-  return { groups: groups.length, items: groups.reduce((sum, g) => sum + g.count, 0) };
-}
-
 /** Evidence actions of every page, deduplicated by id (the endpoint pages its list). */
 export function mergeEvidenceActions(pages: OverviewEvidenceAction[][]): OverviewEvidenceAction[] {
   const seen = new Set<string>();

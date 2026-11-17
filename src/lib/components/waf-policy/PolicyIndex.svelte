@@ -1,6 +1,6 @@
 <!--
   PolicyIndex: section index of the policy editor with problem and unsaved
-  markers, and a short summary of the draft (Operations A: index, draft
+  markers, and a short summary of the draft (index, draft
   summary, redacted review, save). On narrow screens it collapses into a
   disclosure above the sections.
 -->

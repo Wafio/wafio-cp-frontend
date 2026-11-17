@@ -857,14 +857,6 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
 ];
 
-export function templatesByCategory(): Record<string, PolicyTemplate[]> {
-  const out: Record<string, PolicyTemplate[]> = {};
-  for (const t of POLICY_TEMPLATES) {
-    (out[t.category] ||= []).push(t);
-  }
-  return out;
-}
-
 /** A match_comm or match_filename term shorter than this narrows nothing. */
 export const MIN_NARROWING_TERM_LENGTH = 3;
 

@@ -1,6 +1,6 @@
 <!--
   ActivitySummary: what the host did in the page time range, below the
-  incident queue (Operations A: queue before charts; observed counts only,
+  incident queue (queue before charts; observed counts only,
   no synthetic score). Each figure opens Explore with the matching filter.
 -->
 <script lang="ts">

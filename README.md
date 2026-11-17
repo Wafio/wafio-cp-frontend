@@ -151,7 +151,7 @@ Dockerfile.bun         image that builds the app and serves it with nginx
 | Logo mark and wordmark | `src/lib/components/BrandLogo.svelte` (the mark is `static/logo-only.png`, the same file as the portal's; the wordmark is text) |
 | Accent colour | `--accent` and related tokens in `src/app.css` |
 | Fonts | System font stacks in the `--font-*` tokens of `src/app.css`; the dashboard calls no font host |
-| Favicon and logo images | `static/favicon.ico`, `static/favicon.svg`, `static/logo-only.png`, `static/logo.png`, `static/logo-thumb.png` |
+| Favicon and logo images | `static/favicon.ico`, `static/favicon.svg`, `static/logo-only.png` |
 | Browser tab title suffix | `src/routes/+layout.svelte` |
 
 After changing colours, run `bun run test` so the contrast gate checks the new palette. Invitation and password-reset email links, the agent install commands and the agent service names come from the backend and the installer, and keep their names.

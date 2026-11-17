@@ -60,11 +60,9 @@
   type SaveResult = { error?: string; code?: string; status?: number } | void;
 
   interface Props {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     initialRules?: Record<string, any>;
     generation?: number | null;
     source?: string | null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onSave?: (args: { rules_json: Record<string, any> }) => Promise<SaveResult>;
     projectId?: string;
     appId?: string;

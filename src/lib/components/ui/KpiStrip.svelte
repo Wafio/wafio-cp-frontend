@@ -1,5 +1,5 @@
 <!--
-  KpiStrip: Operations A summary row: label, value, optional unit/detail,
+  KpiStrip: summary row: label, value, optional unit/detail,
   divided by hairlines, no cards. A tone colours `toneText` (or the value when
   there is none, and only when it is above zero) and never stands alone: the text says what it means. Items
   with `href`/`onclick` become links/buttons named "<label>: <value>".

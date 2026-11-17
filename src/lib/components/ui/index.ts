@@ -18,7 +18,6 @@ export { default as PageHeader } from './PageHeader.svelte';
 export { default as Pagination } from './Pagination.svelte';
 export { default as Select } from './Select.svelte';
 export { default as Spinner } from './Spinner.svelte';
-export { default as StatCard } from './StatCard.svelte';
 export { default as StatusDot } from './StatusDot.svelte';
 export { default as Switch } from './Switch.svelte';
 export { default as Table } from './Table.svelte';

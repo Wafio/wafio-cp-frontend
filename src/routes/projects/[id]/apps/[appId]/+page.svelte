@@ -48,7 +48,6 @@
     readAppRange,
     readAppTab,
     writeAppRange,
-    type AppTab,
   } from '#lib/components/apps/app-page.js';
   import { APP_STATE_TEXT, appState, routeSummary } from '#lib/components/apps/inventory.js';
   import { usePageDetail } from '#lib/page-meta.svelte.js';

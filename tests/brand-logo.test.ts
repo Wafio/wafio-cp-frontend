@@ -32,7 +32,7 @@ describe('BrandLogo', () => {
     expect([...header.slice(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     const view = new DataView(header.buffer);
     expect([view.getUint32(16), view.getUint32(20)]).toEqual([228, 240]);
-    for (const name of ['logo.png', 'logo-thumb.png', 'favicon.svg', 'favicon.ico']) expect(await Bun.file(staticFile(name)).exists()).toBe(true);
+    for (const name of ['favicon.svg', 'favicon.ico']) expect(await Bun.file(staticFile(name)).exists()).toBe(true);
   });
 
   test('the page head names the control plane, with the portal social image and no font host', async () => {

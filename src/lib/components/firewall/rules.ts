@@ -414,10 +414,6 @@ export function addressError(value: string): string | null {
   return 'Not a valid IPv4 or IPv6 address.';
 }
 
-export function isFirewallAddress(value: string): boolean {
-  return addressError(value) === null;
-}
-
 /** "0.0.0.0/0" and "::/0" match every address of their family. */
 export function matchesEverything(value: string): boolean {
   const text = value.trim();

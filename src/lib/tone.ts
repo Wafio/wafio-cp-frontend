@@ -33,7 +33,6 @@ export type StatusTone = (typeof STATUS_TONES)[number];
 export type ModeTone = (typeof MODE_TONES)[number];
 export type SeverityTone = (typeof SEVERITY_TONES)[number];
 export type CategoricalTone = (typeof CATEGORICAL_TONES)[number];
-export type GenericTone = (typeof GENERIC_TONES)[number];
 export type BadgeTone = (typeof BADGE_TONES)[number];
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';

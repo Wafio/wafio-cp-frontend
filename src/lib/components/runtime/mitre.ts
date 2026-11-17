@@ -90,14 +90,6 @@ export function eventNamesForTechniques(techniques: readonly string[]): string[]
     .sort();
 }
 
-/** Event names mapped (heuristically) to `tactic`, sorted. */
-export function eventNamesForTactic(tactic: string): string[] {
-  return Object.entries(MITRE_BY_EVENT_TYPE)
-    .filter(([, mapping]) => mapping.tactic === tactic)
-    .map(([name]) => name)
-    .sort();
-}
-
 /**
  * Event counts summed per heuristic tactic, largest first. Event names
  * without a mapping are left out.

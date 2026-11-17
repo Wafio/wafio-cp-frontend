@@ -27,13 +27,11 @@
     placeholder?: string;
   } = $props();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type CM = { view: any; state: any; html: any; json: any; oneDark: any; basicSetup: any; placeholder: any };
 
   let host = $state<HTMLDivElement>();
   let cm = $state.raw<CM | null>(null);
   let failed = $state(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let view: any = null;
   let applying = false;
 

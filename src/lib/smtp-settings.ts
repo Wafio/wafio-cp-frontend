@@ -33,9 +33,6 @@ export const SECURITY_OPTIONS: ReadonlyArray<{ value: SmtpSecurity; label: strin
 
 const SECURITY_VALUES = new Set<string>(SECURITY_OPTIONS.map((o) => o.value));
 
-/** The mail server fields, managed as one group by smtp.host in the server configuration. */
-export const SMTP_SERVER_FIELDS: readonly SmtpField[] = ['host', 'port', 'security', 'username', 'password', 'from_address', 'from_name'];
-
 /** True when the server configuration sets the field (read-only here). */
 export function isManaged(settings: Pick<SmtpSettings, 'sources'> | null | undefined, field: SmtpField): boolean {
   return settings?.sources?.[field] === 'config';
@@ -74,7 +71,6 @@ export function defaultPort(security: SmtpSecurity): number {
   return security === 'tls' ? 465 : 587;
 }
 
-// eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u001f\u007f]/;
 const HOSTNAME = /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
 const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;

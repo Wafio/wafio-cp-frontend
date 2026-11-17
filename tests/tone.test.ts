@@ -177,19 +177,12 @@ describe('Badge and app.css cover every tone', () => {
   });
 });
 
-describe('StatCard and StatusDot use defined tokens', () => {
-  const statCard = read('../src/lib/components/ui/StatCard.svelte');
+describe('StatusDot uses defined tokens', () => {
   const statusDot = read('../src/lib/components/ui/StatusDot.svelte');
   const css = read('../src/app.css');
-  const valueTones = BADGE_TONES.filter((t) => t !== 'neutral' && !t.startsWith('cat'));
 
-  test('StatCard colours the value for every non-categorical tone', () => {
-    const missing = valueTones.filter((t) => !new RegExp(`\\.tone-${t} \\.stat-value\\b`).test(statCard));
-    expect(missing).toEqual([]);
-  });
-
-  test('every token StatCard and StatusDot reference is defined in app.css', () => {
-    const referenced = [...`${statCard}\n${statusDot}`.matchAll(/var\(--([\w-]+)\)/g)].map((m) => m[1]);
+  test('every token StatusDot references is defined in app.css', () => {
+    const referenced = [...statusDot.matchAll(/var\(--([\w-]+)\)/g)].map((m) => m[1]);
     const undefinedTokens = [...new Set(referenced)].filter((name) => name !== 'status-color' && !new RegExp(`--${name}\\s*:`).test(css));
     expect(undefinedTokens).toEqual([]);
   });

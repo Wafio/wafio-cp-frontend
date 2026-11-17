@@ -17,11 +17,6 @@ export interface ChartBox {
 
 export const DEFAULT_CHART_BOX: ChartBox = { width: 640, height: 200, padLeft: 44, padRight: 40, padTop: 12, padBottom: 22 };
 
-export interface ChartPoint {
-  x: number;
-  y: number;
-}
-
 export interface TimelineBucketView {
   start: string;
   requests: number;
