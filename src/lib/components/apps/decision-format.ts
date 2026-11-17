@@ -39,7 +39,7 @@ export const LABELED_ANALYZE_METHODS: readonly string[] = Object.keys(METHOD_LAB
 
 /**
  * Scan coverage flags (decision.coverage, without the "coverage:" prefix) the
- * WAF agent sends (crates/application/src/coverage.rs marker(), script_rules.rs,
+ * WAF agent sends (crates/application/src/coverage.rs coverage_marker(), script_rules.rs,
  * gui_rules.rs). Flags that carry a value are labelled by coverageLabel:
  * `engine_weakened:<engine>` and `body_content_encoding:<encoding>`.
  * `engine_disabled:<engine>` is not a gap. A current control plane sends it as `engines_off`; older rows and

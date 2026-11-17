@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build the dashboard for a release and pack it as build/wafio-frontend-<version>.tar.gz.
 #
-#   scripts/release.sh v1.11.0              build the archive
-#   scripts/release.sh v1.11.0 --publish    also create the GitHub release with the archive
+#   scripts/release.sh v2.0.0               build the archive
+#   scripts/release.sh v2.0.0 --publish     also create the GitHub release with the archive
 #
 # The archive holds one top directory, wafio-frontend-<version>/, with the contents of dist/, among them
 # NOTICES.txt: the licence texts of the npm packages in the bundle.

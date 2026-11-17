@@ -2,7 +2,7 @@
  * MITRE ATT&CK mapping of runtime (trace) event names.
  *
  * SERVER_MITRE_BY_EVENT mirrors `mitreByEvent` in
- * internal/adapter/http/handlers/mitre_events.go, which the control plane
+ * internal/application/mitre_events.go of wafio-cp-backend, which the control plane
  * uses to group high/critical events into incidents (technique × process).
  * Keep the two in sync: the "suppress from incident" prefill reverses this
  * map to find the event names behind an incident's technique.

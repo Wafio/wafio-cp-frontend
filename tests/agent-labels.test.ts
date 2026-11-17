@@ -1,7 +1,6 @@
 // The category filter and the labels of the decision views list what the Rust WAF agent sends, and nothing else.
-// The lists below are copied from the agent source (wafio-agent-waf, branch v2/engine-switches, commit f81cdb1, which
-// adds the four detector switches to main 82f21f6); when the agent changes, copy the lists again and the tests say
-// what the dashboard is missing or still shows.
+// The lists below are copied from the agent source (wafio-agent-waf); when the agent changes, copy the lists again and
+// the tests say what the dashboard is missing or still shows.
 import { describe, expect, test } from 'bun:test';
 import {
   CATEGORY_OPTIONS,
@@ -44,15 +43,15 @@ const AGENT_METHODS = [
 // Methods an older agent sent and stored rows still carry. The agent of this version never sends them.
 const LEGACY_METHODS = ['rule_based', 'hybrid'];
 
-// Coverage flags: crates/application/src/coverage.rs marker(), crates/domain/src/body_fields.rs (skipped "binary"),
-// crates/domain/src/request.rs (body_scan_skipped values) and crates/engine-rules/src/custom_rules.rs
-// (COVERAGE_FLAG_*). A body flag is "body_" plus a skipped value or a transport value.
+// Coverage flags: crates/application/src/coverage.rs coverage_marker(), crates/engine-api/src/coverage.rs (ScanCoverage),
+// crates/bodyinspect/src/decode.rs (the skip reasons), crates/domain/src/request.rs (body_scan_skipped values) and
+// crates/engine-rules/src/custom_rules.rs (COVERAGE_FLAG_*). A body flag is "body_" plus a skipped value or a transport value.
 const AGENT_PLAIN_FLAGS = [
   'truncated', 'field_cap', 'query_cap', 'body_binary', 'body_binary_text', 'body_decompress_limit', 'body_decompress_error',
   'body_decompress_budget', 'header_count', 'header_len', 'headers_unscanned', 'engine_panic', 'parse_budget', 'regex_budget',
   'script_timeout', 'script_error',
 ];
-// Flags that carry a value: engine_disabled:<key> (keys: ENGINE_SET_KEYS of crates/engine-core/src/engine_activity.rs,
+// Flags that carry a value: engine_disabled:<key> (keys: disabled_key_from_reason of crates/engine-api/src/engine_set.rs,
 // fourteen engines and header_injection), engine_weakened:<key> (any of the twenty keys of
 // crates/engine-rules/src/config.rs PATH_SEMANTIC_OVERRIDE_KEYS; jwt, graphql, open_redirect, prompt_injection and
 // anomaly switch off without an engine_disabled mark) and body_content_encoding:<encoding>.

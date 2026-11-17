@@ -9,7 +9,7 @@
  *
  * `toRules()` writes the draft on top of the rules it was loaded from, so
  * keys the form does not manage survive; `fromRules(form.toRules())` gives
- * the same draft back (web/tests/waf-policy-form.test.ts).
+ * the same draft back (tests/waf-policy-form.test.ts).
  */
 import { createDirtyTracker, type ConfirmFn, type DirtyTracker } from '../../dirty.svelte';
 import {

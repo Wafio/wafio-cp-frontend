@@ -2311,8 +2311,8 @@ export async function getAgentConnectInfo(projectId: string) {
 
 // Instant SSH Setup was removed. It dialled an arbitrary host and port from
 // the control plane and carried SSH credentials through the API. Install
-// agents on the target host with scripts/install-host-agent.sh or
-// scripts/install-waf-agent.sh.
+// agents on the target host with deploy/install-host-agent.sh or
+// deploy/install-waf-agent.sh of wafio-release.
 
 export async function getAgent(agentId: string) {
   return api<FleetAgent>(`/api/fleet/agents/${agentId}`);

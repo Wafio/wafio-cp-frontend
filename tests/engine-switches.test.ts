@@ -1,5 +1,5 @@
 // What each detection engine does: the stored key, the policy table, the per-path inherit / block / log only / off
-// choice, the counts and the warnings. The keys are copied from the agent source (wafio-agent-waf, commit 7e3274b):
+// choice, the counts and the warnings. The keys are copied from the agent source (wafio-agent-waf):
 // crates/engine-rules/src/config.rs (SemanticPoliciesConfig::engine_policies and PATH_SEMANTIC_OVERRIDE_KEYS, 20 keys with
 // a `disabled` flag and an `action`; the last four take only those two). The Log only action has its own file,
 // engine-log-only.test.ts.

@@ -5,7 +5,7 @@
  *   from the decision (scope and the engines to skip);
  * - block the client IP with an app custom rule.
  *
- * Pure functions, unit-tested in web/tests/apps-decision-actions.test.ts.
+ * Pure functions, unit-tested in tests/apps-decision-actions.test.ts.
  */
 import type { CreateCustomRuleBody, WAFDecisionRow } from '../../api';
 import { gapFlags, SCRIPT_COVERAGE_FLAGS } from './decision-format';

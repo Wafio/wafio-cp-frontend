@@ -4,7 +4,7 @@ import { engineForCategory, TUNABLE_SEMANTIC_ENGINES } from '../src/lib/componen
 import { SEMANTIC_ENGINES as SKIP_SEMANTIC_ENGINES, SEMANTIC_ENGINE_LABELS, semanticEngineError, semanticEngineLabel } from '../src/lib/components/rules/registry';
 import { PATH_OVERRIDE_ENGINES, SEMANTIC_ENGINES } from '../src/lib/components/waf-policy/model';
 
-// The twenty keys of the agent (wafio-agent-waf, branch v2/engine-switches, commit f81cdb1:
+// The twenty keys of the agent (wafio-agent-waf:
 // crates/engine-rules/src/config.rs PATH_SEMANTIC_OVERRIDE_KEYS and custom_rules_validate.rs
 // SEMANTIC_ENGINE_KEY_NAMES). The control plane has to accept the same names in skip_semantic.
 const SERVER_KEYS = [

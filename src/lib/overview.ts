@@ -1,7 +1,7 @@
 /**
  * Overview logic: Get started, Needs attention and top-N
  * filters. Pure functions: the page loads the data, these decide what it
- * means, and web/tests cover them.
+ * means, and the unit tests in tests/ cover them.
  */
 import type { HostIncident, OverviewEvidence, OverviewEvidenceAction } from './api';
 import { severityRank } from './tone';
@@ -424,7 +424,7 @@ export function credentialFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
-/** Certificate directory the agent installers default to (docs/agents-reference.md). */
+/** Certificate directory the agent installers default to. */
 export function agentCertDir(kind: 'waf' | 'host'): string {
   return `/etc/wafio/certs/${kind}`;
 }
@@ -433,7 +433,7 @@ export function agentCertDir(kind: 'waf' | 'host'): string {
  * Shell commands that put a credential bundle (Credentials page download) on
  * the agent host and run the agent installer, prefilled with the credential
  * name. The installer (install.sh at the top of the waf-agent or host-agent
- * release bundle, built from scripts/install-{waf,host}-agent.sh) checks that
+ * release bundle, built from deploy/install-{waf,host}-agent.sh of wafio-release) checks that
  * the certificates exist, defaults to /etc/wafio/certs/<kind>/ and creates
  * its own systemd unit (wafio-waf-agent / wafio-host-agent); the bundle's
  * sample unit is only for a manual install without the installer.

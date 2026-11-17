@@ -1,7 +1,7 @@
 // The Log only action of an engine: the stored `action` key on semantic_policies.<key> and on a path's
 // semantic_override.<key>, the choices, the summaries and the decisions that name the engines that held a block back.
-// The contract is the one of the control plane (wafio-cp-backend 1705eec, api/openapi.yaml WafRulesSemanticPolicy) and the
-// Rust agent (wafio-agent-waf 7e3274b, crates/engine-rules/src/config.rs): `action` is "block" or "log", absent means block,
+// The contract is the one of the control plane (wafio-cp-backend, api/openapi.yaml WafRulesSemanticPolicy) and the
+// Rust agent (wafio-agent-waf, crates/engine-rules/src/config.rs): `action` is "block" or "log", absent means block,
 // `disabled` wins over it, a path entry without `action` inherits the policy's, and a decision lists the keys whose block
 // was held back as `engines_log_only`, taken from the `engine_log_only:<key>` marks of its coverage text.
 import './support/runes';

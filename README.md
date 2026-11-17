@@ -15,7 +15,7 @@ It is a static single-page app (SvelteKit 3, Svelte 5 with runes, TypeScript 6, 
 | wafio-portal | wafio.cloud site and blog (SvelteKit), portal API (Go) (private) |
 | uddin-lang-rs | Rust uddin interpreter |
 | wafio-release | installers, release bundle layout, release and publish scripts (private) |
-| wafio-docs | skills, role agents, specs, findings, plans, ops notes (private) |
+| wafio-docs | internal notes (private) |
 
 The dashboard uses only the control plane's HTTP API and its server-sent event streams. The API is described in `api/openapi.yaml` of wafio-cp-backend (OpenAPI 3.1). The agent gRPC protocol is not used here.
 
@@ -101,8 +101,8 @@ Variables set in the shell override the `.env` files: `VITE_API_BASE_URL= bun ru
 ## Release
 
 ```bash
-scripts/release.sh v1.11.0              # builds build/wafio-frontend-v1.11.0.tar.gz
-scripts/release.sh v1.11.0 --publish    # also creates the GitHub release with that archive
+scripts/release.sh v2.0.0               # builds build/wafio-frontend-v2.0.0.tar.gz
+scripts/release.sh v2.0.0 --publish     # also creates the GitHub release with that archive
 ```
 
 The version must match `vX.Y.Z` with an optional `-suffix`.

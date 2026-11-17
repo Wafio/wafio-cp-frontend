@@ -2,7 +2,7 @@
 """Fail on known advisories for the packages in a lockfile that are not in the allowlist.
 
     scripts/advisories.py Cargo.lock
-    scripts/advisories.py web/bun.lock
+    scripts/advisories.py bun.lock
 
 Asks OSV (api.osv.dev) about every locked registry package. Only the ecosystem, package
 name and version are sent. Unmaintained notices count as advisories. When OSV cannot be

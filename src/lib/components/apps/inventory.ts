@@ -9,7 +9,7 @@
  *   page turns into a confirmed forced retry.
  * - The WAF agent run command shown after registering an agent.
  *
- * Pure, unit-tested in web/tests/apps-inventory.test.ts.
+ * Pure, unit-tested in tests/apps-inventory.test.ts.
  */
 import type { AgentRoute, ApiError, App, FleetAgent } from '../../api';
 import type { BadgeTone } from '../../tone';
