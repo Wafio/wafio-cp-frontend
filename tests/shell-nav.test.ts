@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  MOVED_ROUTES,
   PROJECT_NAV,
   activeNavItem,
   appPath,
@@ -8,8 +7,6 @@ import {
   documentTitle,
   flatNavItems,
   isPublicPath,
-  legacyAgentsTarget,
-  movedTo,
   parseProjectPath,
   projectBreadcrumbs,
 } from '../src/lib/shell-nav';
@@ -59,7 +56,7 @@ describe('paths', () => {
 
   test('parseProjectPath splits project id and rest', () => {
     expect(parseProjectPath('/projects/p1')).toEqual({ projectId: 'p1', rel: '' });
-    expect(parseProjectPath('/projects/p1/waf/a1/app1')).toEqual({ projectId: 'p1', rel: '/waf/a1/app1' });
+    expect(parseProjectPath('/projects/p1/waf/a1')).toEqual({ projectId: 'p1', rel: '/waf/a1' });
     expect(parseProjectPath('/projects')).toBeNull();
   });
 });
@@ -68,12 +65,10 @@ describe('active item', () => {
   test('children win over their parent', () => {
     expect(activeNavItem('/host/firewall')?.item.id).toBe('firewall');
     expect(activeNavItem('/host/firewall')?.parent?.id).toBe('hosts');
-    expect(activeNavItem('/hosts/h1/security')?.item.id).toBe('runtime');
     expect(activeNavItem('/hosts/h1')?.item.id).toBe('hosts');
   });
 
-  test('old and new credential paths both select Credentials', () => {
-    expect(activeNavItem('/mtls-agent')?.item.id).toBe('credentials');
+  test('the credential and settings paths select their items', () => {
     expect(activeNavItem('/settings/credentials')?.item.id).toBe('credentials');
     expect(activeNavItem('/settings/general')?.item.id).toBe('settings');
   });
@@ -96,10 +91,10 @@ describe('breadcrumbs', () => {
   });
 
   test('detail pages add the detail level with page-provided names', () => {
-    const crumbs = projectBreadcrumbs({ base: '', projectId: 'p1', rel: '/waf/a1/app1', projectName: 'Acme', details: ['edge-1', null] });
-    expect(crumbs.map((c) => c.label)).toEqual(['Projects', 'Acme', 'WAF agents', 'edge-1', 'Application']);
-    expect(crumbs[3].href).toBe('/projects/p1/waf/a1');
-    expect(crumbs[4].href).toBeUndefined();
+    const crumbs = projectBreadcrumbs({ base: '', projectId: 'p1', rel: '/waf/a1', projectName: 'Acme', details: ['edge-1'] });
+    expect(crumbs.map((c) => c.label)).toEqual(['Projects', 'Acme', 'WAF agents', 'edge-1']);
+    expect(crumbs[2].href).toBe('/projects/p1/waf');
+    expect(crumbs[3].href).toBeUndefined();
   });
 
   test('child pages show their parent', () => {
@@ -109,7 +104,6 @@ describe('breadcrumbs', () => {
 
   test('detailCrumbs knows hosts, apps and WAF routes only', () => {
     expect(detailCrumbs('p', '/hosts/h1').map((c) => c.kind)).toEqual(['Host']);
-    expect(detailCrumbs('p', '/hosts/h1/firewall')).toEqual([]);
     expect(detailCrumbs('p', '/apps/a1').map((c) => c.kind)).toEqual(['Application']);
     expect(detailCrumbs('p', '/audit-log')).toEqual([]);
   });
@@ -146,25 +140,9 @@ describe('document title', () => {
   });
 });
 
-describe('access and redirects', () => {
+describe('access', () => {
   test('only sign-in, registration and invitation are public', () => {
     for (const path of ['/', '/login', '/register', '/invite/abc']) expect(isPublicPath(path)).toBe(true);
-    for (const path of ['/projects', '/projects/p1', '/account', '/admin/users', '/dashboard/profile', '/loginx']) expect(isPublicPath(path)).toBe(false);
-  });
-
-  test('movedTo keeps the query and the base', () => {
-    expect(movedTo('/b', '/projects/p/settings/credentials', '?credential=c1')).toBe('/b/projects/p/settings/credentials?credential=c1');
-    expect(movedTo('', '/account', '')).toBe('/account');
-    expect(movedTo('', '/account', '?')).toBe('/account');
-  });
-
-  test('the old fleet page sends each agent kind to its page', () => {
-    expect(legacyAgentsTarget('p', new URLSearchParams('kind=waf'))).toBe('/projects/p/waf');
-    expect(legacyAgentsTarget('p', new URLSearchParams(''))).toBe('/projects/p/hosts');
-  });
-
-  test('the redirect table covers every moved route', () => {
-    const from = MOVED_ROUTES.map((r) => r.from);
-    for (const path of ['/projects/[id]/mtls-agent', '/projects/[id]/integration', '/projects/[id]/agents', '/dashboard/profile']) expect(from).toContain(path);
+    for (const path of ['/projects', '/projects/p1', '/account', '/admin/users', '/loginx']) expect(isPublicPath(path)).toBe(false);
   });
 });

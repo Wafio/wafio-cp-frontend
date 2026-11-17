@@ -5,7 +5,6 @@ import { compile } from 'svelte/compiler';
 
 for (const relativePath of [
   '../src/routes/projects/[id]/apps/[appId]/+page.svelte',
-  // /agents was removed (redirect only); Credentials took its place here.
   '../src/routes/projects/[id]/settings/credentials/+page.svelte',
 ]) {
   test(`${relativePath} keeps mutable UI state reactive`, () => {

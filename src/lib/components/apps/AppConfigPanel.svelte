@@ -1,7 +1,7 @@
 <!--
   AppConfigPanel: the Config tab: this application's WAF policy (its own
   override or the inherited project defaults), reset to the defaults, and
-  the configuration history. Moved from /waf/:agentId/:appId.
+  the configuration history.
 
   `dirty` reports unsaved edits in ConfigWafForm so the application page can
   guard tab switches and navigation; the page owns the leave-page

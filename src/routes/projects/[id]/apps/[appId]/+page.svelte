@@ -2,8 +2,7 @@
   Application page, the single page of an application. Tabs live in the URL
   (?tab=monitoring|decisions|config|
   blockwindow|routing|assignment), so alerts and other pages can deep-link
-  and Back restores the previous tab. The old per-agent URL
-  /waf/:agentId/:appId redirects here.
+  and Back restores the previous tab.
 
   Unsaved edits in Config (ConfigWafForm) and Routing (AppRouteForm) are
   guarded on tab switch and on navigation away.

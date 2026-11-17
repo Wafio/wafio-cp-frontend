@@ -104,18 +104,6 @@ export function appHref(base: string, projectId: string, appId: string, tab: App
   return `${appPath(base, projectId, appId)}${search}`;
 }
 
-/**
- * Target of the old per-agent application URL
- * (/projects/:id/waf/:agentId/:appId?tab=…): the single application page,
- * keeping the tab and any other query parameter.
- */
-export function legacyAppRedirect(base: string, projectId: string, appId: string, search: string): string {
-  const params = new URLSearchParams(search);
-  const tab = normalizeAppTab(params.get(APP_TAB_PARAM));
-  params.delete(APP_TAB_PARAM);
-  return `${appPath(base, projectId, appId)}${appTabSearch(params, tab ?? DEFAULT_APP_TAB)}`;
-}
-
 /** Monitoring range from `?range=`; default 1h. "all" is not offered (retention is 30 days). */
 export function readAppRange(search: ReadonlyURLSearchParams | string): TimeRangeKey {
   const params = new URLSearchParams(typeof search === 'string' ? search : search.toString());

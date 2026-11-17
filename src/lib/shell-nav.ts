@@ -10,8 +10,6 @@
  */
 
 /** Icon ids the project layout maps to svelte-awesome icons. */
-import type { ReadonlyURLSearchParams } from '$app/state';
-
 export type NavIconId =
   | 'overview'
   | 'applications'
@@ -54,7 +52,7 @@ const FIREWALL: ProjectNavItem = {
   label: 'Firewall',
   path: '/host/firewall',
   icon: 'firewall',
-  match: ['/host/firewall', '/firewall', '/hosts/*/firewall'],
+  match: ['/host/firewall'],
   description: 'Kernel L3/L4 packet filtering: block and allow lists, geo blocking, port policy',
   keywords: ['ebpf', 'xdp', 'tc', 'packet', 'network', 'ip', 'port', 'blocklist', 'allowlist', 'geo'],
   hostScoped: true,
@@ -65,7 +63,7 @@ const RUNTIME: ProjectNavItem = {
   label: 'Runtime security',
   path: '/host/trace',
   icon: 'runtime',
-  match: ['/host/trace', '/runtime', '/hosts/*/security'],
+  match: ['/host/trace'],
   description: 'Syscall tracing, incidents, detection rules and enforcement policies',
   keywords: ['trace', 'syscall', 'kernel', 'incident', 'mitre', 'process', 'policy', 'kill', 'detection'],
   hostScoped: true,
@@ -151,7 +149,7 @@ export const PROJECT_NAV: readonly ProjectNavSection[] = [
         label: 'Credentials',
         path: '/settings/credentials',
         icon: 'credentials',
-        match: ['/settings/credentials', '/mtls-agent'],
+        match: ['/settings/credentials'],
         description: 'mTLS agent credentials: provision, download, expiry and revoke',
         keywords: ['credential', 'certificate', 'mtls', 'tls', 'key', 'bundle', 'install'],
       },
@@ -243,19 +241,15 @@ export interface DetailCrumb {
 }
 
 /**
- * Detail levels below a sidebar section, e.g. /waf/<agent>/<app> →
- * [WAF agent, Application]. Pages replace the generic labels with entity
- * names through `usePageDetail()` ($lib/page-meta.svelte).
+ * Detail levels below a sidebar section, e.g. /waf/<agent> → [WAF agent].
+ * Pages replace the generic labels with entity names through
+ * `usePageDetail()` ($lib/page-meta.svelte).
  */
 export function detailCrumbs(projectId: string, rel: string): DetailCrumb[] {
   const root = `/projects/${projectId}`;
   const seg = rel.split('/').filter(Boolean);
   if (seg[0] === 'apps' && seg[1]) return [{ kind: 'Application', path: `${root}/apps/${seg[1]}` }];
-  if (seg[0] === 'waf' && seg[1]) {
-    const crumbs: DetailCrumb[] = [{ kind: 'WAF agent', path: `${root}/waf/${seg[1]}` }];
-    if (seg[2]) crumbs.push({ kind: 'Application', path: `${root}/waf/${seg[1]}/${seg[2]}` });
-    return crumbs;
-  }
+  if (seg[0] === 'waf' && seg[1]) return [{ kind: 'WAF agent', path: `${root}/waf/${seg[1]}` }];
   if (seg[0] === 'hosts' && seg[1] && !seg[2]) return [{ kind: 'Host', path: `${root}/hosts/${seg[1]}` }];
   return [];
 }
@@ -319,7 +313,6 @@ const GLOBAL_TITLES: ReadonlyArray<[string, string]> = [
   ['/admin', 'Administration'],
   ['/projects', 'Projects'],
   ['/account', 'Account'],
-  ['/dashboard', 'Account'],
   ['/login', 'Sign in'],
   ['/forgot-password', 'Forgot password'],
   ['/reset-password', 'Reset password'],
@@ -368,32 +361,3 @@ export function isPublicPath(path: string): boolean {
   if (path === '/' || path === '') return true;
   return PUBLIC_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
-
-// ── Moved routes ──────────────────────────────────────────────────
-
-/**
- * Target of a moved route with the query string kept, e.g.
- * movedTo('', '/projects/p/settings/credentials', '?credential=c').
- * Used by the redirect-only `+page.ts` files left at every old path.
- */
-export function movedTo(base: string, target: string, search = ''): string {
-  const query = search && search !== '?' ? (search.startsWith('?') ? search : `?${search}`) : '';
-  return `${base}${target}${query}`;
-}
-
-/** Old /projects/<id>/agents → the page that manages that agent kind now. */
-export function legacyAgentsTarget(projectId: string, search: ReadonlyURLSearchParams): string {
-  const kind = search.get('kind');
-  return kind === 'waf' ? `/projects/${projectId}/waf` : `/projects/${projectId}/hosts`;
-}
-
-/** Redirect table for the docs and tests: old path pattern → new path pattern. */
-export const MOVED_ROUTES: ReadonlyArray<{ from: string; to: string; note: string }> = [
-  { from: '/projects/[id]/mtls-agent', to: '/projects/[id]/settings/credentials', note: 'query kept' },
-  { from: '/projects/[id]/integration', to: '/projects/[id]?setup=1', note: 'guide folded into the Overview Get started checklist' },
-  { from: '/projects/[id]/agents', to: '/projects/[id]/hosts (or /waf with ?kind=waf)', note: 'orphan fleet page removed' },
-  { from: '/projects/[id]/firewall', to: '/projects/[id]/host/firewall', note: 'short alias; query kept' },
-  { from: '/projects/[id]/runtime', to: '/projects/[id]/host/trace', note: 'short alias; query kept' },
-  { from: '/dashboard/profile', to: '/account', note: 'profile moved to the account page' },
-  { from: '/dashboard', to: '/projects', note: 'empty section' },
-];

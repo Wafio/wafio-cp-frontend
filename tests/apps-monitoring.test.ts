@@ -17,7 +17,6 @@ import {
   appHref,
   appTabSearch,
   appTabs,
-  legacyAppRedirect,
   normalizeAppTab,
   readAppRange,
   readAppTab,
@@ -141,13 +140,6 @@ describe('application page URLs', () => {
     expect(appTabSearch('?range=24h', 'decisions')).toBe('?range=24h&tab=decisions');
     expect(appHref('/b', 'p1', 'a1', 'decisions', { q: '1.2.3.4' })).toBe('/b/projects/p1/apps/a1?q=1.2.3.4&tab=decisions');
     expect(appHref('', 'p1', 'a1')).toBe('/projects/p1/apps/a1');
-  });
-
-  test('the old per-agent URL redirects to the single application page', () => {
-    expect(legacyAppRedirect('/b', 'p1', 'a1', '')).toBe('/b/projects/p1/apps/a1');
-    expect(legacyAppRedirect('/b', 'p1', 'a1', '?tab=config')).toBe('/b/projects/p1/apps/a1?tab=config');
-    expect(legacyAppRedirect('', 'p1', 'a1', '?tab=blockwindow&x=1')).toBe('/projects/p1/apps/a1?x=1&tab=blockwindow');
-    expect(legacyAppRedirect('', 'p1', 'a1', '?tab=weird')).toBe('/projects/p1/apps/a1');
   });
 
   test('range in the URL', () => {

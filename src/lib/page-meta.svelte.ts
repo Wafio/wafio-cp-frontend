@@ -9,7 +9,7 @@
  *   import { usePageDetail } from '#lib/page-meta.svelte.js';
  *   usePageDetail(() => host?.name);                 // "web-01, Hosts, Acme, WAFio"
  *
- *   // waf/[agentId]/[appId]: one label per detail level
+ *   // a route with several detail levels: one label per level
  *   usePageDetail(() => [agent?.name, route?.name]);
  *
  *   // a page that needs its own page part (error pages)
