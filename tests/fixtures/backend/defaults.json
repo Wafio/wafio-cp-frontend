@@ -1,0 +1,122 @@
+{
+  "default_rules": {
+    "geo": {
+      "allow_ips": [],
+      "block_ips": [],
+      "allow_countries": [],
+      "block_countries": []
+    },
+    "siem": {
+      "enabled": false,
+      "webhook_url": ""
+    },
+    "ssrf": {},
+    "bot_protection": {
+      "enabled": false,
+      "mode": "off",
+      "base_score": 100
+    },
+    "l7_flood": {
+      "enabled": true,
+      "key_fields": [
+        "remote_addr",
+        "user_agent"
+      ],
+      "window_sec": 60,
+      "max_requests": 500,
+      "allow_ips": []
+    },
+    "challenge": {
+      "enabled": false,
+      "type": "js_challenge",
+      "site_key": "",
+      "secret_key": "",
+      "cookie_ttl_sec": 3600,
+      "trigger": "always",
+      "simulation": false,
+      "ip_rep_enabled": false,
+      "ip_rep_block_level1": true,
+      "ip_rep_block_level2": false,
+      "good_bot_allowlist": [
+        "Googlebot",
+        "Googlebot-Image",
+        "Googlebot-Video",
+        "Google-InspectionTool",
+        "bingbot",
+        "BingPreview",
+        "DuckDuckBot",
+        "YandexBot",
+        "Baiduspider",
+        "Slurp",
+        "facebookexternalhit",
+        "Twitterbot",
+        "LinkedInBot",
+        "Applebot",
+        "AhrefsBot",
+        "SemrushBot",
+        "MJ12bot"
+      ],
+      "template_version": 3
+    },
+    "semantic_policies": {
+      "sql": {
+        "block_threshold": 4.0,
+        "soft_threshold": 2.5
+      },
+      "xss": {
+        "block_threshold": 3.8,
+        "soft_threshold": 2.2
+      },
+      "cmd": {
+        "block_threshold": 3.2,
+        "soft_threshold": 1.6
+      },
+      "lfi": {
+        "block_threshold": 3.2,
+        "soft_threshold": 1.5
+      },
+      "ssrf": {
+        "block_threshold": 2.5,
+        "soft_threshold": 1.5
+      },
+      "php": {
+        "block_threshold": 3.2,
+        "soft_threshold": 1.6
+      },
+      "python": {
+        "block_threshold": 3.2,
+        "soft_threshold": 1.6
+      },
+      "java": {
+        "block_threshold": 3.2,
+        "soft_threshold": 1.6
+      },
+      "nosql": {
+        "block_threshold": 3.0,
+        "soft_threshold": 1.5
+      },
+      "ssti": {
+        "block_threshold": 3.0,
+        "soft_threshold": 1.8
+      },
+      "xxe": {
+        "block_threshold": 2.5,
+        "soft_threshold": 1.5
+      },
+      "deser": {
+        "block_threshold": 2.5,
+        "soft_threshold": 1.5
+      }
+    },
+    "block_policy": {
+      "enabled": true,
+      "key_fields": [
+        "remote_addr",
+        "user_agent"
+      ],
+      "block_duration_sec": 3600,
+      "block_after_n_blocks": 100
+    },
+    "request_body_limit": "5M"
+  }
+}

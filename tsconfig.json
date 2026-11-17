@@ -1,0 +1,8 @@
+{
+  "extends": "$app/tsconfig",
+  "compilerOptions": {
+    // TypeScript 6 turns strict on by default; this code was written without it.
+    "strict": false
+  },
+  "include": ["src"]
+}

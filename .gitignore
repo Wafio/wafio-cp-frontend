@@ -1,0 +1,16 @@
+node_modules/
+.svelte-kit/
+.vite/
+.output/
+
+# adapter-static output and release archives
+dist/
+build/
+
+# local environment: only the example is tracked
+.env
+.env.*
+!.env.example
+
+*.log
+.DS_Store

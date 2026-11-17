@@ -1,0 +1,133 @@
+/* Form controls and section chrome shared by the Firewall components
+   (lib/components/firewall). Colours, spacing and type come from the tokens
+   in app.css only. Class names are prefixed fw- so
+   the rules cannot collide with page styles. */
+
+.fw-input,
+.fw-select,
+.fw-textarea {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 36px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+.fw-input:focus-visible,
+.fw-select:focus-visible,
+.fw-textarea:focus-visible {
+  outline: var(--ring-width) solid var(--ring-color);
+  outline-offset: 1px;
+}
+.fw-input[aria-invalid='true'],
+.fw-textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.fw-input:disabled,
+.fw-select:disabled,
+.fw-textarea:disabled {
+  opacity: 0.6;
+}
+.fw-textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  line-height: 1.5;
+}
+.fw-mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+/* Segmented radio group (TTL chips, type pickers). */
+.fw-segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-card);
+}
+.fw-segmented label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-3);
+  min-height: 32px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+}
+.fw-segmented label:last-child {
+  border-right: 0;
+}
+.fw-segmented input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.fw-segmented label:has(input:checked) {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
+}
+.fw-segmented label:has(input:focus-visible) {
+  outline: var(--ring-width) solid var(--ring-color);
+  outline-offset: -2px;
+}
+.fw-segmented label:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.fw-count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Panels inside a tab. */
+.fw-panel {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  padding: var(--sp-4);
+}
+.fw-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2) var(--sp-4);
+  margin-bottom: var(--sp-3);
+}
+.fw-panel-head h2,
+.fw-panel-head h3,
+.fw-panel-head h4 {
+  margin: 0;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+}
+.fw-panel-sub {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.fw-muted {
+  color: var(--text-muted);
+}
+.fw-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}

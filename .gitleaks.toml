@@ -1,0 +1,14 @@
+# gitleaks configuration (scripts/ci-local.sh, secret scan).
+#
+# Extends the default rule set. The only path allowlist is tests/: the tests
+# carry dummy tokens and keys on purpose. A new secret anywhere else fails the
+# scan.
+
+title = "wafio-cp-frontend"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Tests and their fixtures"
+paths = ['''^tests/''']

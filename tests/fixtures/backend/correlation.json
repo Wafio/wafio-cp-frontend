@@ -1,0 +1,29 @@
+{
+  "dest_scopes": [
+    "public",
+    "private",
+    "loopback",
+    "local",
+    "none"
+  ],
+  "fields": [
+    "addr",
+    "category",
+    "comm",
+    "dest_scope",
+    "event_name",
+    "exe_verified",
+    "filename",
+    "parent_comm",
+    "severity"
+  ],
+  "ops": [
+    "contains",
+    "eq",
+    "in",
+    "neq",
+    "not_in",
+    "starts_with",
+    "starts_with_any"
+  ]
+}

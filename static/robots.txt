@@ -1,0 +1,4 @@
+# Wafio control plane: a private operator console. Nothing here is meant
+# for search engines, including the sign-in and invitation pages.
+User-agent: *
+Disallow: /

@@ -1,0 +1,3 @@
+# Scripts run on Bun, also the ones whose launcher names node (vite, svelte-kit, svelte-check). Node is not needed.
+[run]
+bun = true

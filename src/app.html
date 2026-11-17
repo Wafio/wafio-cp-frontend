@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Password reset links carry their token in the URL fragment. Take it
+         out of the address bar before any other script reads location; the
+         reset page picks it up from window.__wafioResetFragment
+         ($lib/password-reset). -->
+    <script>
+      (function () {
+        try {
+          if (location.hash && /\/reset-password\/?$/.test(location.pathname)) {
+            window.__wafioResetFragment = location.hash;
+            history.replaceState(history.state, '', location.pathname + location.search);
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <!-- Apply the stored theme before first paint (no flash). Default: dark. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('wafio_theme');
+          document.documentElement.dataset.theme = t === 'light' ? 'light' : 'dark';
+        } catch (e) {
+          document.documentElement.dataset.theme = 'dark';
+        }
+      })();
+    </script>
+    <!-- A page cached before an upgrade names chunks the new build no longer
+         has, and the app never starts. Reload once: a reload revalidates the
+         HTML (served no-cache) and picks up the current build. -->
+    <script>
+      (function () {
+        var KEY = 'wafio.chunkReload';
+        function stale(msg) {
+          return /dynamically imported module|Importing a module script failed/i.test(String(msg || ''));
+        }
+        function reloadOnce() {
+          try {
+            var last = Number(sessionStorage.getItem(KEY) || 0);
+            if (Date.now() - last < 60000) return;
+            sessionStorage.setItem(KEY, String(Date.now()));
+          } catch (e) {
+            return;
+          }
+          location.reload();
+        }
+        window.addEventListener('vite:preloadError', reloadOnce);
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason;
+          if (stale(r && (r.message || r))) reloadOnce();
+        });
+      })();
+    </script>
+    <link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="WAFio control plane. Manage applications, WAF agents, detection policy and decisions." />
+
+    <!-- Open Graph basic -->
+    <meta property="og:title" content="WAFio control plane" />
+    <meta property="og:description" content="Manage applications, WAF agents, detection policy and decisions." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://wafio.cloud" />
+    <meta property="og:image" content="https://wafio.cloud/logo-thumb.png" />
+    <meta property="og:site_name" content="WAFio" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="WAFio control plane" />
+    <meta name="twitter:description" content="Manage applications, WAF agents, detection policy and decisions." />
+    <meta name="twitter:image" content="https://wafio.cloud/logo-thumb.png" />
+
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
+</html>
