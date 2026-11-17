@@ -21,7 +21,7 @@ import {
   togglePortToken,
 } from '../src/lib/components/firewall/rules';
 import { lockoutChecks, type FirewallState } from '../src/lib/components/firewall/lockout';
-import { firewallErrorFix, firewallErrorMessage, firewallWarningText, isFirewallGuardCode } from '../src/lib/components/firewall/guard-codes';
+import { firewallErrorMessage, firewallWarningText } from '../src/lib/components/firewall/guard-codes';
 import { allowlistBadgeTone } from '../src/lib/tone';
 
 const entry = (ip: string, extra: Partial<EBPFAllowlistEntry> = {}): EBPFAllowlistEntry => ({ ip, added_at: '2026-10-01T00:00:00Z', hit_count: 0, ...extra });
@@ -229,12 +229,10 @@ describe('add review text', () => {
 });
 
 describe('guard codes', () => {
-  test('new codes have hints and fix targets', () => {
+  test('new codes have hints', () => {
     for (const code of ['INVALID_PORTS', 'ALLOWLIST_PORTS_TOO_MANY', 'ALLOWLIST_WILDCARD_SCOPED', 'ALLOWLIST_PORTS_UNSUPPORTED', 'GEO_ALLOW_NO_ESCAPE']) {
-      expect(isFirewallGuardCode(code)).toBe(true);
+      expect(firewallErrorMessage({ error: 'refused', code })).not.toBe('refused');
     }
-    expect(firewallErrorFix('INVALID_PORTS')).toBe('rules');
-    expect(firewallErrorFix('ALLOWLIST_PORTS_UNSUPPORTED')).toBeUndefined();
     expect(firewallErrorMessage({ error: 'host lacks the feature', code: 'ALLOWLIST_PORTS_UNSUPPORTED' })).toContain('eBPF objects');
   });
 

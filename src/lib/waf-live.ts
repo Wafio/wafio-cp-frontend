@@ -95,10 +95,6 @@ export function feedFilterActive(f: FeedFilter): boolean {
   return Boolean(f.action || f.source || f.q || f.method || f.category || f.ip);
 }
 
-export function sameFeedFilter(a: FeedFilter, b: FeedFilter): boolean {
-  return a.action === b.action && a.source === b.source && a.q === b.q && a.method === b.method && a.category === b.category && (a.ip ?? '') === (b.ip ?? '');
-}
-
 /**
  * A decision row belongs to the WebSocket relay when it carries the
  * WEBSOCKET method or a ws:* match source (the server's `source=ws` rule).

@@ -15,7 +15,7 @@ import {
   templateKey,
   type ResponsePage
 } from '../src/lib/components/waf-policy/responses';
-import { POLICY_SECTIONS, groupBySection, policySections, sectionTitle } from '../src/lib/components/waf-policy/sections';
+import { POLICY_SECTIONS, groupBySection, policySections } from '../src/lib/components/waf-policy/sections';
 import { validatePolicy } from '../src/lib/components/waf-policy/validate';
 import { diffPolicy } from '../src/lib/components/waf-policy/review';
 
@@ -307,7 +307,6 @@ describe('section index', () => {
     expect(project).not.toContain('custom-rules');
     expect(app).toContain('websocket');
     expect(app).toContain('custom-rules');
-    expect(sectionTitle('integrations')).toBe('SIEM delivery');
   });
 
   test('IP reputation has its own section, right before Bot challenge, on projects and applications', () => {
@@ -315,7 +314,6 @@ describe('section index', () => {
       const ids = policySections({ app }).map((s) => s.id);
       expect(ids.indexOf('ip-reputation')).toBe(ids.indexOf('challenge') - 1);
     }
-    expect(sectionTitle('ip-reputation')).toBe('IP reputation');
   });
 
   test('issues group by section in index order', () => {

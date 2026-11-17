@@ -8,7 +8,7 @@
 //   status       status-online/pending/offline, agents and hosts
 //   mode         mode-block / mode-monitor    , protection mode of a WAF route or app
 //   severity     sev-critical … sev-info      , runtime events, incidents, attention items
-//   categorical  cat1 … cat7                  , identity (protocol, direction, agent kind)
+//   categorical  cat1 … cat7                  , identity (protocol, agent kind)
 //   generic      neutral / info / success / warning / danger, anything else
 
 export const VERDICT_TONES = ['allow', 'log', 'block'] as const;
@@ -241,11 +241,9 @@ export function categoryTone(value: unknown, vocabulary: readonly string[]): Cat
 
 /** Fixed vocabularies so the same value keeps the same colour on every page. */
 export const PROTOCOLS = ['tcp', 'udp', 'icmp'] as const;
-export const DIRECTIONS = ['ingress', 'egress'] as const;
 export const AGENT_KINDS = ['host', 'waf'] as const;
 
 export const protocolTone = (proto: unknown) => categoryTone(proto, PROTOCOLS);
-export const directionTone = (direction: unknown) => categoryTone(direction, DIRECTIONS);
 export const agentKindTone = (kind: unknown) => categoryTone(kind, AGENT_KINDS);
 
 /**

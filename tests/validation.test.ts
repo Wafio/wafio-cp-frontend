@@ -9,17 +9,10 @@ import {
   isIPOrCIDR,
   isIPv4,
   isIPv6,
-  isPort,
   isURL,
   parseByteSize,
   parseCIDR,
-  parseIPList,
   parseList,
-  parsePortList,
-  validateAES256Key,
-  validateByteSize,
-  validateKeyFields,
-  validateURL,
 } from '../src/lib/validation';
 
 describe('IPv4', () => {
@@ -145,25 +138,9 @@ describe('lists', () => {
     expect(parseList(null)).toEqual([]);
     expect(parseList([' a ', '', 'b'])).toEqual(['a', 'b']);
   });
-
-  test('IP lists report invalid entries', () => {
-    expect(parseIPList('1.2.3.4\nnot-an-ip\n2001:db8::/32\n1::2::3')).toEqual({ valid: ['1.2.3.4', '2001:db8::/32'], invalid: ['not-an-ip', '1::2::3'] });
-  });
 });
 
 describe('WAF key fields', () => {
-  test('known fields and header keys', () => {
-    expect(validateKeyFields('remote_addr, user_agent')).toEqual({ fields: ['remote_addr', 'user_agent'], error: null });
-    expect(validateKeyFields(['host', 'header:X-Request-ID'])).toEqual({ fields: ['host', 'header:X-Request-ID'], error: null });
-  });
-
-  test('errors name the offending entry', () => {
-    expect(validateKeyFields('remote_addr, cookie').error).toContain('"cookie"');
-    expect(validateKeyFields('header:').error).toContain('header:Header-Name');
-    expect(validateKeyFields('header:X Bad').error).toContain('"header:X Bad"');
-    expect(validateKeyFields(' , ').error).toBe('Enter at least one key field.');
-  });
-
   test('header names are RFC 9110 tokens', () => {
     expect(isHeaderName('X-Api-Key')).toBe(true);
     expect(isHeaderName('X Api')).toBe(false);
@@ -187,12 +164,6 @@ describe('byte sizes', () => {
       expect(parseByteSize(value as never)).toBeNull();
     }
   });
-
-  test('range validation', () => {
-    expect(validateByteSize('1 MB', { min: 1024, max: 8 * 1024 * 1024 })).toBeNull();
-    expect(validateByteSize('16 MB', { max: 8 * 1024 * 1024, label: 'Body limit' })).toBe('Body limit must be at most 8388608 bytes.');
-    expect(validateByteSize('lots')).toContain('whole number of bytes');
-  });
 });
 
 describe('AES-256 keys', () => {
@@ -204,15 +175,9 @@ describe('AES-256 keys', () => {
     expect(isAES256Key('g'.repeat(64))).toBe(false);
     expect(isAES256Key('a'.repeat(65))).toBe(false);
   });
-  test('messages', () => {
-    expect(validateAES256Key('')).toBeNull();
-    expect(validateAES256Key('', { required: true })).toContain('required');
-    expect(validateAES256Key('abc', { label: 'Field key' })).toBe('Field key must be exactly 64 hexadecimal characters.');
-    expect(validateAES256Key(` ${key} `)).toBeNull();
-  });
 });
 
-describe('URLs and ports', () => {
+describe('URLs', () => {
   test('http(s) URLs with a host and no credentials', () => {
     expect(isURL('https://siem.example.com/hook')).toBe(true);
     expect(isURL('http://10.0.0.5:8080')).toBe(true);
@@ -221,25 +186,5 @@ describe('URLs and ports', () => {
     expect(isURL('example.com')).toBe(false);
     expect(isURL('https://exa mple.com')).toBe(false);
     expect(isURL('wss://example.com', { protocols: ['wss'] })).toBe(true);
-    expect(validateURL('', { required: true, label: 'Webhook URL' })).toBe('Webhook URL is required.');
-    expect(validateURL('javascript:alert(1)')).toBe('URL must be a valid http or https URL.');
-  });
-
-  test('ports', () => {
-    expect(isPort(1)).toBe(true);
-    expect(isPort('65535')).toBe(true);
-    expect(isPort(0)).toBe(false);
-    expect(isPort(0, { allowZero: true })).toBe(true);
-    expect(isPort(65536)).toBe(false);
-    expect(isPort('80.5')).toBe(false);
-    expect(isPort('')).toBe(false);
-    expect(isPort(-1)).toBe(false);
-  });
-
-  test('port lists and ranges', () => {
-    expect(parsePortList('22, 80,8000-8100')).toEqual([{ from: 22, to: 22 }, { from: 80, to: 80 }, { from: 8000, to: 8100 }]);
-    expect(parsePortList('8100-8000')).toBeNull();
-    expect(parsePortList('22, http')).toBeNull();
-    expect(parsePortList('')).toBeNull();
   });
 });

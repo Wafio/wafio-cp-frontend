@@ -218,24 +218,6 @@ export function parseList(text: string | readonly string[] | null | undefined, o
   return out;
 }
 
-export interface ListValidation {
-  valid: string[];
-  invalid: string[];
-}
-
-/** Splits entries into those accepted by `predicate` and the rest. */
-export function partitionList(entries: readonly string[], predicate: (entry: string) => boolean): ListValidation {
-  const valid: string[] = [];
-  const invalid: string[] = [];
-  for (const entry of entries) (predicate(entry) ? valid : invalid).push(entry);
-  return { valid, invalid };
-}
-
-/** Parses an IP/CIDR list and reports the entries that are not addresses. */
-export function parseIPList(text: string | readonly string[] | null | undefined, opts: { strict?: boolean } = {}): ListValidation {
-  return partitionList(parseList(text), (entry) => isIPOrCIDR(entry, opts));
-}
-
 // ── WAF key fields ─────────────────────────────────────────────────────────
 
 /** Request attributes the block policy and L7 flood limiter can key on. */
@@ -252,29 +234,6 @@ export function isHeaderName(value: string): boolean {
 export function isKeyField(value: string): value is KeyField {
   if ((KEY_FIELDS as readonly string[]).includes(value)) return true;
   return value.startsWith('header:') && isHeaderName(value.slice('header:'.length));
-}
-
-export interface KeyFieldValidation {
-  fields: KeyField[];
-  error: string | null;
-}
-
-/**
- * Validates a comma/newline key-field list ("remote_addr, header:X-Api-Key").
- * An empty list is an error: a limiter without a key cannot tell clients
- * apart.
- */
-export function validateKeyFields(input: string | readonly string[]): KeyFieldValidation {
-  const entries = parseList(input);
-  if (!entries.length) return { fields: [], error: 'Enter at least one key field.' };
-  for (const entry of entries) {
-    if (isKeyField(entry)) continue;
-    if (entry.startsWith('header:')) {
-      return { fields: [], error: `"${entry}" is not a valid header key. Use header:Header-Name, e.g. header:X-Request-ID.` };
-    }
-    return { fields: [], error: `"${entry}" is not a supported key field. Use ${KEY_FIELDS.join(', ')} or header:Header-Name.` };
-  }
-  return { fields: entries as KeyField[], error: null };
 }
 
 // ── Byte sizes ─────────────────────────────────────────────────────────────
@@ -304,31 +263,13 @@ export function parseByteSize(value: string | number | null | undefined): number
   return bytes;
 }
 
-/** Error message for a byte size outside [min, max], or null when valid. */
-export function validateByteSize(value: string | number | null | undefined, opts: { min?: number; max?: number; label?: string } = {}): string | null {
-  const label = opts.label ?? 'Size';
-  const bytes = parseByteSize(value);
-  if (bytes === null) return `${label} must be a whole number of bytes, optionally with a unit (KB, MB, GB).`;
-  if (opts.min !== undefined && bytes < opts.min) return `${label} must be at least ${opts.min} bytes.`;
-  if (opts.max !== undefined && bytes > opts.max) return `${label} must be at most ${opts.max} bytes.`;
-  return null;
-}
-
-// ── Keys, URLs and ports ───────────────────────────────────────────────────
+// ── Keys and URLs ──────────────────────────────────────────────────────────
 
 const HEX64 = /^[0-9a-fA-F]{64}$/;
 
 /** AES-256 key as 64 hexadecimal characters (32 bytes). */
 export function isAES256Key(value: string): boolean {
   return typeof value === 'string' && HEX64.test(value.trim());
-}
-
-/** Error message for an AES-256 key, or null when valid (or optional and empty). */
-export function validateAES256Key(value: string | null | undefined, opts: { required?: boolean; label?: string } = {}): string | null {
-  const label = opts.label ?? 'AES key';
-  const key = (value ?? '').trim();
-  if (!key) return opts.required ? `${label} is required (64 hexadecimal characters).` : null;
-  return HEX64.test(key) ? null : `${label} must be exactly 64 hexadecimal characters.`;
 }
 
 /**
@@ -347,55 +288,4 @@ export function isURL(value: string, opts: { protocols?: readonly string[] } = {
   if (!protocols.includes(url.protocol.replace(/:$/, ''))) return false;
   if (url.username || url.password) return false;
   return url.hostname.length > 0;
-}
-
-/** Error message for a URL, or null when valid. */
-export function validateURL(value: string | null | undefined, opts: { required?: boolean; protocols?: readonly string[]; label?: string } = {}): string | null {
-  const label = opts.label ?? 'URL';
-  const text = (value ?? '').trim();
-  if (!text) return opts.required ? `${label} is required.` : null;
-  const protocols = opts.protocols ?? ['http', 'https'];
-  return isURL(text, { protocols }) ? null : `${label} must be a valid ${protocols.join(' or ')} URL.`;
-}
-
-/** TCP/UDP port 1–65535 (`allowZero` accepts 0 for "unset"). */
-export function isPort(value: number | string | null | undefined, opts: { allowZero?: boolean } = {}): boolean {
-  if (value === null || value === undefined || value === '') return false;
-  const text = String(value).trim();
-  if (!/^\d{1,5}$/.test(text)) return false;
-  const port = Number(text);
-  return port <= 65535 && (port >= 1 || (opts.allowZero === true && port === 0));
-}
-
-export function parsePort(value: number | string | null | undefined): number | null {
-  return isPort(value) ? Number(String(value).trim()) : null;
-}
-
-export interface PortRange {
-  from: number;
-  to: number;
-}
-
-/**
- * Parses a port list such as "22, 80, 8000-8100" into ranges. Returns null
- * when any entry is not a port or a range is reversed.
- */
-export function parsePortList(value: string): PortRange[] | null {
-  const entries = parseList(value, { dedupe: true });
-  if (!entries.length) return null;
-  const ranges: PortRange[] = [];
-  for (const entry of entries) {
-    const match = /^(\d{1,5})\s*-\s*(\d{1,5})$/.exec(entry);
-    if (match) {
-      const from = parsePort(match[1]);
-      const to = parsePort(match[2]);
-      if (from === null || to === null || from > to) return null;
-      ranges.push({ from, to });
-      continue;
-    }
-    const port = parsePort(entry);
-    if (port === null) return null;
-    ranges.push({ from: port, to: port });
-  }
-  return ranges;
 }

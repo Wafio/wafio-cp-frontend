@@ -26,11 +26,6 @@ export function isProjectRole(role: unknown): role is ProjectRole {
   return typeof role === 'string' && role in ROLE_LEVEL;
 }
 
-/** True when the project's effective role is at least `minimum`. */
-export function hasProjectRole(project: Project | null | undefined, minimum: ProjectRole): boolean {
-  return roleLevel(project?.effective_role) >= ROLE_LEVEL[minimum];
-}
-
 export function projectPermissions(project: Project | null | undefined): ProjectPermissions {
   return project?.permissions ?? { ...NO_PROJECT_PERMISSIONS };
 }

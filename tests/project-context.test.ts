@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { deferred } from './support/runes';
 import type { ApiResult, Project, ProjectRole } from '../src/lib/api';
-import { canDeleteProject, hasProjectRole, projectRoleLabel, roleLevel } from '../src/lib/project-access';
+import { canDeleteProject, projectRoleLabel, roleLevel } from '../src/lib/project-access';
 
 const { ProjectContext } = await import('../src/lib/project-context.svelte');
 
@@ -17,9 +17,6 @@ describe('project access helpers', () => {
     expect(roleLevel('owner')).toBe(3);
     expect(roleLevel('admin')).toBe(0);
     expect(roleLevel(undefined)).toBe(0);
-    expect(hasProjectRole(project('p', 'member'), 'member')).toBe(true);
-    expect(hasProjectRole(project('p', 'member'), 'owner')).toBe(false);
-    expect(hasProjectRole(null, 'viewer')).toBe(false);
     expect(canDeleteProject(project('p', 'owner'))).toBe(true);
     expect(canDeleteProject(project('p', 'member'))).toBe(false);
     expect(projectRoleLabel('owner')).toBe('Owner');

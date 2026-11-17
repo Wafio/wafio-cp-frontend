@@ -113,11 +113,6 @@ const storedAction = (value: unknown): StoredEngineAction | undefined => (value 
  */
 export const LOG_ONLY_ENGINES: readonly SemanticKey[] = ['open_redirect'];
 
-/** What an engine that is on does when its choice is not Log only: Block, or Log for an engine that only records. */
-export function engineOnAction(key: SemanticKey): 'block' | 'log' {
-  return LOG_ONLY_ENGINES.includes(key) ? 'log' : 'block';
-}
-
 /** The sentence under an engine that is on Log only. */
 export const ENGINE_LOG_ONLY_NOTE = 'Detections are recorded as LOG and the request is let through.';
 

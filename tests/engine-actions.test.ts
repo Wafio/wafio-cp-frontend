@@ -15,7 +15,6 @@ import {
   LOG_ONLY_ENGINES,
   SEMANTIC_ENGINES,
   draftFromRules,
-  engineOnAction,
   engineStateOf,
   newPathRule,
   pathRuleFromRaw,
@@ -62,7 +61,6 @@ describe('the engines that can block', () => {
   });
 
   test('an engine that can block offers Block and Log only and one that only logs offers Log, in the table and on a path', async () => {
-    for (const meta of SEMANTIC_ENGINES) expect(engineOnAction(meta.key)).toBe(AGENT[meta.key] === 'logs' ? 'log' : 'block');
     const html = await render(EngineTable, { form: WafPolicyForm.fromRules({}) });
     const row = (key: string, next: string) => html.slice(html.indexOf(`id="wp-engine-${key}"`), html.indexOf(`id="wp-engine-${next}"`));
     expect(row('open_redirect', 'prompt_injection')).toMatch(/value="log"/);

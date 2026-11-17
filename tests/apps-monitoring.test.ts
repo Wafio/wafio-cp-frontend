@@ -3,7 +3,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { GeoLocation, WAFEventTimelineBucket } from '../src/lib/api';
 import {
-  countryByIp,
   escapeHtml,
   geoMarkerHtml,
   geoPopupHtml,
@@ -68,14 +67,12 @@ describe('geo popups', () => {
     expect(points).toHaveLength(1);
   });
 
-  test('country ranking and IP lookup', () => {
+  test('country ranking', () => {
     const rows = topCountries([loc(), loc({ remote_addr: 'b', count: 7, block: 0 }), loc({ remote_addr: 'c', country_code: 'US', country_name: 'United States', count: 5 })]);
     expect(rows.map((r) => [r.code, r.count, r.pct])).toEqual([
       ['NL', 10, 100],
       ['US', 5, 50],
     ]);
-    expect(countryByIp([loc(), loc({ remote_addr: 'x', country_code: '—' })]).get('203.0.113.9')).toBe('NL');
-    expect(countryByIp([loc({ remote_addr: 'x', country_code: '—' })]).has('x')).toBe(false);
   });
 });
 

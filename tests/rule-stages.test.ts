@@ -5,7 +5,6 @@ import {
   RULE_STAGES,
   SCRIPT_FAST_PATH,
   SCRIPT_SKIPPED_WHEN,
-  stageLine,
 } from '../src/lib/components/rules/rule-stages';
 
 // The one description of when custom rules run, checked against the
@@ -28,10 +27,9 @@ describe('custom rule stages', () => {
     expect(script).toBeGreaterThan(engines);
   });
 
-  test('every rule type has one stage line, and the editor uses the same text', () => {
+  test('every rule type has one stage line', () => {
     for (const mode of ['gui', 'tuning', 'script'] as const) {
       expect(RULE_STAGES[mode].mode).toBe(mode);
-      expect(stageLine(mode)).toBe(RULE_STAGES[mode].when);
     }
     expect(RULE_STAGES.gui.when).toMatch(/before/i);
     expect(RULE_STAGES.tuning.when).toMatch(/before/i);

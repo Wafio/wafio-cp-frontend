@@ -115,13 +115,3 @@ export function topCountries(locations: readonly GeoLocation[], limit = 10): Cou
   const max = rows[0]?.count || 1;
   return rows.map((r) => ({ ...r, pct: Math.round((r.count / max) * 100) }));
 }
-
-/** IP → country code, for the feed's country column. */
-export function countryByIp(locations: readonly GeoLocation[]): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const l of locations) {
-    const code = (l.country_code ?? '').trim();
-    if (l.remote_addr && code && code !== '—') map.set(l.remote_addr, code.toUpperCase());
-  }
-  return map;
-}

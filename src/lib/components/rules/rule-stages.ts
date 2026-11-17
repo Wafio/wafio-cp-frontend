@@ -75,8 +75,3 @@ export const SCRIPT_SKIPPED_WHEN =
 /** Scripts when the engines find nothing. */
 export const SCRIPT_FAST_PATH =
   'When the detection engines find nothing, scripts still run, with score 0 and action "allow".';
-
-/** One line for the rule editor footer. */
-export function stageLine(mode: CustomRuleMode): string {
-  return RULE_STAGES[mode].when;
-}

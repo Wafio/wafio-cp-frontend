@@ -38,7 +38,7 @@ import {
   MAX_PORT_SCAN_UNIQUE_PORTS,
   type SettingsDraft,
 } from '../src/lib/components/firewall/settings';
-import { bundleStateNotes, firewallErrorFix, firewallErrorMessage, firewallWarningsOf, isFirewallGuardCode, mergeWarnings } from '../src/lib/components/firewall/guard-codes';
+import { bundleStateNotes, firewallErrorMessage, firewallWarningsOf, mergeWarnings } from '../src/lib/components/firewall/guard-codes';
 
 const NOW = Date.parse('2026-09-27T12:00:00Z');
 const entry = (ip: string, extra: Partial<EBPFIPListEntry> = {}): EBPFIPListEntry => ({ ip, added_at: '2026-09-27T10:00:00Z', hit_count: 3, ...extra });
@@ -319,14 +319,12 @@ describe('settings draft', () => {
 });
 
 describe('guard codes and host bundle states', () => {
-  test('errors add a hint and a fix; the old INGRESS_ALLOW_REQUIRED is still understood', () => {
+  test('errors add a hint; the old INGRESS_ALLOW_REQUIRED is still understood', () => {
     expect(firewallErrorMessage({ error: 'refused', code: 'SSH_ALLOW_REQUIRED' })).toContain('SSH port');
     expect(firewallErrorMessage({ error: 'refused', code: 'INGRESS_ALLOW_REQUIRED' })).toContain('management port');
-    expect(firewallErrorFix('CONNTRACK_REQUIRED')).toBe('settings');
-    expect(firewallErrorFix('WILDCARD_BLOCK_NEEDS_ALLOWLIST')).toBe('rules');
     expect(firewallErrorMessage({ error: 'plain' })).toBe('plain');
-    expect(isFirewallGuardCode('PORT_POLICY_INVALID')).toBe(true);
-    expect(isFirewallGuardCode('OTHER')).toBe(false);
+    expect(firewallErrorMessage({ error: 'refused', code: 'PORT_POLICY_INVALID' })).not.toBe('refused');
+    expect(firewallErrorMessage({ error: 'refused', code: 'OTHER' })).toBe('refused');
   });
 
   test('warnings are read from an accepted save and deduplicated', () => {

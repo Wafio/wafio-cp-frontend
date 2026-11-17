@@ -13,7 +13,6 @@ import {
   draftFromRules,
   engineActionOf,
   engineOffNote,
-  engineOnAction,
   engineOptions,
   pathEngineOptions,
   engineStateOf,
@@ -207,7 +206,7 @@ describe('the policy switch', () => {
         rule.path = '/a';
         const draft = draftFromRules({});
         draft.semantic[key as SemanticKey].enabled = false;
-        setEngineState(rule, draft, key as SemanticKey, engineOnAction(key as SemanticKey));
+        setEngineState(rule, draft, key as SemanticKey, key === 'open_redirect' ? 'log' : 'block');
         // Open redirect never blocks, so its entry names no action; the others name the one chosen.
         const on = key === 'open_redirect' ? { disabled: false } : { disabled: false, action: 'block' };
         expect((toJsonValue(pathRuleToJson(rule)).semantic_override as Record<string, Json>)[key]).toEqual(on);

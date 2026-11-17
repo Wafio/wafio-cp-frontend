@@ -6,10 +6,6 @@
 import type { HostIncident, OverviewEvidence, OverviewEvidenceAction } from './api';
 import { severityRank } from './tone';
 
-export function coveragePercent(running: number, eligible: number): number | null {
-  return eligible > 0 && running >= 0 && running <= eligible ? Math.round(running / eligible * 100) : null;
-}
-
 export function scopedWAFAgents<T extends { host_id?: string | null }>(agents: T[], hostID: string): T[] {
   return hostID ? agents.filter(agent => agent.host_id === hostID) : agents;
 }

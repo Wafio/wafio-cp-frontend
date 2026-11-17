@@ -8,7 +8,6 @@ import {
   agentKindTone,
   categoricalColor,
   categoricalTone,
-  directionTone,
   enforcementTone,
   modeTone,
   normalizeSeverity,
@@ -147,8 +146,6 @@ describe('categorical tones', () => {
   test('fixed vocabularies keep one colour per value and never use verdict tones', () => {
     expect(protocolTone('TCP')).toBe('cat1');
     expect(protocolTone('udp')).toBe('cat2');
-    expect(directionTone('ingress')).toBe('cat1');
-    expect(directionTone('egress')).toBe('cat2');
     expect(agentKindTone('host')).toBe('cat1');
     expect(agentKindTone('waf')).toBe('cat2');
     expect(protocolTone('sctp')).toBe('neutral');

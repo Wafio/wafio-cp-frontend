@@ -4,7 +4,6 @@
  * bundle_status states ("refused", saved policy, DNS relaxed).
  */
 import type { ApiError } from '#lib/api.js';
-import type { CheckFix } from './lockout';
 
 /** `warnings[]` item of an accepted firewall save. */
 export interface FirewallWarning {
@@ -12,42 +11,32 @@ export interface FirewallWarning {
   message: string;
 }
 
-const ERROR_TEXT: Record<string, { hint: string; fix?: CheckFix }> = {
-  CONNTRACK_REQUIRED: { hint: 'Turn connection tracking on in Settings first: Deny all and 0.0.0.0/0 or ::/0 blocklist entries rely on it to let replies through.', fix: 'settings' },
-  SSH_ALLOW_REQUIRED: { hint: 'Add a permanent ingress TCP ALLOW rule for the SSH port (no expiring DROP on the same port) before ingress Deny all.', fix: 'rules' },
+const ERROR_TEXT: Record<string, { hint: string }> = {
+  CONNTRACK_REQUIRED: { hint: 'Turn connection tracking on in Settings first: Deny all and 0.0.0.0/0 or ::/0 blocklist entries rely on it to let replies through.' },
+  SSH_ALLOW_REQUIRED: { hint: 'Add a permanent ingress TCP ALLOW rule for the SSH port (no expiring DROP on the same port) before ingress Deny all.' },
   // Earlier code of the same guard, still sent by older control planes.
-  INGRESS_ALLOW_REQUIRED: { hint: 'Add a permanent ingress ALLOW rule for your management port (SSH) before ingress Deny all.', fix: 'rules' },
-  WILDCARD_BLOCK_NEEDS_ALLOWLIST: { hint: 'Add a permanent allowlist entry of the same address family (your management network), on all ports or covering the SSH port over TCP, before blocking 0.0.0.0/0, ::/0 or half of a family or more. An entry scoped to other ports does not count.', fix: 'rules' },
-  EGRESS_BLOCK_TOO_BROAD: { hint: 'Egress entries other than 0.0.0.0/0 and ::/0 also drop replies to inbound connections such as SSH; block the whole family (replies stay open) or use egress Deny all in Settings.', fix: 'rules' },
-  ALLOWLIST_NESTING_TOO_DEEP: { hint: 'More than four nested expiring allowlist entries cover one address; merge them or make one of the four longest permanent.', fix: 'rules' },
-  BLOCKLIST_NESTING_TOO_DEEP: { hint: 'More than four nested expiring blocklist entries cover one address; merge them or make one of the four longest permanent.', fix: 'rules' },
-  IP_LIST_FULL: { hint: 'The list does not fit the kernel map (counted in prefixes); remove entries or merge addresses into CIDR prefixes.', fix: 'rules' },
-  PORT_POLICY_INVALID: { hint: 'Port rules need a port from 1 to 65535, action allow, drop or log, protocol tcp, udp or any, and direction ingress, egress or both.', fix: 'rules' },
-  CONTROL_PLANE_UNPINNED: { hint: 'The agent has not pinned the control-plane address yet; add a permanent egress ALLOW for DNS (53/udp) or wait until the agent reconnects.', fix: 'rules' },
+  INGRESS_ALLOW_REQUIRED: { hint: 'Add a permanent ingress ALLOW rule for your management port (SSH) before ingress Deny all.' },
+  WILDCARD_BLOCK_NEEDS_ALLOWLIST: { hint: 'Add a permanent allowlist entry of the same address family (your management network), on all ports or covering the SSH port over TCP, before blocking 0.0.0.0/0, ::/0 or half of a family or more. An entry scoped to other ports does not count.' },
+  EGRESS_BLOCK_TOO_BROAD: { hint: 'Egress entries other than 0.0.0.0/0 and ::/0 also drop replies to inbound connections such as SSH; block the whole family (replies stay open) or use egress Deny all in Settings.' },
+  ALLOWLIST_NESTING_TOO_DEEP: { hint: 'More than four nested expiring allowlist entries cover one address; merge them or make one of the four longest permanent.' },
+  BLOCKLIST_NESTING_TOO_DEEP: { hint: 'More than four nested expiring blocklist entries cover one address; merge them or make one of the four longest permanent.' },
+  IP_LIST_FULL: { hint: 'The list does not fit the kernel map (counted in prefixes); remove entries or merge addresses into CIDR prefixes.' },
+  PORT_POLICY_INVALID: { hint: 'Port rules need a port from 1 to 65535, action allow, drop or log, protocol tcp, udp or any, and direction ingress, egress or both.' },
+  CONTROL_PLANE_UNPINNED: { hint: 'The agent has not pinned the control-plane address yet; add a permanent egress ALLOW for DNS (53/udp) or wait until the agent reconnects.' },
   FIREWALL_DATAPLANE_OUTDATED: { hint: 'The host runs older eBPF objects without the reply and control-plane exemptions; update the host agent first.' },
   // Port-scoped allowlist entries.
-  INVALID_PORTS: { hint: 'Write each port scope as 22/tcp, 8000-8100/udp or 53/any (ports 1 to 65535, the lower port first), and give an address the same ports everywhere it is listed.', fix: 'rules' },
-  ALLOWLIST_PORTS_TOO_MANY: { hint: 'An allowlist entry takes at most 8 port scopes after merging; merge neighbouring ports into ranges or allow all ports.', fix: 'rules' },
-  ALLOWLIST_WILDCARD_SCOPED: { hint: '0.0.0.0/0 and ::/0 cannot be scoped to ports; a port ALLOW rule is the right tool to open a port to everyone.', fix: 'rules' },
+  INVALID_PORTS: { hint: 'Write each port scope as 22/tcp, 8000-8100/udp or 53/any (ports 1 to 65535, the lower port first), and give an address the same ports everywhere it is listed.' },
+  ALLOWLIST_PORTS_TOO_MANY: { hint: 'An allowlist entry takes at most 8 port scopes after merging; merge neighbouring ports into ranges or allow all ports.' },
+  ALLOWLIST_WILDCARD_SCOPED: { hint: '0.0.0.0/0 and ::/0 cannot be scoped to ports; a port ALLOW rule is the right tool to open a port to everyone.' },
   ALLOWLIST_PORTS_UNSUPPORTED: { hint: 'This host does not enforce port-scoped allowlist entries; update the host agent together with its eBPF objects, or add the entry for all ports.' },
-  GEO_ALLOW_NO_ESCAPE: { hint: 'Geo allow mode is enforced without a lockout escape: add a permanent allowlist entry for your management network, on all ports or covering the SSH port over TCP.', fix: 'rules' },
+  GEO_ALLOW_NO_ESCAPE: { hint: 'Geo allow mode is enforced without a lockout escape: add a permanent allowlist entry for your management network, on all ports or covering the SSH port over TCP.' },
   // Geo allow mode.
   GEO_ALLOW_UNACKNOWLEDGED: { hint: 'Confirm the allow-mode warning to switch to allow mode or remove an allowed country.' },
-  GEO_ALLOW_EMPTY: { hint: 'Add at least one country to the allowed countries; allow mode with an empty list would drop every new inbound connection.', fix: 'rules' },
+  GEO_ALLOW_EMPTY: { hint: 'Add at least one country to the allowed countries; allow mode with an empty list would drop every new inbound connection.' },
   GEO_ALLOW_UNSUPPORTED: { hint: 'Update the host agent and its eBPF objects, and install the GeoIP country database, then try again.' },
   GEO_COUNTRY_INVALID: { hint: 'Use two-letter ISO 3166-1 country codes, for example ID or SG.' },
   GEO_MODE_INVALID: { hint: 'The geo mode must be block or allow.' },
 };
-
-/** True for a lockout-guard code the Firewall page explains. */
-export function isFirewallGuardCode(code: string | null | undefined): boolean {
-  return Boolean(code && code in ERROR_TEXT);
-}
-
-/** Where the operator fixes a refused save, if known. */
-export function firewallErrorFix(code: string | null | undefined): CheckFix | undefined {
-  return code ? ERROR_TEXT[code]?.fix : undefined;
-}
 
 /** Server message plus what to do, e.g. for an inline error next to the rule or the Settings save. */
 export function firewallErrorMessage(err: Pick<ApiError, 'error' | 'code'> | null | undefined, fallback = 'The change was not saved.'): string {

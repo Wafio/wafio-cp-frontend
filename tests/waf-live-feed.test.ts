@@ -8,7 +8,6 @@ import {
   normalizeFeedFilter,
   parseAgentStatusList,
   readFeedFilter,
-  sameFeedFilter,
   writeFeedFilter,
 } from '../src/lib/waf-live';
 
@@ -41,13 +40,11 @@ describe('feed filter', () => {
     expect(readFeedFilter('?ip=not-an-ip').ip).toBe('not-an-ip');
     expect(new URLSearchParams(writeFeedFilter('?tab=decisions', { ...EMPTY_FEED_FILTER, ip: '2001:db8::1' })).get('ip')).toBe('2001:db8::1');
     expect(feedFilterActive({ ...EMPTY_FEED_FILTER, ip: '10.0.0.1' })).toBe(true);
-    expect(sameFeedFilter({ ...EMPTY_FEED_FILTER, ip: '10.0.0.1' }, { ...EMPTY_FEED_FILTER })).toBe(false);
   });
 
-  test('active and equality', () => {
+  test('active filter', () => {
     expect(feedFilterActive({ ...EMPTY_FEED_FILTER })).toBe(false);
     expect(feedFilterActive({ ...EMPTY_FEED_FILTER, category: 'XSS' })).toBe(true);
-    expect(sameFeedFilter(normalizeFeedFilter({ q: ' a ' }), normalizeFeedFilter({ q: 'a' }))).toBe(true);
   });
 
   test('WebSocket rows by method or ws: match source', () => {

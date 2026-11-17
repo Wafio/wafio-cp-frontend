@@ -50,10 +50,6 @@ export type WebSocketConfig = {
   scan_binary_hashes: boolean;
 };
 
-export function mergeWebSocketConfig(original: Record<string, any>, edited: WebSocketConfig): Record<string, any> {
-  return mergeWafRules(original, { websocket: edited });
-}
-
 export function validateWebSocketConfig(config: WebSocketConfig): string | null {
   if (config.origin_check.enabled && config.origin_check.allowed_origins.length === 0) return 'WebSocket origin check requires at least one allowed origin.';
   for (const origin of config.origin_check.allowed_origins) {

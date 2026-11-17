@@ -6,9 +6,3 @@ export function configChanges(before: unknown, after: unknown, path = ''): { pat
   }
   return [{ path: path || '(root)', before, after }];
 }
-
-// Pre-save previews must not echo credentials, templates, or request values.
-export function previewConfigChanges(before: unknown, after: unknown) {
-  const display = (value: unknown): string => value === undefined ? '(absent)' : typeof value === 'number' || typeof value === 'boolean' ? String(value) : '(value hidden)';
-  return configChanges(before, after).map(change => ({ path: change.path, before: display(change.before), after: display(change.after) }));
-}

@@ -8,7 +8,6 @@ import {
   tierForPolicySave,
   tierForPortPolicyConfig,
   tierForProtectionMode,
-  tierForRuleEnable,
   typedConfirmationMatches,
 } from '../src/lib/confirm-tiers';
 
@@ -108,12 +107,5 @@ describe('protection and rules', () => {
   test('block → monitor lowers protection', () => {
     expect(tierForProtectionMode('block', 'monitor')).toBe('simple');
     expect(tierForProtectionMode('monitor', 'block')).toBe('none');
-  });
-  test('enabling allow/block rules asks once', () => {
-    expect(tierForRuleEnable('allow', false, true)).toBe('simple');
-    expect(tierForRuleEnable('block', false, true)).toBe('simple');
-    expect(tierForRuleEnable('log', false, true)).toBe('none');
-    expect(tierForRuleEnable('allow', true, true)).toBe('none');
-    expect(tierForRuleEnable('allow', true, false)).toBe('none');
   });
 });

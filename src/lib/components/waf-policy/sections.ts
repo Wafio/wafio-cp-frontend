@@ -33,10 +33,6 @@ export function policySections(options: { app: boolean }): PolicySectionMeta[] {
   return POLICY_SECTIONS.filter((section) => options.app || !section.appOnly);
 }
 
-export function sectionTitle(id: SectionId): string {
-  return POLICY_SECTIONS.find((section) => section.id === id)?.title ?? id;
-}
-
 /** DOM id of a section element (PolicySection renders it). */
 export function sectionDomId(id: SectionId): string {
   return `wp-section-${id}`;

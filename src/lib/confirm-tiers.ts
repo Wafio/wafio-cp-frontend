@@ -178,11 +178,3 @@ export function tierForProtectionMode(previous: ProtectionMode | string, next: P
   if (previous === 'block' && next !== 'block') return tierFor('lower-protection');
   return 'none';
 }
-
-/** Enabling an allow/block custom or IP rule (disabled → enabled). */
-export function tierForRuleEnable(action: string, previousEnabled: boolean, nextEnabled: boolean): ConfirmTier {
-  if (previousEnabled || !nextEnabled) return 'none';
-  if (action === 'allow') return tierFor('enable-allow-rule');
-  if (action === 'block') return tierFor('enable-block-rule');
-  return 'none';
-}

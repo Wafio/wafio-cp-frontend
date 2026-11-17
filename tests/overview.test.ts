@@ -1,12 +1,6 @@
 import { expect, test } from 'bun:test';
-import { coveragePercent, requestDelta, scopedWAFAgents } from '../src/lib/overview';
+import { requestDelta, scopedWAFAgents } from '../src/lib/overview';
 
-test('coverage never treats missing or ineligible agents as protected', () => {
- expect(coveragePercent(0, 0)).toBeNull();
- expect(coveragePercent(0, 2)).toBe(0);
- expect(coveragePercent(2, 2)).toBe(100);
- expect(coveragePercent(3, 2)).toBeNull();
-});
 test('host scope includes every WAF agent and does not fall back to project traffic', () => {
  const agents = [{id:'a',host_id:'host1'}, {id:'b',host_id:'host1'}, {id:'c',host_id:'host2'}];
  expect(scopedWAFAgents(agents, 'host1').map(a=>a.id)).toEqual(['a','b']);
