@@ -1,3 +1,4 @@
 # Advisories that scripts/advisories.py accepts: id | package | reason | date reviewed (yyyy-mm-dd)
 # Add a line only after reading the advisory and checking that our code does not reach it. Say why.
 GHSA-gcqx-w48m-w2h4 | deepmerge | CVE-2026-93753, LOW, no fixed version (4.3.1 is the last release). Only @sveltejs/vite-plugin-svelte imports it, in src/utils/options.js, to merge Svelte options while Vite runs. It is not in the built bundle and it never sees request data. | 2026-11-16
+GHSA-fc5q-39xc-vjpf | picomatch | HIGH, regular expression denial of service through crafted glob patterns, no fixed version (4.0.7 is the last release). Only vite and tinyglobby import it, to match file globs from our own config while the dashboard is built. No file under src imports it, and no glob pattern comes from a request. | 2026-11-18
