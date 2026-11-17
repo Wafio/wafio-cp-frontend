@@ -28,7 +28,7 @@ const config = {
     licenceNotices()
   ],
   server: {
-    allowedHosts: ['wafio.cloud', 'www.wafio.cloud', 'web.wafio.cloud', 'localhost', '127.0.0.1'],
+    allowedHosts: ['localhost', '127.0.0.1'],
     proxy: {
       '/api': {
         target: apiTarget,

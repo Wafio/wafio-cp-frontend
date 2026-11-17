@@ -58,7 +58,6 @@
     type ImportRow,
   } from '#lib/custom-rules-io.js';
   import { getProjectContext } from '#lib/project-context.svelte.js';
-  import { continuingRules, dismissContinueNotice, isContinueNoticeDismissed } from '#lib/components/rules/continue-notice.js';
   import { SCRIPT_OWNER_MESSAGE, canEditScriptRules, ruleSaveError } from '#lib/components/rules/script-access.js';
   import { actionTone, categoryTone } from '#lib/tone.js';
   import { formatDateTime, formatNumber, formatRelative } from '#lib/format.js';
@@ -250,18 +249,7 @@
     void loadRules();
   });
 
-  // ── Notice: log/challenge rules no longer stop inspection ──
-  let continueNoticeDismissed = $state(false);
-  $effect(() => {
-    const id = projectId;
-    continueNoticeDismissed = isContinueNoticeDismissed(id);
-  });
-  const continuing = $derived(continuingRules(rules));
   const regexBroken = $derived(rules.filter((r) => ruleRegexError(r) !== ''));
-  function hideContinueNotice() {
-    dismissContinueNotice(projectId);
-    continueNoticeDismissed = true;
-  }
 
   // ── Derived list ──
   function matchesType(r: RuleRow): boolean {
@@ -618,18 +606,6 @@
       </div>
     </div>
 
-    {#if continuing.length > 0 && !continueNoticeDismissed}
-      <Alert tone="info" title="Log and Challenge rules no longer end inspection" ondismiss={hideContinueNotice} dismissLabel="Dismiss this notice">
-        <p class="continue-text">On updated WAF agents, a matching Log or Challenge rule records the request (or challenges it) and the request then continues through the detection engines, which can still block it. Only Allow and Block rules decide the request on their own.</p>
-        <p class="continue-text">Rules in {selectedApp?.name ?? 'this application'} affected:</p>
-        <ul class="continue-list">
-          {#each continuing as rule (rule.id)}
-            <li>{rule.name} <span class="continue-meta">({ACTION_LABEL[rule.action] ?? rule.action}{rule.enabled ? '' : ', disabled'})</span></li>
-          {/each}
-        </ul>
-      </Alert>
-    {/if}
-
     {#if scriptWarning}
       <Alert tone="warning" title="Script rules do not run on this agent" message={scriptWarning} />
     {/if}
@@ -946,7 +922,4 @@
     .data-actions { margin-left: 0; }
     .summary { max-width: 28ch; }
   }
-  .continue-text { margin: 0 0 var(--sp-1); }
-  .continue-list { margin: 0; padding-left: var(--sp-5); }
-  .continue-meta { color: var(--text-muted); }
 </style>

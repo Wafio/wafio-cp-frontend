@@ -1,7 +1,6 @@
 // Failures are shown as failures, not as empty data; the
 // one-time private key is guarded; toasts announce through one permanent live
-// region and their timers pause without re-arming; editor colours are tokens;
-// plus the notice on the Custom rules page.
+// region and their timers pause without re-arming; editor colours are tokens.
 import './support/ssr';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -11,12 +10,6 @@ import { renderComponent } from './support/ssr';
 import { FakeClock } from './support/runes';
 import { ToastTimers } from '../src/lib/toast-timers';
 import { toast } from '../src/lib/stores/toast';
-import {
-  continueNoticeKey,
-  continuingRules,
-  dismissContinueNotice,
-  isContinueNoticeDismissed,
-} from '../src/lib/components/rules/continue-notice';
 
 const src = (rel: string) => readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), 'utf8');
 
@@ -203,36 +196,5 @@ describe('script editor colours are tokens', () => {
     const used = [...editor.matchAll(/var\(--(code-[\w-]+)\)/g)].map((m) => m[1]);
     expect(used.length).toBeGreaterThanOrEqual(7);
     for (const name of used) expect(css.match(new RegExp(`--${name}:`, 'g'))?.length).toBe(2);
-  });
-});
-
-describe('Custom rules notice: Log and Challenge rules continue', () => {
-  const rule = (id: string, mode: string, action: string, enabled = true) => ({ id, name: `rule ${id}`, mode, action, enabled });
-
-  test('lists Match & act rules with log or challenge, in list order', () => {
-    const rules = [rule('1', 'gui', 'block'), rule('2', 'gui', 'log'), rule('3', 'script', 'log'), rule('4', 'gui', 'challenge', false), rule('5', 'tuning', 'challenge'), rule('6', 'gui', 'allow')];
-    expect(continuingRules(rules).map((r) => r.id)).toEqual(['2', '4']);
-  });
-
-  test('dismissal is per project and survives a throwing or missing storage', () => {
-    const data = new Map<string, string>();
-    const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) };
-    expect(isContinueNoticeDismissed('p1', storage)).toBe(false);
-    expect(dismissContinueNotice('p1', storage)).toBe(true);
-    expect(data.get(continueNoticeKey('p1'))).toBe('1');
-    expect(isContinueNoticeDismissed('p1', storage)).toBe(true);
-    expect(isContinueNoticeDismissed('p2', storage)).toBe(false);
-
-    const throwing = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); } };
-    expect(isContinueNoticeDismissed('p1', throwing)).toBe(false);
-    expect(dismissContinueNotice('p1', throwing)).toBe(false);
-    expect(isContinueNoticeDismissed('p1', null)).toBe(false);
-    expect(dismissContinueNotice('', storage)).toBe(false);
-  });
-
-  test('the Custom rules page shows the notice from loaded rules and hides it on dismiss', () => {
-    const page = src('routes/projects/[id]/rules/+page.svelte');
-    expect(page).toContain('const continuing = $derived(continuingRules(rules));');
-    expect(page).toMatch(/\{#if continuing\.length > 0 && !continueNoticeDismissed\}\s*<Alert [^>]*ondismiss=\{hideContinueNotice\}/);
   });
 });

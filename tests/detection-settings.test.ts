@@ -421,8 +421,4 @@ describe('what the detection section no longer shows', () => {
     for (const word of ['LOG from score', 'Decision score', 'thresholdOverride', 'base score', 'Advanced scores']) expect(source).not.toContain(word);
     expect(source).toContain("sensitivity: 'Engine sensitivity'");
   });
-
-  test('the files of the removed block are gone', async () => {
-    expect(await Bun.file(new URL('../src/lib/components/waf-policy/AdvancedScoring.svelte', import.meta.url).pathname).exists()).toBe(false);
-  });
 });

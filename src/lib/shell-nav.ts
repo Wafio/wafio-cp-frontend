@@ -104,7 +104,7 @@ export const PROJECT_NAV: readonly ProjectNavSection[] = [
         icon: 'waf',
         match: ['/waf'],
         description: 'HTTP inspection agents, their applications and inspection health',
-        keywords: ['waf', 'agent', 'web application firewall', 'sidecar', 'proxy', 'heartbeat'],
+        keywords: ['waf', 'agent', 'web application firewall', 'proxy', 'heartbeat'],
       },
       {
         id: 'rules',
