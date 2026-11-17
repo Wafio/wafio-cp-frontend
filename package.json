@@ -18,16 +18,12 @@
     "@sveltejs/adapter-static": "^4.0.1",
     "@sveltejs/kit": "^3.1.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
-    "@types/node": "^25.9.8",
-    "@typescript-eslint/types": "^8.70.1",
-    "esbuild": "^0.28.2",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "^6.0.3",
     "vite": "^8.3.5"
   },
   "dependencies": {
-    "@codemirror/autocomplete": "^6.20.2",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/lang-html": "^6.4.11",
     "@codemirror/lang-json": "^6.0.2",
@@ -43,7 +39,6 @@
     "svelte-awesome": "^3.3.5"
   },
   "overrides": {
-    "esbuild": "^0.28.2",
     "nanoid": "^3.3.19",
     "picomatch": "^4.0.7",
     "postcss": "^8.5.28",
@@ -51,7 +46,6 @@
     "@codemirror/view": "^6.42.1"
   },
   "resolutions": {
-    "esbuild": "^0.28.2",
     "nanoid": "^3.3.19",
     "picomatch": "^4.0.7",
     "postcss": "^8.5.28",
