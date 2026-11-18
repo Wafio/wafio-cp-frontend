@@ -119,6 +119,8 @@ describe('policy editor defaults and confirmation', () => {
   test('Block is not an action any more; one stored by an older control plane must be replaced before saving', () => {
     expect(['simulate', 'monitor', 'alert', 'kill'].every(isPolicyAction)).toBe(true);
     expect(isPolicyAction('block')).toBe(false);
+    expect(isPolicyAction(' Block ')).toBe(false);
+    expect(['KILL', 'dryrun', 'shadow', ''].every(isPolicyAction)).toBe(true);
     const named = (over: Partial<ReturnType<typeof defaultPolicyDraft>>) => validatePolicyDraft(defaultPolicyDraft({ name: 'x', ...over }));
     expect(named({ action: 'block', match_dest_ip: '192.0.2.10' }).action).toBeDefined();
     expect(named({ action: 'block', enabled: false }).action).toBeDefined();
@@ -129,6 +131,8 @@ describe('policy editor defaults and confirmation', () => {
   test('kernel enforcement is downgraded when process, file or uid is matched', () => {
     expect(kernelWillDowngrade(defaultPolicyDraft({ kernel_enforce: true, match_comm: 'nc' }))).toBe(true);
     expect(kernelWillDowngrade(defaultPolicyDraft({ kernel_enforce: true, match_uid: 0 }))).toBe(true);
+    expect(kernelWillDowngrade(defaultPolicyDraft({ kernel_enforce: true, match_dest_ip: '203.0.113.9' }))).toBe(true);
+    expect(kernelWillDowngrade(defaultPolicyDraft({ kernel_enforce: true, match_dest_port: '4444' }))).toBe(true);
     expect(kernelWillDowngrade(defaultPolicyDraft({ kernel_enforce: true }))).toBe(false);
   });
 });

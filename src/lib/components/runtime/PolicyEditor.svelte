@@ -335,7 +335,7 @@
     <div class="checks">
       <Switch bind:checked={draft.kernel_enforce} label="Enforce in the kernel" hint="Instant; evaluates event type and severity only." />
       {#if downgrade}
-        <Alert tone="warning" compact message="The kernel cannot evaluate process, file or UID matches: the agent keeps this rule in userspace, one ring-buffer round trip later. Clear those fields for in-kernel enforcement." />
+        <Alert tone="warning" compact message="The kernel cannot evaluate process, file, UID or destination matches: the agent keeps this rule in userspace, one ring-buffer round trip later. Clear those fields for in-kernel enforcement." />
       {/if}
       <Switch bind:checked={draft.enabled} label="Enabled" />
     </div>

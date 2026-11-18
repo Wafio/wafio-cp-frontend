@@ -19,9 +19,12 @@ export const POLICY_ACTIONS: ReadonlyArray<{ value: PolicyAction; label: string;
 
 export const ENFORCING_ACTIONS: readonly string[] = ['kill'];
 
-/** False for an action the dashboard no longer offers (a policy stored as Block by an older control plane). */
+/**
+ * False only for Block, which is removed (a policy stored by an older control plane). Other
+ * spellings the control plane keeps (KILL, dryrun, shadow, empty) stay valid: the agent parses them.
+ */
 export function isPolicyAction(action: string | null | undefined): boolean {
-  return POLICY_ACTIONS.some((a) => a.value === action);
+  return (action ?? '').trim().toLowerCase() !== 'block';
 }
 
 export function isEnforcingAction(action: string | null | undefined): boolean {
@@ -221,8 +224,15 @@ export function validatePolicyDraft(draft: PolicyDraft): DraftValidation {
 }
 
 /** Kernel enforcement cannot evaluate these matches; the agent runs the rule in userspace. */
-export function kernelWillDowngrade(draft: Pick<PolicyDraft, 'kernel_enforce' | 'match_comm' | 'match_filename' | 'match_uid'>): boolean {
-  return draft.kernel_enforce && (Boolean(draft.match_comm?.trim()) || Boolean(draft.match_filename?.trim()) || (draft.match_uid !== null && draft.match_uid !== undefined));
+export function kernelWillDowngrade(draft: Pick<PolicyDraft, 'kernel_enforce' | 'match_comm' | 'match_filename' | 'match_uid' | 'match_dest_port' | 'match_dest_ip'>): boolean {
+  return (
+    draft.kernel_enforce &&
+    (Boolean(draft.match_comm?.trim()) ||
+      Boolean(draft.match_filename?.trim()) ||
+      Boolean(draft.match_dest_port?.trim()) ||
+      Boolean(draft.match_dest_ip?.trim()) ||
+      (draft.match_uid !== null && draft.match_uid !== undefined))
+  );
 }
 
 /** Kill without a narrowing match needs kill_acknowledged (server guard). */
@@ -238,7 +248,7 @@ export function policySaveTier(draft: Pick<PolicyDraft, 'action' | 'enabled'>): 
 /** Where a saved policy is enforced, as reported by the agent. */
 export function policyPlacement(policy: Pick<EnforcementPolicy, 'action' | 'auto_downgraded' | 'kernel_enforce'>): { label: string; help: string } {
   if (!isPolicyAction(policy.action)) return { label: 'Not enforced', help: 'This action is no longer available. Edit the policy and choose another action.' };
-  if (policy.auto_downgraded) return { label: 'Userspace (downgraded)', help: 'Kernel enforcement was requested, but the process, file or UID match cannot be evaluated in the kernel. The agent enforces it in userspace, one ring-buffer round trip later.' };
+  if (policy.auto_downgraded) return { label: 'Userspace (downgraded)', help: 'Kernel enforcement was requested, but a process, file, UID or destination match cannot be evaluated in the kernel. The agent enforces it in userspace, one ring-buffer round trip later.' };
   if (policy.kernel_enforce) return { label: 'Kernel', help: 'Loaded into the kernel enforcement map; the action is applied before the event reaches userspace.' };
   return { label: 'Userspace', help: 'The agent evaluates the rule after reading the event; supports every match but adds a short delay.' };
 }
