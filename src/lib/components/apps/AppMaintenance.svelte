@@ -57,6 +57,7 @@
     canConfigure = false,
     dirty = $bindable(false),
     onchange = undefined,
+    initial = undefined,
   }: {
     projectId: string;
     appId: string;
@@ -72,6 +73,8 @@
     dirty?: boolean;
     /** The switch changed (or was read): the page updates its badge. */
     onchange?: (enabled: boolean) => void;
+    /** Settings to start from, as the server answers them (tests render the panel without a request). The browser still loads. */
+    initial?: MaintenanceState;
   } = $props();
 
   const uid = $props.id();
@@ -89,13 +92,14 @@
   })();
 
   // ── Data ────────────────────────────────────────────────────────────────
-  let loaded = $state<MaintenanceState | null>(null);
-  let loading = $state(true);
+  const seed = untrack(() => (initial ? normalizeMaintenanceState(initial) : null));
+  let loaded = $state<MaintenanceState | null>(seed);
+  let loading = $state(!seed);
   let loadFailed = $state(false);
   let busy = $state(false);
   let saving = $state(false);
   let epoch = 0;
-  let form = $state<MaintenanceForm>(formFromMaintenance(normalizeMaintenanceState(null).maintenance));
+  let form = $state<MaintenanceForm>(formFromMaintenance((seed ?? normalizeMaintenanceState(null)).maintenance));
   let now = $state(Date.now());
 
   const stored = $derived(loaded?.maintenance ?? normalizeMaintenanceState(null).maintenance);
