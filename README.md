@@ -1,4 +1,5 @@
 # wafio-cp-frontend
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16871/badge)](https://www.bestpractices.dev/projects/16871) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Wafio/wafio-cp-frontend/badge)](https://scorecard.dev/viewer/?uri=github.com/Wafio/wafio-cp-frontend)
 
 The Wafio control plane dashboard: projects, applications, WAF agents and policies, hosts (firewall and runtime security), credentials, members, audit log and system administration.
 

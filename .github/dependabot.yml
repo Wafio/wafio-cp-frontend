@@ -1,0 +1,16 @@
+# Dependabot opens weekly pull requests for the Bun dependencies (bun.lock) and for the pinned GitHub Actions.
+# It leaves out the base image in Dockerfile.bun. The two reviewed advisories in scripts/advisories.allow
+# are handled by that file, not here.
+
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
