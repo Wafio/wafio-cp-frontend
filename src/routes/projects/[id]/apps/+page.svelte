@@ -225,7 +225,10 @@
         <a class="app-link" href={appHref(base, projectId, a.id)}>{a.name}</a><ProxyWarningBadge warnings={a.proxy_warnings} />
       {:else if column.key === 'state'}
         {@const text = APP_STATE_TEXT[appState(a, binding)]}
-        <Badge tone={text.tone} title={text.hint}>{text.label}</Badge>
+        <span class="state">
+          <Badge tone={text.tone} title={text.hint}>{text.label}</Badge>
+          {#if a.maintenance_enabled}<Badge tone="warning" title="Maintenance mode is on: visitors see the maintenance page.">Maintenance</Badge>{/if}
+        </span>
       {:else if column.key === 'agent'}
         {#if binding}
           <span class="agent">
@@ -290,5 +293,6 @@
   .app-link, .agent a { color: var(--accent); text-decoration: none; font-weight: var(--fw-medium); }
   .app-link:hover, .agent a:hover { text-decoration: underline; }
   .agent { display: inline-flex; align-items: center; gap: var(--sp-2); }
+  .state { display: inline-flex; align-items: center; gap: var(--sp-1); }
   .route { font-family: var(--font-mono); font-size: var(--fs-xs); overflow-wrap: anywhere; color: var(--text-primary); }
 </style>

@@ -1822,6 +1822,8 @@ export interface App {
   /** FastCGI upstream settings ('' when unused; absent from older control planes). */
   fcgi_doc_root?: string;
   fcgi_index?: string;
+  /** Maintenance mode is on: the serving agent answers with the maintenance page (absent from older control planes). */
+  maintenance_enabled?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -1864,6 +1866,56 @@ export async function deleteApp(projectId: string, appId: string) {
   return api<{ deleted: boolean }>(`/api/projects/${projectId}/apps/${appId}`, {
     method: 'DELETE',
   });
+}
+
+// ── Maintenance mode (per application) ──────────────────────────────────
+
+/** domain.Maintenance: what the serving WAF agent answers with while `enabled`. */
+export interface Maintenance {
+  enabled: boolean;
+  /** Plain text; '' shows the default message. At most 500 characters. */
+  message: string;
+  /** '' or YYYY-MM-DDTHH:MM:SSZ (UTC). Shown to visitors and sent as Retry-After; maintenance never ends by itself. */
+  end_time: string;
+  /** Replaces the standard page for browsers; '' keeps the standard page. At most 65,536 bytes. */
+  custom_html: string;
+  /** IP addresses and CIDR ranges that still reach the site. */
+  allow_ips: string[];
+  /** Paths (and everything below them) that still reach the site. */
+  allow_paths: string[];
+  /** Set by the server when maintenance goes on; '' while off. */
+  started_at: string;
+}
+
+/** PUT body: the whole object, `started_at` is set by the server. */
+export type MaintenanceBody = Omit<Maintenance, 'started_at'>;
+
+/** Answer of GET and PUT …/apps/:appId/maintenance. */
+export interface MaintenanceState {
+  maintenance: Maintenance;
+  /** The serving agent reports maintenance mode: false = it does not, null = no agent or it never said. */
+  agent_supported: boolean | null;
+  /** The caller's address as the control plane sees it. */
+  client_ip: string;
+  default_message: string;
+  stock_html: string;
+}
+
+const hasMaintenance = (body: unknown): boolean => {
+  const value = (body as { maintenance?: unknown } | null)?.maintenance;
+  return value !== null && typeof value === 'object';
+};
+
+export async function getAppMaintenance(projectId: string, appId: string) {
+  return api<MaintenanceState>(`/api/projects/${projectId}/apps/${appId}/maintenance`, {}, hasMaintenance);
+}
+
+export async function putAppMaintenance(projectId: string, appId: string, body: MaintenanceBody) {
+  return api<MaintenanceState>(
+    `/api/projects/${projectId}/apps/${appId}/maintenance`,
+    { method: 'PUT', body: JSON.stringify(body) },
+    hasMaintenance
+  );
 }
 
 // ── WAF agent fleet (per-app) ─────────────────────────────────────────────
@@ -2438,10 +2490,12 @@ export interface AgentRoute {
   /** Read-only, viewer reads: header values and upstream userinfo were blanked. */
   secrets_redacted?: boolean;
   proxy_header_values_set?: boolean;
+  /** Read-only: maintenance mode is on for this application (absent from older control planes). */
+  maintenance_enabled?: boolean;
 }
 
 /** Writable route fields (handlers/waf_agent.go agentRouteBody). */
-export type AgentRouteBody = Omit<AgentRoute, 'app_id' | 'body_limit_bytes' | 'proxy_warnings' | 'secrets_redacted' | 'proxy_header_values_set'>;
+export type AgentRouteBody = Omit<AgentRoute, 'app_id' | 'body_limit_bytes' | 'proxy_warnings' | 'secrets_redacted' | 'proxy_header_values_set' | 'maintenance_enabled'>;
 
 export async function listAgentRoutes(projectId: string, agentId: string, page?: PageParams) {
   return api<{ routes: AgentRoute[] } & PageMeta>(

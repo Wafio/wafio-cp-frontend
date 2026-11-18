@@ -47,6 +47,8 @@ export const CONFIRM_TIERS = {
   'lower-protection': 'simple',
   'enable-firewall': 'simple',
   'enter-enforce': 'simple',
+  // Visitors get the maintenance page instead of the site; turning it off undoes it.
+  'enable-maintenance': 'simple',
   // Reversible removals and changes: re-adding restores the previous state.
   'delete-custom-rule': 'simple',
   'delete-detection-rule': 'simple',
