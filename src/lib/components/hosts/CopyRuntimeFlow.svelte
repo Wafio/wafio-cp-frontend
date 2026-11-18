@@ -354,7 +354,7 @@
         <label><input type="radio" name={`${uid}-conflict`} value="replace" bind:group={onConflict} /> Replace it with this copy</label>
       </fieldset>
       {#if enforcingCount}
-        <Alert tone="warning" compact message={`${enforcingCount} of the chosen policies kill or block processes. Each copy keeps its action and acknowledgement and enforces on every target host as soon as it is applied.`} />
+        <Alert tone="warning" compact message={`${enforcingCount} of the chosen policies kill processes or deny connections. Each copy keeps its action and acknowledgement and enforces on every target host as soon as it is applied.`} />
       {/if}
     {:else if step === 'targets'}
       <p class="lead">Copying {pickedItems.length || picked.length} {(pickedItems.length || picked.length) === 1 ? noun : nouns} from {sourceName}{onConflict === 'replace' ? ', replacing same-named ones' : ''}.</p>
@@ -366,7 +366,7 @@
       <ApplyResultsTable response={preview} caption="Dry run result per host" />
       {#if !wouldIds.length}<Alert tone="warning" compact message="No host would change. Go back to adjust the hosts or the items." />{/if}
     {:else if step === 'confirm'}
-      <p class="lead">Copy {picked.length} {picked.length === 1 ? noun : nouns} from {sourceName} to <strong>{phrase}</strong>. Hosts that failed or were skipped in the dry run are left out.{enforcingCount ? ` ${enforcingCount} of them kill or block processes.` : ''}</p>
+      <p class="lead">Copy {picked.length} {picked.length === 1 ? noun : nouns} from {sourceName} to <strong>{phrase}</strong>. Hosts that failed or were skipped in the dry run are left out.{enforcingCount ? ` ${enforcingCount} of them kill processes or deny connections.` : ''}</p>
       {#if typedTier}
         <label class="typed-label" for={`${uid}-typed`}>Type <strong>{phrase}</strong> to confirm</label>
         <input id={`${uid}-typed`} class="typed" type="text" bind:value={typed} autocomplete="off" spellcheck="false" onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void apply(); } }} />

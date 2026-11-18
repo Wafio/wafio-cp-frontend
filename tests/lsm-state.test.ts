@@ -45,17 +45,17 @@ describe('lsmReport', () => {
     expect(r?.label).toBe('Active');
     expect(r?.tone).toBe('info');
     expect(r?.alert).toBe('info');
-    expect(r?.meaning).toContain('Block policies deny');
+    expect(r?.meaning).toContain('denies connections to that address');
     expect(r?.action).toBeNull();
   });
 
-  test('kernel_lacks_bpf: reactive blocking and the boot parameter', () => {
+  test('kernel_lacks_bpf: block policies cannot deny, and the boot parameter', () => {
     const r = lsmReport(st({ lsm_active: false, lsm_state: 'kernel_lacks_bpf' }));
     expect(r?.label).toBe('Kernel lacks BPF-LSM');
     expect(r?.tone).toBe('warning');
     expect(r?.alert).toBe('warning');
     expect(r?.meaning).toContain('does not run BPF-LSM programs');
-    expect(r?.meaning).toContain('reactive only');
+    expect(r?.meaning).toContain('Block policies cannot deny');
     expect(r?.action).toContain('lsm=...,bpf');
   });
 
@@ -144,7 +144,7 @@ describe('bpfLsmDisplay', () => {
     expect(d.label).toBe('Kernel lacks BPF-LSM');
     expect(d.tone).toBe('warning');
     expect(d.hint).toBeNull();
-    expect(d.meaning).toContain('reactive only');
+    expect(d.meaning).toContain('Block policies cannot deny');
     expect(d.action).toContain('lsm=...,bpf');
     const active = bpfLsmDisplay(st({ lsm_active: true, lsm_state: 'active' }), { bpf_lsm: false });
     expect(active.source).toBe('agent');

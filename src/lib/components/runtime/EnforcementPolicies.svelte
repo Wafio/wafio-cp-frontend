@@ -1,7 +1,8 @@
 <!--
   EnforcementPolicies: the host's runtime enforcement policies. Enabling a
   kill or block policy from the status switch goes through the same typed
-  confirmation as saving it; disabling needs none. Hit counts refresh
+  confirmation as saving it; disabling needs none. A block policy the kernel
+  cannot enforce is not enabled and shows as Not enforced. Hit counts refresh
   every 15 s while the list is visible.
 -->
 <script lang="ts">
@@ -18,7 +19,7 @@
   import DateTime from '#lib/components/ui/DateTime.svelte';
   import type { DataTableColumn } from '#lib/components/ui/types.js';
   import CopyRuntimeFlow from '#lib/components/hosts/CopyRuntimeFlow.svelte';
-  import { needsKillAcknowledgement, policyMatchSummary, policyPlacement, policySaveTier, draftFromPolicy } from './policy';
+  import { BLOCK_NOT_ENFORCED, blockPolicyEnforces, hasEnforcingPolicies, needsKillAcknowledgement, policyMatchSummary, policyPlacement, policySaveTier, draftFromPolicy } from './policy';
 
   let {
     projectId,
@@ -100,6 +101,10 @@
   function requestToggle(policy: EnforcementPolicy) {
     if (!canConfigure) return;
     const next = !policy.enabled;
+    if (next && policy.action === 'block' && !blockPolicyEnforces(policy)) {
+      toast.error(BLOCK_NOT_ENFORCED, 'Policy not changed');
+      return;
+    }
     if (next && policySaveTier({ action: policy.action, enabled: true }) !== 'none') {
       confirmEnable = policy;
       return;
@@ -133,7 +138,7 @@
     { key: 'status', label: 'Status', nowrap: true },
   ];
 
-  const enforcing = $derived(policies.filter((p) => p.enabled && (p.action === 'kill' || p.action === 'block')).length);
+  const enforcing = $derived(policies.filter((p) => hasEnforcingPolicies([p])).length);
 </script>
 
 <section class="section" aria-labelledby="enf-title">
@@ -223,7 +228,7 @@
     <div class="confirm-body">
       <p>
         {confirmEnable.action === 'block'
-          ? 'The kernel denies execution (-EPERM) of matching programs before they start.'
+          ? `The kernel denies outbound connections to ${confirmEnable.match_dest_ip} on this host.`
           : 'The agent sends SIGKILL to every matching process. Misconfiguration can stop legitimate services.'}
       </p>
       <p>Match: {policyMatchSummary(confirmEnable).join(' · ')}.</p>

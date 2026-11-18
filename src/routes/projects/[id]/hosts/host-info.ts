@@ -124,7 +124,7 @@ export function hostLoadAverage(info: HostInfo | null | undefined): string {
   return present(info.load_average) ? String(info.load_average) : EMPTY;
 }
 
-/** BPF LSM availability: decides whether runtime `block` policies can be enforced. */
+/** BPF LSM availability: decides whether a runtime `block` policy can deny connections to its IPv4 address. */
 export function bpfLsmState(info: HostInfo | null | undefined): { state: 'active' | 'inactive' | 'unknown'; label: string } {
   const raw = hostInfoText(info, 'bpf_lsm').toLowerCase();
   if (['true', 'active', 'enabled', '1'].includes(raw)) return { state: 'active', label: 'Active' };

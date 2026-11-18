@@ -15,7 +15,7 @@ export const POLICY_ACTIONS: ReadonlyArray<{ value: PolicyAction; label: string;
   { value: 'monitor', label: 'Monitor', help: 'Observe only; no alert and no action.' },
   { value: 'alert', label: 'Alert', help: 'Flag matching events for review; no process is touched.' },
   { value: 'kill', label: 'Kill', help: 'Send SIGKILL to the matching process. PID 1, the agent and verified host daemons (sshd, systemd, containerd, dockerd, kubelet) are exempt.' },
-  { value: 'block', label: 'Block', help: 'Deny execution in the kernel (BPF-LSM, -EPERM) before the program starts.' },
+  { value: 'block', label: 'Block', help: 'Deny outbound connections to one destination IPv4 address in the kernel (BPF-LSM). That address must be the only match. To stop a process, use Kill.' },
 ];
 
 export const ENFORCING_ACTIONS: readonly string[] = ['kill', 'block'];
@@ -67,6 +67,7 @@ export function defaultPolicyDraft(prefill: Partial<PolicyDraft> = {}): PolicyDr
     match_filename: '',
     match_uid: null,
     match_dest_port: '',
+    match_dest_ip: '',
     action: 'simulate',
     kernel_enforce: false,
     mitre_technique_id: '',
@@ -87,6 +88,7 @@ export function draftFromPolicy(policy: EnforcementPolicy): PolicyDraft {
     match_filename: policy.match_filename ?? '',
     match_uid: policy.match_uid ?? null,
     match_dest_port: policy.match_dest_port ?? '',
+    match_dest_ip: policy.match_dest_ip ?? '',
     kernel_enforce: Boolean(policy.kernel_enforce),
     mitre_technique_id: policy.mitre_technique_id ?? '',
     mitre_tactic: policy.mitre_tactic ?? '',
@@ -135,10 +137,10 @@ export function commTermMatches(mode: CommMatchMode, term: string, name: string)
  * editor preview: event type (any listed, case-insensitive), minimum
  * severity, comm terms under match_comm_mode (execve also matches the
  * executed file's basename), filename substring terms, exact uid,
- * destination port list. The enabled flag is ignored (the preview answers
- * "would it match").
+ * destination port list, destination IP (connect and sendto events). The
+ * enabled flag is ignored (the preview answers "would it match").
  */
-export function policyMatchesEvent(policy: Pick<PolicyDraft, 'event_types' | 'min_severity' | 'match_comm' | 'match_filename' | 'match_uid' | 'match_dest_port'> & { match_comm_mode?: CommMatchMode }, event: TraceEvent): boolean {
+export function policyMatchesEvent(policy: Pick<PolicyDraft, 'event_types' | 'min_severity' | 'match_comm' | 'match_filename' | 'match_uid' | 'match_dest_port' | 'match_dest_ip'> & { match_comm_mode?: CommMatchMode }, event: TraceEvent): boolean {
   if (policy.event_types.length > 0 && !policy.event_types.some((t) => t.toLowerCase() === (event.event_name ?? '').toLowerCase())) return false;
   if (policy.min_severity && policy.min_severity !== 'info') {
     if (severityRank(event.severity_name || event.severity) < severityRank(policy.min_severity)) return false;
@@ -162,6 +164,8 @@ export function policyMatchesEvent(policy: Pick<PolicyDraft, 'event_types' | 'mi
     .map((t) => t.trim())
     .filter(Boolean);
   if (ports.length > 0 && !ports.some((p) => /^\d+$/.test(p) && Number(p) <= 65535 && Number(p) === event.port)) return false;
+  const destIp = policy.match_dest_ip?.trim();
+  if (destIp && !(['connect', 'sendto'].includes((event.event_name ?? '').toLowerCase()) && (event.addr ?? '').replace(/^::ffff:/i, '') === destIp)) return false;
   return true;
 }
 
@@ -190,6 +194,7 @@ export function previewMatches(policy: PolicyDraft, events: readonly TraceEvent[
 
 export interface DraftValidation {
   name?: string;
+  action?: string;
   match_uid?: string;
   match_dest_port?: string;
 }
@@ -207,8 +212,32 @@ export function validatePolicyDraft(draft: PolicyDraft): DraftValidation {
   if (ports.some((p) => !/^\d+$/.test(p) || Number(p) < 1 || Number(p) > 65535)) {
     errors.match_dest_port = 'Enter ports from 1 to 65535, separated by commas.';
   }
+  if (draft.enabled && draft.action === 'block' && !blockPolicyEnforces(draft)) errors.action = BLOCK_NOT_ENFORCED;
   return errors;
 }
+
+type BlockMatchFields = Pick<EnforcementPolicy, 'event_types' | 'min_severity' | 'match_comm' | 'match_filename' | 'match_uid' | 'match_dest_port' | 'match_dest_ip'>;
+
+/**
+ * A block policy is enforced in one case: the kernel connect blocklist, which denies every
+ * connect to one IPv4 address. It needs that address as the only match, the connect event
+ * (or none) and no minimum severity. Mirrors checkBlockPolicy in wafio-cp-backend.
+ */
+export function blockPolicyEnforces(p: BlockMatchFields): boolean {
+  const events = p.event_types ?? [];
+  return (
+    Boolean(p.match_dest_ip?.trim()) &&
+    !p.match_comm &&
+    !p.match_filename &&
+    (p.match_uid === null || p.match_uid === undefined) &&
+    !p.match_dest_port &&
+    (events.length === 0 || events.some((t) => t.toLowerCase() === 'connect')) &&
+    (!p.min_severity || p.min_severity.toLowerCase() === 'info')
+  );
+}
+
+export const BLOCK_NOT_ENFORCED =
+  'Block only denies outbound connections to one destination IPv4 address. Set Destination IP, leave the process, file, user and port matches empty, select only the connect event (or none) and set the minimum severity to Info. To stop a process, use Kill.';
 
 /** Kernel enforcement cannot evaluate these matches; the agent runs the rule in userspace. */
 export function kernelWillDowngrade(draft: Pick<PolicyDraft, 'kernel_enforce' | 'match_comm' | 'match_filename' | 'match_uid'>): boolean {
@@ -226,8 +255,12 @@ export function policySaveTier(draft: Pick<PolicyDraft, 'action' | 'enabled'>): 
 }
 
 /** Where a saved policy is enforced, as reported by the agent. */
-export function policyPlacement(policy: Pick<EnforcementPolicy, 'action' | 'auto_downgraded' | 'kernel_enforce'>): { label: string; help: string } {
-  if (policy.action === 'block') return { label: 'Kernel BPF-LSM', help: 'Execution is denied (-EPERM) in the kernel before the program starts.' };
+export function policyPlacement(policy: Pick<EnforcementPolicy, 'action' | 'auto_downgraded' | 'kernel_enforce'> & BlockMatchFields): { label: string; help: string } {
+  if (policy.action === 'block') {
+    return blockPolicyEnforces(policy)
+      ? { label: 'Kernel BPF-LSM', help: 'Connections to the address are denied in the kernel.' }
+      : { label: 'Not enforced', help: 'Block only applies to a connect policy whose only match is a destination IPv4. Use Kill to stop a process.' };
+  }
   if (policy.auto_downgraded) return { label: 'Userspace (downgraded)', help: 'Kernel enforcement was requested, but the process, file or UID match cannot be evaluated in the kernel. The agent enforces it in userspace, one ring-buffer round trip later.' };
   if (policy.kernel_enforce) return { label: 'Kernel', help: 'Loaded into the kernel enforcement map; the action is applied before the event reaches userspace.' };
   return { label: 'Userspace', help: 'The agent evaluates the rule after reading the event; supports every match but adds a short delay.' };
@@ -248,9 +281,9 @@ export function policyMatchSummary(policy: Pick<EnforcementPolicy, 'event_types'
   return out.length ? out : ['every event'];
 }
 
-/** Enabled kill/block policies (disabling tracing removes their enforcement). */
-export function hasEnforcingPolicies(policies: ReadonlyArray<Pick<EnforcementPolicy, 'action' | 'enabled'>>): boolean {
-  return policies.some((p) => p.enabled && isEnforcingAction(p.action));
+/** Enabled kill policies and block policies the kernel enforces (disabling tracing removes their enforcement). */
+export function hasEnforcingPolicies(policies: ReadonlyArray<Pick<EnforcementPolicy, 'action' | 'enabled'> & BlockMatchFields>): boolean {
+  return policies.some((p) => p.enabled && (p.action === 'block' ? blockPolicyEnforces(p) : isEnforcingAction(p.action)));
 }
 
 /** Event types the configuration captures (an empty list means all of `all`). */

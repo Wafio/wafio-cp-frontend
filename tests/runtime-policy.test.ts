@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { EnforcementPolicy, TraceConfig, TraceEvent } from '../src/lib/api';
 import {
+  blockPolicyEnforces,
   defaultPolicyDraft,
   draftFromEvent,
   draftFromPolicy,
@@ -115,6 +116,30 @@ describe('policy editor defaults and confirmation', () => {
     expect(validatePolicyDraft(defaultPolicyDraft({ name: 'x', match_uid: 0, match_dest_port: '22, 443' }))).toEqual({});
   });
 
+  test('a block policy is enforced only as a connect denial on one destination IPv4', () => {
+    const block = (over: Partial<ReturnType<typeof defaultPolicyDraft>> = {}) => defaultPolicyDraft({ action: 'block', match_dest_ip: '192.0.2.10', ...over });
+    expect(blockPolicyEnforces(block())).toBe(true);
+    expect(blockPolicyEnforces(block({ event_types: ['execve', 'Connect'] }))).toBe(true);
+    expect(blockPolicyEnforces(block({ min_severity: '' }))).toBe(true);
+    expect(blockPolicyEnforces(defaultPolicyDraft({ action: 'block' }))).toBe(false);
+    expect(blockPolicyEnforces(block({ match_dest_ip: '  ' }))).toBe(false);
+    expect(blockPolicyEnforces(block({ match_comm: 'nc' }))).toBe(false);
+    expect(blockPolicyEnforces(block({ match_filename: '/tmp/x' }))).toBe(false);
+    expect(blockPolicyEnforces(block({ match_uid: 0 }))).toBe(false);
+    expect(blockPolicyEnforces(block({ match_dest_port: '443' }))).toBe(false);
+    expect(blockPolicyEnforces(block({ event_types: ['execve'] }))).toBe(false);
+    expect(blockPolicyEnforces(block({ min_severity: 'high' }))).toBe(false);
+  });
+
+  test('an enabled block policy the kernel cannot enforce is not saved; disabled or another action is', () => {
+    const named = (over: Partial<ReturnType<typeof defaultPolicyDraft>>) => validatePolicyDraft(defaultPolicyDraft({ name: 'x', ...over }));
+    expect(named({ action: 'block' }).action).toBeDefined();
+    expect(named({ action: 'block', match_comm: 'nc', match_dest_ip: '192.0.2.10' }).action).toBeDefined();
+    expect(named({ action: 'block', match_dest_ip: '192.0.2.10' })).toEqual({});
+    expect(named({ action: 'block', enabled: false })).toEqual({});
+    expect(named({ action: 'kill', match_comm: 'xmrig' })).toEqual({});
+  });
+
   test('kernel enforcement is downgraded when process, file or uid is matched', () => {
     expect(kernelWillDowngrade(defaultPolicyDraft({ kernel_enforce: true, match_comm: 'nc' }))).toBe(true);
     expect(kernelWillDowngrade(defaultPolicyDraft({ kernel_enforce: true, match_uid: 0 }))).toBe(true);
@@ -169,6 +194,14 @@ describe('policyMatchesEvent mirrors PolicyEngine.matchPolicy', () => {
     expect(policyMatchesEvent(defaultPolicyDraft({ match_dest_port: '4444' }), event({ port: 22 }))).toBe(false);
   });
 
+  test('destination IP matches connect and sendto events to that address', () => {
+    const toIp = (over: Partial<TraceEvent>) => policyMatchesEvent(defaultPolicyDraft({ match_dest_ip: '192.0.2.10' }), event(over));
+    expect(toIp({ event_name: 'connect', addr: '192.0.2.10' })).toBe(true);
+    expect(toIp({ event_name: 'sendto', addr: '::ffff:192.0.2.10' })).toBe(true);
+    expect(toIp({ event_name: 'connect', addr: '192.0.2.11' })).toBe(false);
+    expect(toIp({ event_name: 'bind', addr: '192.0.2.10' })).toBe(false);
+  });
+
   test('previewMatches counts matches and top processes', () => {
     const preview = previewMatches(defaultPolicyDraft({ event_types: ['execve'] }), [event(), event({ comm: 'sh' }), event({ event_name: 'connect' }), event()]);
     expect(preview.matched).toBe(3);
@@ -198,7 +231,10 @@ describe('policy display helpers', () => {
   } satisfies EnforcementPolicy;
 
   test('placement explains block, downgrade, kernel and userspace', () => {
-    expect(policyPlacement({ ...policy, action: 'block' }).label).toBe('Kernel BPF-LSM');
+    const connectBlock = { ...policy, action: 'block', event_types: [], min_severity: 'info', match_comm: '', match_dest_ip: '192.0.2.10' };
+    expect(policyPlacement(connectBlock).label).toBe('Kernel BPF-LSM');
+    expect(policyPlacement({ ...connectBlock, match_comm: 'nc' }).label).toBe('Not enforced');
+    expect(policyPlacement({ ...policy, action: 'block' }).label).toBe('Not enforced');
     expect(policyPlacement(policy).label).toBe('Userspace (downgraded)');
     expect(policyPlacement({ ...policy, auto_downgraded: false }).label).toBe('Kernel');
     expect(policyPlacement({ ...policy, auto_downgraded: false, kernel_enforce: false }).label).toBe('Userspace');
@@ -212,6 +248,9 @@ describe('policy display helpers', () => {
     expect(policyMatchSummary({ ...policy, event_types: [], match_comm: '' })).toEqual(['every event']);
     expect(hasEnforcingPolicies([policy])).toBe(true);
     expect(hasEnforcingPolicies([{ ...policy, enabled: false }, { ...policy, action: 'alert' }])).toBe(false);
+    // A block policy counts only when the kernel enforces it.
+    expect(hasEnforcingPolicies([{ ...policy, action: 'block' }])).toBe(false);
+    expect(hasEnforcingPolicies([{ ...policy, action: 'block', event_types: [], min_severity: 'info', match_comm: '', match_dest_ip: '192.0.2.10' }])).toBe(true);
     expect(draftFromPolicy(policy).event_types).not.toBe(policy.event_types);
   });
 });

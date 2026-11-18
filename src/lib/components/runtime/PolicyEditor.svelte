@@ -22,9 +22,11 @@
   import { timeRangeLabel, timeRangeMinutes, type TimeRangeKey } from '#lib/components/ui/time-range.js';
   import { mitreFromEventTypes } from './mitre';
   import {
+    BLOCK_NOT_ENFORCED,
     COMM_MATCH_MODES,
     MIN_SEVERITY_CHOICES,
     POLICY_ACTIONS,
+    blockPolicyEnforces,
     defaultPolicyDraft,
     draftFromPolicy,
     kernelWillDowngrade,
@@ -99,6 +101,7 @@
   const tier = $derived(policySaveTier(draft));
   const broadKill = $derived(needsKillAcknowledgement(draft));
   const downgrade = $derived(kernelWillDowngrade(draft));
+  const blockIdle = $derived(draft.action === 'block' && !blockPolicyEnforces(draft));
   const preview = $derived(sample ? previewMatches(draft, sample) : null);
   const commModeHelp = $derived(COMM_MATCH_MODES.find((m) => m.value === draft.match_comm_mode)?.help ?? '');
 
@@ -232,8 +235,14 @@
         </label>
       {/each}
     </fieldset>
-    {#if tier === 'typed'}
-      <Alert tone="warning" title={draft.action === 'kill' ? 'This policy kills processes' : 'This policy blocks execution'}>
+    {#if blockIdle}
+      <Alert tone={draft.enabled ? 'error' : 'warning'} title="This block policy would not be enforced">
+        {BLOCK_NOT_ENFORCED}
+        {#if draft.enabled}Turn Enabled off to save it as it is, or choose another action.{/if}
+      </Alert>
+    {/if}
+    {#if tier === 'typed' && !blockIdle}
+      <Alert tone="warning" title={draft.action === 'kill' ? 'This policy kills processes' : 'This policy denies connections'}>
         {#if broadKill}It has no narrowing process, file, UID, port or IP match (UID 0, “/”, system directories such as /usr/ or /tmp/ and terms shorter than 3 characters do not narrow), so it applies to every process that emits its events. Exempt are only PID 1, the agent and verified host daemons: sshd, sshd-session, sshd-auth, systemd, systemd-journald, containerd, dockerd, kubelet and names added on the host agent, running as root from the host’s own binary.{/if}
         {#if draft.action === 'kill' && draft.kernel_enforce}In the kernel a daemon is exempt once the agent has listed it (at start, then every 5 seconds); a child it forks stays exempt until it runs another program.{/if}
         Saving asks you to type the policy name. Run it in Simulate first and check Explore → Enforcement actions.
@@ -277,6 +286,11 @@
           <input class="input" bind:value={draft.match_dest_port} aria-invalid={errors.match_dest_port ? 'true' : undefined} />
           <span class="hint">connect, bind and listen events only.</span>
           {#if errors.match_dest_port}<span class="error">{errors.match_dest_port}</span>{/if}
+        </label>
+        <label class="field">
+          <span class="label">Destination IP</span>
+          <input class="input" bind:value={draft.match_dest_ip} placeholder="203.0.113.7" />
+          <span class="hint">One IPv4 address, for connect and sendto events. A Block policy needs this and no other match.</span>
         </label>
       </div>
     </fieldset>
@@ -379,7 +393,7 @@
     {#if draft.action === 'kill'}
       <p>The agent sends SIGKILL to every process that matches, on {scope.agent?.hostname || 'this host'}. Misconfiguration can stop legitimate services.</p>
     {:else if draft.action === 'block'}
-      <p>The kernel denies execution (-EPERM) of matching programs before they start, on {scope.agent?.hostname || 'this host'}.</p>
+      <p>The kernel denies outbound connections to {draft.match_dest_ip?.trim()} on {scope.agent?.hostname || 'this host'}.</p>
     {/if}
     {#if broadKill}<p>It has no narrowing match: every process that emits its events is killed, except PID 1, the agent and verified host daemons (sshd, systemd, containerd, dockerd, kubelet and names added on the host agent). Confirming records your acknowledgement.</p>{/if}
     {#if preview}<p>Preview: {formatNumber(preview.matched)} of the newest {formatNumber(preview.sampled)} stored events would have matched.</p>{:else}<p>No preview was run. Consider Simulate first.</p>{/if}

@@ -112,7 +112,7 @@ export function strictestTier(...tiers: ConfirmTier[]): ConfirmTier {
   return tiers.reduce<ConfirmTier>((a, b) => (RANK[b] > RANK[a] ? b : a), 'none');
 }
 
-/** Runtime enforcement policy actions that can stop or block processes. */
+/** Runtime enforcement policy actions that can stop a process or deny connections. */
 export const ENFORCING_POLICY_ACTIONS = ['kill', 'block'] as const;
 
 /**

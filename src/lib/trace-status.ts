@@ -134,12 +134,12 @@ const BOOT_PARAMETER = 'add bpf to the lsm= boot parameter of the kernel (lsm=..
 const LSM_TEXT: Record<LsmState, { label: string; meaning: string; action: string | null }> = {
   active: {
     label: 'Active',
-    meaning: 'The kernel runs the BPF-LSM programs of the agent. Block policies deny a program start in the kernel, before it runs.',
+    meaning: 'The kernel runs the BPF-LSM programs of the agent. A Block policy whose only match is a destination IPv4 address denies connections to that address in the kernel.',
     action: null,
   },
   kernel_lacks_bpf: {
     label: 'Kernel lacks BPF-LSM',
-    meaning: `The kernel does not run BPF-LSM programs, so the agent attached none. Blocking is reactive only. ${REACTIVE}`,
+    meaning: `The kernel does not run BPF-LSM programs, so the agent attached none. ${REACTIVE}`,
     action: `To turn it on, ${BOOT_PARAMETER}.`,
   },
   unverified: {
