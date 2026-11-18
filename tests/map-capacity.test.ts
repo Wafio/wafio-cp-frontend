@@ -70,6 +70,7 @@ describe('map capacity view', () => {
   test('the header names the scale, who set it and the memory', () => {
     expect(mapCapacityView(sizing(), now)?.header).toBe('Map scale 0.24, automatic, from 1.9 GiB memory');
     expect(mapCapacityView(sizing({ memory_bytes: undefined }), now)?.header).toBe('Map scale 0.24, automatic');
+    expect(mapCapacityView(sizing({ scale: 0.06, memory_bytes: 512 * 1024 * 1024, memory_source: 'cgroup' }), now)?.header).toBe('Map scale 0.06, automatic, from 512 MiB cgroup memory limit');
     expect(mapCapacityView(sizing({ scale: 1 }), now)?.header).toBe('Map scale 1, automatic, from 1.9 GiB memory');
     expect(mapCapacityView(sizing({ scale: 0.001, source: 'env' }), now)?.header).toBe('Map scale 0.001, set by WAFIO_EBPF_MAP_SCALE');
     expect(mapCapacityView(sizing({ scale: 0.5, source: '' }), now)?.header).toBe('Map scale 0.5');

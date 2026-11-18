@@ -86,7 +86,9 @@ function header(s: MapSizing): string {
   let text = `Map scale ${Number.isFinite(s.scale) ? Number(s.scale.toPrecision(2)) : 'unknown'}`;
   if (s.source === 'auto') {
     text += ', automatic';
-    if (s.memory_bytes && s.memory_bytes > 0) text += `, from ${formatBytes(s.memory_bytes)} memory`;
+    // A cgroup memory.max lowered the basis below the host memory: say so, or the figure looks wrong.
+    const basis = s.memory_source === 'cgroup' ? 'cgroup memory limit' : 'memory';
+    if (s.memory_bytes && s.memory_bytes > 0) text += `, from ${formatBytes(s.memory_bytes)} ${basis}`;
   } else if (s.source) {
     text += ', set by WAFIO_EBPF_MAP_SCALE';
   }
