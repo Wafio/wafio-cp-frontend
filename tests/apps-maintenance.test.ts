@@ -385,8 +385,14 @@ describe('notices and texts', () => {
     expect(maintenanceNotices({ ...base, canConfigure: false })).toEqual(['readonly']);
   });
 
+  test('no agent serves the application: the settings wait for one', () => {
+    expect(maintenanceNotices({ ...base, assigned: false, supported: null, online: undefined, enabled: true })).toEqual(['unassigned']);
+    expect(maintenanceNotices({ ...base, assigned: true })).toEqual([]);
+  });
+
   test('notices come in the order of the page', () => {
-    expect(maintenanceNotices({ enabled: true, supported: false, online: false, canConfigure: false, endTime: HOUR_AGO, now: NOW })).toEqual([
+    expect(maintenanceNotices({ assigned: false, enabled: true, supported: false, online: false, canConfigure: false, endTime: HOUR_AGO, now: NOW })).toEqual([
+      'unassigned',
       'unsupported-on',
       'offline',
       'end-passed',

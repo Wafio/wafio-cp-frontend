@@ -286,10 +286,12 @@ export function normalizeMaintenanceState(raw: Partial<MaintenanceState> | null 
 
 // ── Notices and texts ──────────────────────────────────────────────────────
 
-export type MaintenanceNotice = 'unsupported-off' | 'unsupported-on' | 'offline' | 'end-passed' | 'readonly';
+export type MaintenanceNotice = 'unassigned' | 'unsupported-off' | 'unsupported-on' | 'offline' | 'end-passed' | 'readonly';
 
 /** The alerts above the switch, in the order they are shown. */
 export function maintenanceNotices(o: {
+  /** A WAF agent serves the application (undefined: yes). */
+  assigned?: boolean;
   enabled: boolean;
   /** `agent_supported` of the server: false = the agent cannot, null = unknown. */
   supported: boolean | null;
@@ -300,6 +302,7 @@ export function maintenanceNotices(o: {
   now: number;
 }): MaintenanceNotice[] {
   const out: MaintenanceNotice[] = [];
+  if (o.assigned === false) out.push('unassigned');
   if (o.supported === false) out.push(o.enabled ? 'unsupported-on' : 'unsupported-off');
   if (o.online === false) out.push('offline');
   if (o.enabled && endPassed(o.endTime, o.now)) out.push('end-passed');

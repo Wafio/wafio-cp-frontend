@@ -50,11 +50,13 @@ export function normalizeAppTab(value: string | null | undefined): AppTab | null
 /**
  * Tabs for the page. Config, Block window and Maintenance work through the
  * assigned WAF agent, so they are disabled (with the reason as tooltip) while
- * the application is unassigned.
+ * the application is unassigned. `maintenance` keeps the Maintenance tab open
+ * without an agent: maintenance mode is on (it must stay reachable to turn it
+ * off before an agent is assigned again), or was on during this visit.
  */
-export function appTabs(opts: { assigned: boolean }): TabItem[] {
+export function appTabs(opts: { assigned: boolean; maintenance?: boolean }): TabItem[] {
   return APP_TAB_ORDER.map((id) => {
-    const needsAgent = id === 'config' || id === 'blockwindow' || id === 'maintenance';
+    const needsAgent = id === 'config' || id === 'blockwindow' || (id === 'maintenance' && !opts.maintenance);
     const disabled = needsAgent && !opts.assigned;
     return {
       id,
@@ -66,7 +68,7 @@ export function appTabs(opts: { assigned: boolean }): TabItem[] {
 }
 
 /** Active tab from the query string; a disabled or unknown tab falls back to Monitoring. */
-export function readAppTab(search: ReadonlyURLSearchParams | string, opts: { assigned: boolean }): AppTab {
+export function readAppTab(search: ReadonlyURLSearchParams | string, opts: { assigned: boolean; maintenance?: boolean }): AppTab {
   const params = new URLSearchParams(typeof search === 'string' ? search : search.toString());
   const tab = normalizeAppTab(params.get(APP_TAB_PARAM));
   if (!tab) return DEFAULT_APP_TAB;

@@ -45,6 +45,7 @@
     projectId,
     appId,
     appName = '',
+    assigned = true,
     agentName = '',
     agentOnline = undefined,
     canConfigure = false,
@@ -54,6 +55,8 @@
     projectId: string;
     appId: string;
     appName?: string;
+    /** A WAF agent serves the application (the tab stays open without one while maintenance is on). */
+    assigned?: boolean;
     /** The WAF agent that serves the application, for the messages. */
     agentName?: string;
     /** Whether that agent is connected (undefined: not known). */
@@ -159,7 +162,7 @@
   const isDirty = $derived(loaded !== null && !sameSettings(current, stored));
   const invalid = $derived(Object.keys(errors).length > 0);
   const bounds = $derived(localInputBounds(now));
-  const notices = $derived(maintenanceNotices({ enabled, supported: loaded?.agent_supported ?? null, online: agentOnline, canConfigure, endTime: stored.end_time, now }));
+  const notices = $derived(maintenanceNotices({ assigned, enabled, supported: loaded?.agent_supported ?? null, online: agentOnline, canConfigure, endTime: stored.end_time, now }));
   const lockedSwitch = $derived(switchDisabled({ canConfigure, busy, enabled, supported: loaded?.agent_supported ?? null }));
   const clientIp = $derived(loaded?.client_ip ?? '');
   const showMyIp = $derived(Boolean(clientIp) && !parseLines(form.ips).includes(clientIp));
@@ -352,7 +355,9 @@
     {#if notices.length > 0}
       <div class="mt-notices">
         {#each notices as notice (notice)}
-          {#if notice === 'unsupported-off'}
+          {#if notice === 'unassigned'}
+            <Alert tone="info" message="No WAF agent serves this application. These settings take effect once one is assigned on the Assignment tab." />
+          {:else if notice === 'unsupported-off'}
             <Alert tone="warning" message={`${agent} does not support maintenance mode. Upgrade the WAF agent to the latest release, then turn it on here.`} />
           {:else if notice === 'unsupported-on'}
             <Alert tone="error" message={`Maintenance mode is on, but ${agentName || 'the WAF agent'} does not support it, so visitors still see the site. Upgrade the WAF agent or turn maintenance mode off.`} />

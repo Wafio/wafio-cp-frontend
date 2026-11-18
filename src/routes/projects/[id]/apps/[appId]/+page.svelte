@@ -141,8 +141,12 @@
   );
 
   // ── Tabs (URL) ──────────────────────────────────────────────────────────
-  const tabs = $derived(appTabs({ assigned }));
-  const tab = $derived(readAppTab(page.url.searchParams, { assigned }));
+  // Maintenance mode is on, or was on during this visit (set by setMaintenance), so its tab
+  // stays open without an agent and turning it off does not move the page to another tab.
+  let maintenanceSeenFor = $state('');
+  const maintenanceOpen = $derived(Boolean(app?.maintenance_enabled) || (app !== null && maintenanceSeenFor === app.id));
+  const tabs = $derived(appTabs({ assigned, maintenance: maintenanceOpen }));
+  const tab = $derived(readAppTab(page.url.searchParams, { assigned, maintenance: maintenanceOpen }));
   const requestedTab = $derived(normalizeAppTab(page.url.searchParams.get('tab')));
   const tabUnavailable = $derived(Boolean(app) && !loading && requestedTab !== null && requestedTab !== tab);
   const TABS_ID = 'app-tabs';
@@ -250,7 +254,9 @@
   // ── Maintenance ─────────────────────────────────────────────────────────
   // The Maintenance tab owns the switch; the badge and the banner follow it.
   function setMaintenance(enabled: boolean) {
-    if (app && Boolean(app.maintenance_enabled) !== enabled) app = { ...app, maintenance_enabled: enabled };
+    if (!app) return;
+    if (enabled) maintenanceSeenFor = app.id;
+    if (Boolean(app.maintenance_enabled) !== enabled) app = { ...app, maintenance_enabled: enabled };
   }
 
   // ── Delete (typed confirmation, owner) ─────────────────────────────────
@@ -335,11 +341,15 @@
         <Alert tone="info" message="No WAF agent serves this application, so no new decisions are recorded. Assign one on the Assignment tab." />
       {/if}
 
-      {#if app.maintenance_enabled && assignment && tab !== 'maintenance'}
+      {#if app.maintenance_enabled && tab !== 'maintenance'}
         <Alert tone="warning">
           <p>
-            Maintenance mode is on: visitors see the maintenance page instead of the site.{#if tab === 'monitoring' || tab === 'decisions'}
-              Requests answered with the maintenance page are not recorded as decisions.{/if}
+            {#if !assignment}
+              Maintenance mode is on: visitors get the maintenance page as soon as a WAF agent is assigned.
+            {:else}
+              Maintenance mode is on: visitors see the maintenance page instead of the site.{#if tab === 'monitoring' || tab === 'decisions'}
+                Requests answered with the maintenance page are not recorded as decisions.{/if}
+            {/if}
           </p>
           {#snippet actions()}
             <Button variant="secondary" size="sm" href={appHref(base, projectId, app.id, 'maintenance')}>Open the Maintenance tab</Button>
@@ -355,11 +365,12 @@
         <AppConfigPanel {projectId} agentId={assignment.agent_id} appId={app.id} appName={app.name} canConfigure={ctx.canConfigure} enforcementMode={route?.mode ?? null} bind:dirty={configDirty} />
       {:else if tab === 'blockwindow' && assignment}
         <AppBlockWindow {projectId} agentId={assignment.agent_id} agentName={agent?.name ?? ''} canConfigure={ctx.canConfigure} />
-      {:else if tab === 'maintenance' && assignment}
+      {:else if tab === 'maintenance'}
         <AppMaintenance
           {projectId}
           appId={app.id}
           appName={app.name}
+          assigned={Boolean(assignment)}
           agentName={agent?.name ?? ''}
           agentOnline={agent?.is_online}
           canConfigure={ctx.canConfigure}
