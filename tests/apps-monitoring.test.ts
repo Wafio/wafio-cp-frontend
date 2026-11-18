@@ -120,12 +120,20 @@ describe('traffic timeline', () => {
 });
 
 describe('application page URLs', () => {
-  test('config and block window need an assigned agent', () => {
+  test('config, block window and maintenance need an assigned agent', () => {
     const tabs = appTabs({ assigned: false });
-    expect(tabs.filter((t) => t.disabled).map((t) => t.id)).toEqual(['config', 'blockwindow']);
+    expect(tabs.filter((t) => t.disabled).map((t) => t.id)).toEqual(['config', 'blockwindow', 'maintenance']);
     expect(appTabs({ assigned: true }).some((t) => t.disabled)).toBe(false);
     expect(readAppTab('?tab=config', { assigned: false })).toBe('monitoring');
     expect(readAppTab('?tab=config', { assigned: true })).toBe('config');
+    expect(readAppTab('?tab=maintenance', { assigned: false })).toBe('monitoring');
+    expect(readAppTab('?tab=maintenance', { assigned: true })).toBe('maintenance');
+    expect(appTabs({ assigned: true }).map((t) => t.id)).toEqual(['monitoring', 'decisions', 'config', 'blockwindow', 'maintenance', 'routing', 'assignment']);
+    expect(appTabs({ assigned: true }).find((t) => t.id === 'maintenance')?.label).toBe('Maintenance');
+    // While maintenance mode is on, its tab stays open without an agent, so it can be turned off.
+    expect(appTabs({ assigned: false, maintenance: true }).filter((t) => t.disabled).map((t) => t.id)).toEqual(['config', 'blockwindow']);
+    expect(readAppTab('?tab=maintenance', { assigned: false, maintenance: true })).toBe('maintenance');
+    expect(readAppTab('?tab=config', { assigned: false, maintenance: true })).toBe('monitoring');
     expect(readAppTab('?tab=nope', { assigned: true })).toBe('monitoring');
   });
 

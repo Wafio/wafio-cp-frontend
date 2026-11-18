@@ -1,11 +1,11 @@
 <!--
   Application page, the single page of an application. Tabs live in the URL
   (?tab=monitoring|decisions|config|
-  blockwindow|routing|assignment), so alerts and other pages can deep-link
-  and Back restores the previous tab.
+  blockwindow|maintenance|routing|assignment), so alerts and other pages can
+  deep-link and Back restores the previous tab.
 
-  Unsaved edits in Config (ConfigWafForm) and Routing (AppRouteForm) are
-  guarded on tab switch and on navigation away.
+  Unsaved edits in Config (ConfigWafForm), Maintenance and Routing
+  (AppRouteForm) are guarded on tab switch and on navigation away.
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
@@ -38,9 +38,11 @@
   import AppAssignment from '#lib/components/AppAssignment.svelte';
   import AppBlockWindow from '#lib/components/apps/AppBlockWindow.svelte';
   import AppConfigPanel from '#lib/components/apps/AppConfigPanel.svelte';
+  import AppMaintenance from '#lib/components/apps/AppMaintenance.svelte';
   import AppRouteForm from '#lib/components/apps/AppRouteForm.svelte';
   import DecisionFeed from '#lib/components/apps/DecisionFeed.svelte';
   import {
+    appHref,
     appTabSearch,
     appTabs,
     normalizeAppTab,
@@ -139,8 +141,12 @@
   );
 
   // ── Tabs (URL) ──────────────────────────────────────────────────────────
-  const tabs = $derived(appTabs({ assigned }));
-  const tab = $derived(readAppTab(page.url.searchParams, { assigned }));
+  // Maintenance mode is on, or was on during this visit (set by setMaintenance), so its tab
+  // stays open without an agent and turning it off does not move the page to another tab.
+  let maintenanceSeenFor = $state('');
+  const maintenanceOpen = $derived(Boolean(app?.maintenance_enabled) || (app !== null && maintenanceSeenFor === app.id));
+  const tabs = $derived(appTabs({ assigned, maintenance: maintenanceOpen }));
+  const tab = $derived(readAppTab(page.url.searchParams, { assigned, maintenance: maintenanceOpen }));
   const requestedTab = $derived(normalizeAppTab(page.url.searchParams.get('tab')));
   const tabUnavailable = $derived(Boolean(app) && !loading && requestedTab !== null && requestedTab !== tab);
   const TABS_ID = 'app-tabs';
@@ -151,6 +157,7 @@
 
   // ── Unsaved changes ──────────────────────────────────────────────
   let configDirty = $state(false);
+  let maintenanceDirty = $state(false);
   let routingDirty = $state(false);
   let discardPrompt = $state<{ resolve: (ok: boolean) => void } | null>(null);
 
@@ -167,13 +174,14 @@
     prompt?.resolve(ok);
   }
 
-  const unsaved = createDirtyTracker(() => configDirty || routingDirty, { confirm: () => askDiscard() });
+  const unsaved = createDirtyTracker(() => configDirty || maintenanceDirty || routingDirty, { confirm: () => askDiscard() });
   unsaved.guardNavigation();
 
   // A panel that is no longer shown cannot hold unsaved edits (Back/Forward
   // switch tabs without going through selectTab).
   $effect(() => {
     if (tab !== 'config') configDirty = false;
+    if (tab !== 'maintenance') maintenanceDirty = false;
     if (tab !== 'routing') routingDirty = false;
   });
 
@@ -190,6 +198,7 @@
     }
     // Agreed to discard: the navigation below must not ask again.
     configDirty = false;
+    maintenanceDirty = false;
     routingDirty = false;
     await navigate(appTabSearch(page.url.searchParams, target));
   }
@@ -242,6 +251,14 @@
     return null;
   }
 
+  // ── Maintenance ─────────────────────────────────────────────────────────
+  // The Maintenance tab owns the switch; the badge and the banner follow it.
+  function setMaintenance(enabled: boolean) {
+    if (!app) return;
+    if (enabled) maintenanceSeenFor = app.id;
+    if (Boolean(app.maintenance_enabled) !== enabled) app = { ...app, maintenance_enabled: enabled };
+  }
+
   // ── Delete (typed confirmation, owner) ─────────────────────────────────
   let deleteOpen = $state(false);
   let deleting = $state(false);
@@ -258,6 +275,7 @@
     }
     deleteOpen = false;
     configDirty = false;
+    maintenanceDirty = false;
     routingDirty = false;
     toast.success('Its routing, configuration history and custom rules were removed.', `${current.name} deleted`);
     await goto(`${base}/projects/${projectId}/apps`);
@@ -289,6 +307,9 @@
       {#snippet children()}
         <div class="app-status">
           <Badge tone={stateText.tone} title={stateText.hint}>{stateText.label}</Badge>
+          {#if app.maintenance_enabled}
+            <Badge tone="warning" title="Maintenance mode is on: visitors see the maintenance page.">Maintenance</Badge>
+          {/if}
           {#if assignment}
             <span class="app-agent">
               Served by
@@ -320,6 +341,22 @@
         <Alert tone="info" message="No WAF agent serves this application, so no new decisions are recorded. Assign one on the Assignment tab." />
       {/if}
 
+      {#if app.maintenance_enabled && tab !== 'maintenance'}
+        <Alert tone="warning">
+          <p>
+            {#if !assignment}
+              Maintenance mode is on: visitors get the maintenance page as soon as a WAF agent is assigned.
+            {:else}
+              Maintenance mode is on: visitors see the maintenance page instead of the site.{#if tab === 'monitoring' || tab === 'decisions'}
+                Requests answered with the maintenance page are not recorded as decisions.{/if}
+            {/if}
+          </p>
+          {#snippet actions()}
+            <Button variant="secondary" size="sm" href={appHref(base, projectId, app.id, 'maintenance')}>Open the Maintenance tab</Button>
+          {/snippet}
+        </Alert>
+      {/if}
+
       {#if tab === 'monitoring'}
         <AppOverview {projectId} appId={app.id} {range} onrangechange={setRange} {feedHref} />
       {:else if tab === 'decisions'}
@@ -328,6 +365,18 @@
         <AppConfigPanel {projectId} agentId={assignment.agent_id} appId={app.id} appName={app.name} canConfigure={ctx.canConfigure} enforcementMode={route?.mode ?? null} bind:dirty={configDirty} />
       {:else if tab === 'blockwindow' && assignment}
         <AppBlockWindow {projectId} agentId={assignment.agent_id} agentName={agent?.name ?? ''} canConfigure={ctx.canConfigure} />
+      {:else if tab === 'maintenance'}
+        <AppMaintenance
+          {projectId}
+          appId={app.id}
+          appName={app.name}
+          assigned={Boolean(assignment)}
+          agentName={agent?.name ?? ''}
+          agentOnline={agent?.is_online}
+          canConfigure={ctx.canConfigure}
+          bind:dirty={maintenanceDirty}
+          onchange={setMaintenance}
+        />
       {:else if tab === 'routing'}
         <section class="routing" aria-labelledby="routing-title">
           <header>

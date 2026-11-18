@@ -296,7 +296,10 @@
           {#if column.key === 'name'}
             <a class="app-link" href={appHref(base, projectId, r.app_id)}>{r.name}</a><ProxyWarningBadge warnings={r.proxy_warnings} />
           {:else if column.key === 'mode'}
-            <Badge tone={modeTone(r.mode)}>{PROTECTION_MODE_TEXT[r.mode === 'monitor' ? 'monitor' : 'block'].label}</Badge>
+            <span class="mode">
+              <Badge tone={modeTone(r.mode)}>{PROTECTION_MODE_TEXT[r.mode === 'monitor' ? 'monitor' : 'block'].label}</Badge>
+              {#if r.maintenance_enabled}<Badge tone="warning" title="Maintenance mode is on: visitors see the maintenance page.">Maintenance</Badge>{/if}
+            </span>
           {:else if column.key === 'listen'}
             <code>{listenLabel(r.listen_host, r.listen_port)}</code>
           {:else if column.key === 'upstream'}
@@ -457,6 +460,7 @@
   .section-head p, .panel-head p { margin: var(--sp-1) 0 0; font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.5; }
   .count { font-size: var(--fs-xs); color: var(--text-muted); font-weight: var(--fw-medium); margin-left: var(--sp-1); }
   .app-link { color: var(--accent); text-decoration: none; font-weight: var(--fw-medium); }
+  .mode { display: inline-flex; align-items: center; gap: var(--sp-1); }
   .app-link:hover { text-decoration: underline; }
   code, .upstream { font-family: var(--font-mono); font-size: var(--fs-xs); overflow-wrap: anywhere; }
   .panel { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4) var(--sp-5); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); min-width: 0; }
