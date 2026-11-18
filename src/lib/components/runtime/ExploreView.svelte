@@ -315,7 +315,7 @@
     </fieldset>
 
     <label class="field">
-      <span class="field-label">{source === 'events' ? 'Search process, file, PID or UID' : 'Search policy, process or reason'}</span>
+      <span class="field-label">{source === 'events' ? 'Search process, file, address, PID or UID' : 'Search policy, process or reason'}</span>
       <input class="input" type="search" bind:value={search} />
     </label>
 
@@ -458,7 +458,7 @@
           {error}
           onretry={() => load()}
           emptyTitle={activeFilters.length || search ? 'No actions match these filters' : 'No enforcement actions in this window'}
-          emptyMessage={activeFilters.length || search ? 'Remove a filter or widen the search.' : 'Actions appear here when policies alert, simulate, kill or block.'}
+          emptyMessage={activeFilters.length || search ? 'Remove a filter or widen the search.' : 'Actions appear here when policies alert, simulate or kill.'}
           onpage={changePage}
           {offset}
           limit={EXPLORE_PAGE_SIZE}

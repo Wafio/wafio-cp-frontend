@@ -8,17 +8,21 @@ import { matchTerms, policyHasNarrowingMatch } from '../../policyTemplates';
 import { severityRank } from '../../tone';
 import { mitreForEvent } from './mitre';
 
-export type PolicyAction = 'simulate' | 'monitor' | 'alert' | 'kill' | 'block';
+export type PolicyAction = 'simulate' | 'monitor' | 'alert' | 'kill';
 
 export const POLICY_ACTIONS: ReadonlyArray<{ value: PolicyAction; label: string; help: string }> = [
   { value: 'simulate', label: 'Simulate', help: 'Dry run: records what would have been killed; no process is touched. Start here.' },
   { value: 'monitor', label: 'Monitor', help: 'Observe only; no alert and no action.' },
   { value: 'alert', label: 'Alert', help: 'Flag matching events for review; no process is touched.' },
   { value: 'kill', label: 'Kill', help: 'Send SIGKILL to the matching process. PID 1, the agent and verified host daemons (sshd, systemd, containerd, dockerd, kubelet) are exempt.' },
-  { value: 'block', label: 'Block', help: 'Deny outbound connections to one destination IPv4 address in the kernel (BPF-LSM). That address must be the only match. To stop a process, use Kill.' },
 ];
 
-export const ENFORCING_ACTIONS: readonly string[] = ['kill', 'block'];
+export const ENFORCING_ACTIONS: readonly string[] = ['kill'];
+
+/** False for an action the dashboard no longer offers (a policy stored as Block by an older control plane). */
+export function isPolicyAction(action: string | null | undefined): boolean {
+  return POLICY_ACTIONS.some((a) => a.value === action);
+}
 
 export function isEnforcingAction(action: string | null | undefined): boolean {
   return ENFORCING_ACTIONS.includes(action ?? '');
@@ -212,32 +216,9 @@ export function validatePolicyDraft(draft: PolicyDraft): DraftValidation {
   if (ports.some((p) => !/^\d+$/.test(p) || Number(p) < 1 || Number(p) > 65535)) {
     errors.match_dest_port = 'Enter ports from 1 to 65535, separated by commas.';
   }
-  if (draft.enabled && draft.action === 'block' && !blockPolicyEnforces(draft)) errors.action = BLOCK_NOT_ENFORCED;
+  if (!isPolicyAction(draft.action)) errors.action = 'Choose one of the actions before saving.';
   return errors;
 }
-
-type BlockMatchFields = Pick<EnforcementPolicy, 'event_types' | 'min_severity' | 'match_comm' | 'match_filename' | 'match_uid' | 'match_dest_port' | 'match_dest_ip'>;
-
-/**
- * A block policy is enforced in one case: the kernel connect blocklist, which denies every
- * connect to one IPv4 address. It needs that address as the only match, the connect event
- * (or none) and no minimum severity. Mirrors checkBlockPolicy in wafio-cp-backend.
- */
-export function blockPolicyEnforces(p: BlockMatchFields): boolean {
-  const events = p.event_types ?? [];
-  return (
-    Boolean(p.match_dest_ip?.trim()) &&
-    !p.match_comm &&
-    !p.match_filename &&
-    (p.match_uid === null || p.match_uid === undefined) &&
-    !p.match_dest_port &&
-    (events.length === 0 || events.some((t) => t.toLowerCase() === 'connect')) &&
-    (!p.min_severity || p.min_severity.toLowerCase() === 'info')
-  );
-}
-
-export const BLOCK_NOT_ENFORCED =
-  'Block only denies outbound connections to one destination IPv4 address. Set Destination IP, leave the process, file, user and port matches empty, select only the connect event (or none) and set the minimum severity to Info. To stop a process, use Kill.';
 
 /** Kernel enforcement cannot evaluate these matches; the agent runs the rule in userspace. */
 export function kernelWillDowngrade(draft: Pick<PolicyDraft, 'kernel_enforce' | 'match_comm' | 'match_filename' | 'match_uid'>): boolean {
@@ -249,18 +230,14 @@ export function needsKillAcknowledgement(draft: Pick<PolicyDraft, 'action' | 'ma
   return draft.action === 'kill' && !policyHasNarrowingMatch(draft);
 }
 
-/** Confirmation tier for saving `draft` (typed for an enabled kill/block policy). */
+/** Confirmation tier for saving `draft` (typed for an enabled kill policy). */
 export function policySaveTier(draft: Pick<PolicyDraft, 'action' | 'enabled'>): ConfirmTier {
   return tierForPolicySave({ action: draft.action, enabled: draft.enabled });
 }
 
 /** Where a saved policy is enforced, as reported by the agent. */
-export function policyPlacement(policy: Pick<EnforcementPolicy, 'action' | 'auto_downgraded' | 'kernel_enforce'> & BlockMatchFields): { label: string; help: string } {
-  if (policy.action === 'block') {
-    return blockPolicyEnforces(policy)
-      ? { label: 'Kernel BPF-LSM', help: 'Connections to the address are denied in the kernel.' }
-      : { label: 'Not enforced', help: 'Block only applies to a connect policy whose only match is a destination IPv4. Use Kill to stop a process.' };
-  }
+export function policyPlacement(policy: Pick<EnforcementPolicy, 'action' | 'auto_downgraded' | 'kernel_enforce'>): { label: string; help: string } {
+  if (!isPolicyAction(policy.action)) return { label: 'Not enforced', help: 'This action is no longer available. Edit the policy and choose another action.' };
   if (policy.auto_downgraded) return { label: 'Userspace (downgraded)', help: 'Kernel enforcement was requested, but the process, file or UID match cannot be evaluated in the kernel. The agent enforces it in userspace, one ring-buffer round trip later.' };
   if (policy.kernel_enforce) return { label: 'Kernel', help: 'Loaded into the kernel enforcement map; the action is applied before the event reaches userspace.' };
   return { label: 'Userspace', help: 'The agent evaluates the rule after reading the event; supports every match but adds a short delay.' };
@@ -281,9 +258,9 @@ export function policyMatchSummary(policy: Pick<EnforcementPolicy, 'event_types'
   return out.length ? out : ['every event'];
 }
 
-/** Enabled kill policies and block policies the kernel enforces (disabling tracing removes their enforcement). */
-export function hasEnforcingPolicies(policies: ReadonlyArray<Pick<EnforcementPolicy, 'action' | 'enabled'> & BlockMatchFields>): boolean {
-  return policies.some((p) => p.enabled && (p.action === 'block' ? blockPolicyEnforces(p) : isEnforcingAction(p.action)));
+/** Enabled kill policies (disabling tracing removes their enforcement). */
+export function hasEnforcingPolicies(policies: ReadonlyArray<Pick<EnforcementPolicy, 'action' | 'enabled'>>): boolean {
+  return policies.some((p) => p.enabled && isEnforcingAction(p.action));
 }
 
 /** Event types the configuration captures (an empty list means all of `all`). */
@@ -293,7 +270,7 @@ export function capturedEventTypes(config: Pick<TraceConfig, 'event_types'>, all
 
 /**
  * Confirmation tier for saving the trace configuration:
- * - disabling tracing while kill/block policies are enabled leaves enforce
+ * - disabling tracing while kill policies are enabled leaves enforce
  *   (typed); otherwise disabling tracing needs a simple confirmation;
  * - capturing less (higher minimum severity, fewer event types, filtering the
  *   agent's own events) lowers protection (simple);

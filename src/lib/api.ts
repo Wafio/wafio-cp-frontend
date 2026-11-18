@@ -1615,10 +1615,6 @@ export interface TraceStatus {
   forward_filtered_suppressed?: number;
   /** … or matching no stage and not stored by ingest. */
   forward_filtered_unstored?: number;
-  /** The BPF-LSM programs are attached. False while tracing is stopped, so only `lsm_state` says why. */
-  lsm_active?: boolean;
-  /** BPF-LSM state of the agent: active | kernel_lacks_bpf | unverified | disabled | failed; absent on older agents and while tracing is stopped. */
-  lsm_state?: 'active' | 'kernel_lacks_bpf' | 'unverified' | 'disabled' | 'failed' | (string & {});
 }
 
 export interface TraceConfig {
@@ -1731,7 +1727,7 @@ export interface EnforcementPolicy {
   kernel_enforce: boolean;
   kernel_enforce_requested?: boolean;
   auto_downgraded?: boolean;
-  enforcement_mode?: 'lsm' | 'kernel' | 'userspace' | 'deferred_outcome' | 'downgraded';
+  enforcement_mode?: 'kernel' | 'userspace' | 'deferred_outcome' | 'downgraded';
   mitre_technique_id?: string;
   mitre_technique_name?: string;
   mitre_tactic?: string;
@@ -1750,7 +1746,7 @@ export interface EnforcementLogEntry {
   action: string;
   success: boolean;
   failure_reason?: string;
-  mode?: 'lsm' | 'kernel' | 'userspace' | 'deferred_outcome';
+  mode?: 'kernel' | 'userspace' | 'deferred_outcome';
   event: TraceEvent;
 }
 

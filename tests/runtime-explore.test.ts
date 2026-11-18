@@ -4,6 +4,7 @@ import {
   computeFacets,
   dedupeByKey,
   enforcementEntryKey,
+  enforcementModeLabel,
   enforcementFacetValues,
   filterEnforcement,
   filterTraceEvents,
@@ -128,6 +129,20 @@ describe('filters, search and facets', () => {
     expect(uidLabel(0)).toBe('0 (root)');
     expect(uidLabel(33)).toBe('33');
     expect(uidLabel(undefined)).toBe('n/a');
+  });
+
+  test('search matches the destination address of an event, also in its IPv4-mapped form', () => {
+    const e = event({ event_name: 'connect', addr: '::ffff:203.0.113.7', port: 443 });
+    expect(traceMatchesSearch(e, '203.0.113.7')).toBe(true);
+    expect(traceMatchesSearch(e, '198.51.100.9')).toBe(false);
+  });
+
+  test('a recorded block action stays searchable and an lsm mode from an older agent reads as Unknown', () => {
+    const entry: EnforcementLogEntry = { timestamp: 't', recorded_at: 't', policy_id: 3, policy_name: 'Old block', action: 'block', success: true, event: event({ addr: '192.0.2.10' }) };
+    expect(enforcementFacetValues(entry, 'action')).toEqual(['block']);
+    expect(filterEnforcement([entry], {}, '192.0.2.10')).toHaveLength(1);
+    expect(enforcementModeLabel('lsm')).toBe('Unknown');
+    expect(enforcementModeLabel('kernel')).toBe('Kernel signal');
   });
 
   test('a facet never filters its own counts and keeps the active value', () => {

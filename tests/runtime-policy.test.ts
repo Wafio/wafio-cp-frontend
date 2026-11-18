@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { EnforcementPolicy, TraceConfig, TraceEvent } from '../src/lib/api';
 import {
-  blockPolicyEnforces,
   defaultPolicyDraft,
   draftFromEvent,
   draftFromPolicy,
   hasEnforcingPolicies,
+  isPolicyAction,
   kernelWillDowngrade,
   needsKillAcknowledgement,
   policyMatchesEvent,
@@ -70,9 +70,9 @@ describe('policy editor defaults and confirmation', () => {
     expect(draftFromEvent({ event_name: 'connect', comm: 'nc' }).action).toBe('simulate');
   });
 
-  test('saving or enabling kill/block is typed; disabled or non-enforcing is none', () => {
+  test('saving or enabling kill is typed; disabled or non-enforcing is none', () => {
     expect(policySaveTier({ action: 'kill', enabled: true })).toBe('typed');
-    expect(policySaveTier({ action: 'block', enabled: true })).toBe('typed');
+    expect(policySaveTier({ action: 'block', enabled: true })).toBe('none');
     expect(policySaveTier({ action: 'kill', enabled: false })).toBe('none');
     expect(policySaveTier({ action: 'alert', enabled: true })).toBe('none');
   });
@@ -116,27 +116,13 @@ describe('policy editor defaults and confirmation', () => {
     expect(validatePolicyDraft(defaultPolicyDraft({ name: 'x', match_uid: 0, match_dest_port: '22, 443' }))).toEqual({});
   });
 
-  test('a block policy is enforced only as a connect denial on one destination IPv4', () => {
-    const block = (over: Partial<ReturnType<typeof defaultPolicyDraft>> = {}) => defaultPolicyDraft({ action: 'block', match_dest_ip: '192.0.2.10', ...over });
-    expect(blockPolicyEnforces(block())).toBe(true);
-    expect(blockPolicyEnforces(block({ event_types: ['execve', 'Connect'] }))).toBe(true);
-    expect(blockPolicyEnforces(block({ min_severity: '' }))).toBe(true);
-    expect(blockPolicyEnforces(defaultPolicyDraft({ action: 'block' }))).toBe(false);
-    expect(blockPolicyEnforces(block({ match_dest_ip: '  ' }))).toBe(false);
-    expect(blockPolicyEnforces(block({ match_comm: 'nc' }))).toBe(false);
-    expect(blockPolicyEnforces(block({ match_filename: '/tmp/x' }))).toBe(false);
-    expect(blockPolicyEnforces(block({ match_uid: 0 }))).toBe(false);
-    expect(blockPolicyEnforces(block({ match_dest_port: '443' }))).toBe(false);
-    expect(blockPolicyEnforces(block({ event_types: ['execve'] }))).toBe(false);
-    expect(blockPolicyEnforces(block({ min_severity: 'high' }))).toBe(false);
-  });
-
-  test('an enabled block policy the kernel cannot enforce is not saved; disabled or another action is', () => {
+  test('Block is not an action any more; one stored by an older control plane must be replaced before saving', () => {
+    expect(['simulate', 'monitor', 'alert', 'kill'].every(isPolicyAction)).toBe(true);
+    expect(isPolicyAction('block')).toBe(false);
     const named = (over: Partial<ReturnType<typeof defaultPolicyDraft>>) => validatePolicyDraft(defaultPolicyDraft({ name: 'x', ...over }));
-    expect(named({ action: 'block' }).action).toBeDefined();
-    expect(named({ action: 'block', match_comm: 'nc', match_dest_ip: '192.0.2.10' }).action).toBeDefined();
-    expect(named({ action: 'block', match_dest_ip: '192.0.2.10' })).toEqual({});
-    expect(named({ action: 'block', enabled: false })).toEqual({});
+    expect(named({ action: 'block', match_dest_ip: '192.0.2.10' }).action).toBeDefined();
+    expect(named({ action: 'block', enabled: false }).action).toBeDefined();
+    expect(named({ action: 'alert', match_dest_ip: '192.0.2.10' })).toEqual({});
     expect(named({ action: 'kill', match_comm: 'xmrig' })).toEqual({});
   });
 
@@ -230,11 +216,9 @@ describe('policy display helpers', () => {
     hit_count: 0,
   } satisfies EnforcementPolicy;
 
-  test('placement explains block, downgrade, kernel and userspace', () => {
-    const connectBlock = { ...policy, action: 'block', event_types: [], min_severity: 'info', match_comm: '', match_dest_ip: '192.0.2.10' };
-    expect(policyPlacement(connectBlock).label).toBe('Kernel BPF-LSM');
-    expect(policyPlacement({ ...connectBlock, match_comm: 'nc' }).label).toBe('Not enforced');
+  test('placement explains a leftover block action, downgrade, kernel and userspace', () => {
     expect(policyPlacement({ ...policy, action: 'block' }).label).toBe('Not enforced');
+    expect(draftFromPolicy({ ...policy, action: 'block' }).action).toBe('block');
     expect(policyPlacement(policy).label).toBe('Userspace (downgraded)');
     expect(policyPlacement({ ...policy, auto_downgraded: false }).label).toBe('Kernel');
     expect(policyPlacement({ ...policy, auto_downgraded: false, kernel_enforce: false }).label).toBe('Userspace');
@@ -248,9 +232,8 @@ describe('policy display helpers', () => {
     expect(policyMatchSummary({ ...policy, event_types: [], match_comm: '' })).toEqual(['every event']);
     expect(hasEnforcingPolicies([policy])).toBe(true);
     expect(hasEnforcingPolicies([{ ...policy, enabled: false }, { ...policy, action: 'alert' }])).toBe(false);
-    // A block policy counts only when the kernel enforces it.
+    // A policy still stored as block enforces nothing.
     expect(hasEnforcingPolicies([{ ...policy, action: 'block' }])).toBe(false);
-    expect(hasEnforcingPolicies([{ ...policy, action: 'block', event_types: [], min_severity: 'info', match_comm: '', match_dest_ip: '192.0.2.10' }])).toBe(true);
     expect(draftFromPolicy(policy).event_types).not.toBe(policy.event_types);
   });
 });
@@ -259,7 +242,7 @@ describe('trace configuration tiers', () => {
   const all = ['execve', 'connect', 'openat'];
   const cfg = (over: Partial<TraceConfig> = {}): TraceConfig => ({ enabled: true, event_types: [], min_severity: 'info', filter_self: true, filtered_pids: [], ...over });
 
-  test('disabling tracing is simple, or typed while kill/block policies are enabled', () => {
+  test('disabling tracing is simple, or typed while kill policies are enabled', () => {
     expect(traceConfigSaveTier(cfg(), cfg({ enabled: false }), all, false)).toBe('simple');
     expect(traceConfigSaveTier(cfg(), cfg({ enabled: false }), all, true)).toBe('typed');
     expect(traceConfigLosses(cfg(), cfg({ enabled: false }), all)[0]).toContain('all runtime events');

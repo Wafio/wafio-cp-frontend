@@ -170,8 +170,6 @@ export function enforcementFacetValues(entry: EnforcementLogEntry, facet: Enforc
 
 export function enforcementModeLabel(mode: EnforcementLogEntry['mode'] | string | undefined): string {
   switch (mode) {
-    case 'lsm':
-      return 'Kernel BPF-LSM';
     case 'kernel':
       return 'Kernel signal';
     case 'deferred_outcome':

@@ -123,8 +123,8 @@ export function strengthTone(strength: unknown): VerdictTone | 'neutral' {
 
 /**
  * Tone for a runtime-security enforcement action (trace policy / enforcement log):
- * kill and block enforce → block; alert → log; simulate is a dry run → info;
- * monitor (no action) → neutral.
+ * kill enforces → block; alert → log; simulate is a dry run → info;
+ * monitor (no action) → neutral. A recorded "block" action keeps the block tone.
  */
 export function enforcementTone(action: unknown): 'block' | 'log' | 'info' | 'neutral' {
   switch (norm(action)) {
@@ -275,31 +275,11 @@ export function runtimeStateTone(state: string | null | undefined): 'info' | 'wa
 }
 
 /**
- * Tone for a host capability that is on or off (BPF LSM …): info when active,
+ * Tone for a capability that is on or off: info when active,
  * neutral otherwise, never the ALLOW green, which is reserved for verdicts.
  */
 export function capabilityTone(active: boolean): 'info' | 'neutral' {
   return active ? 'info' : 'neutral';
-}
-
-/**
- * Tone for the BPF-LSM state a host agent reports: active → info, a kernel
- * without bpf or an unverified state → warning (blocking may not work),
- * disabled by the operator → neutral, load or attach failure → danger.
- * Never the ALLOW green.
- */
-export function lsmStateTone(state: string | null | undefined): 'info' | 'warning' | 'danger' | 'neutral' {
-  switch (norm(state)) {
-    case 'active':
-      return capabilityTone(true);
-    case 'kernel_lacks_bpf':
-    case 'unverified':
-      return 'warning';
-    case 'failed':
-      return 'danger';
-    default:
-      return 'neutral';
-  }
 }
 
 /**
