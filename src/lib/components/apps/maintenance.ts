@@ -152,8 +152,8 @@ function pathProblem(value: string): string {
   if (utf8Bytes(value) > MAINTENANCE_LIMITS.pathBytes) return `must be at most ${MAINTENANCE_LIMITS.pathBytes} characters`;
   if (PATH_FORBIDDEN.test(value)) return 'must not contain spaces, ?, #, % or control characters';
   if (value.split('/').some((segment) => segment === '.' || segment === '..')) return 'must not contain . or .. segments';
-  // The server accepts "/", which matches every request and so never shows the page.
-  if (value === '/') return 'lets every visitor through; remove it or turn maintenance mode off';
+  // "/" matches every request, so the page would never be shown.
+  if (value === '/')return 'lets every visitor through; remove it or turn maintenance mode off';
   return '';
 }
 
