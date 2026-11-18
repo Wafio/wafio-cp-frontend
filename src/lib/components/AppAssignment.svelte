@@ -3,8 +3,11 @@
   application and in which protection mode. One active binding per
   application; moving it keeps the configuration, history and decisions.
   Lowering protection (Block → Monitor) and unassigning ask for
-  confirmation. The page loads the agents and the binding and passes
-  them in, so this tab adds no requests of its own.
+  confirmation. While maintenance mode is on, the server refuses an agent
+  that does not support it or whose configuration would grow too large; the
+  tab says so up front and shows the server's text when it refuses. The page
+  loads the agents and the binding and passes them in, so this tab adds no
+  requests of its own.
 -->
 <script lang="ts">
   import { base } from '#lib/paths.js';
@@ -15,6 +18,7 @@
   import { modeTone } from '#lib/tone.js';
   import { toast } from '#lib/stores/toast.js';
   import ProtectionModeSelect from './apps/ProtectionModeSelect.svelte';
+  import { MOVE_NOTE } from './apps/maintenance';
   import { PROTECTION_MODE_TEXT, type ProtectionMode } from './apps/route-model';
   import { appWriteErrorMessage } from './apps/route-errors';
 
@@ -25,6 +29,7 @@
     agents,
     assignment,
     canConfigure = false,
+    maintenance = false,
     onchanged,
   }: {
     projectId: string;
@@ -35,6 +40,8 @@
     /** Current binding, or null when unassigned. */
     assignment: AppWAFAssignment | null;
     canConfigure?: boolean;
+    /** Maintenance mode is on for the application: only an agent that supports it can serve it. */
+    maintenance?: boolean;
     /** Called after a successful assign, move or unassign. */
     onchanged: () => void | Promise<void>;
   } = $props();
@@ -127,6 +134,7 @@
   </dl>
 
   {#if error}<Alert tone="error" message={error} />{/if}
+  {#if maintenance}<Alert tone="info" message={MOVE_NOTE} />{/if}
 
   <form class="asg-form" onsubmit={submit}>
     <fieldset disabled={!canConfigure || saving}>

@@ -419,6 +419,7 @@
           {agents}
           {assignment}
           canConfigure={ctx.canConfigure}
+          maintenance={Boolean(app.maintenance_enabled)}
           onchanged={() => load({ silent: true })}
         />
       {/if}

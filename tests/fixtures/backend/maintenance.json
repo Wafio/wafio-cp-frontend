@@ -7,6 +7,7 @@
     "allow_ips": 50,
     "allow_paths": 20,
     "path_bytes": 256,
-    "end_time_max_days": 365
+    "end_time_max_days": 365,
+    "agent_bundle_bytes": 4193280
   }
 }

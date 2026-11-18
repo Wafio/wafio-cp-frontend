@@ -14,6 +14,8 @@ export const MAINTENANCE_LIMITS = {
   allowPaths: 20,
   pathBytes: 256,
   endTimeMaxDays: 365,
+  /** What an agent accepts as its whole configuration, all applications and rules together. */
+  agentBundleBytes: 4193280,
 } as const;
 
 export type MaintenanceField = 'message' | 'end_time' | 'custom_html' | 'allow_ips' | 'allow_paths';
@@ -31,6 +33,11 @@ const encoder = new TextEncoder();
 /** Size of a string in UTF-8, the unit of the 64 KiB limit. */
 export function utf8Bytes(value: string): number {
   return encoder.encode(value).length;
+}
+
+/** "4,193,280": digits in groups of three, as the server writes a size in bytes. */
+export function groupDigits(n: number): string {
+  return n.toLocaleString('en-US');
 }
 
 /** "12", "12.4": KiB with one decimal, without a trailing ".0". */
@@ -149,7 +156,7 @@ function ipProblem(value: string): string {
 
 function pathProblem(value: string): string {
   if (!value.startsWith('/')) return 'must start with /';
-  if (utf8Bytes(value) > MAINTENANCE_LIMITS.pathBytes) return `must be at most ${MAINTENANCE_LIMITS.pathBytes} characters`;
+  if (utf8Bytes(value) > MAINTENANCE_LIMITS.pathBytes) return `must be at most ${MAINTENANCE_LIMITS.pathBytes} bytes`;
   if (PATH_FORBIDDEN.test(value)) return 'must not contain spaces, ?, #, % or control characters';
   if (value.split('/').some((segment) => segment === '.' || segment === '..')) return 'must not contain . or .. segments';
   // "/" matches every request, so the page would never be shown.
@@ -315,18 +322,88 @@ export function switchDisabled(o: { canConfigure: boolean; busy: boolean; enable
   return !o.canConfigure || o.busy || (o.supported === false && !o.enabled);
 }
 
-/** Body of the confirmation that turns maintenance mode on. */
-export function enableConfirmMessage(o: { noAllowedIps: boolean; unsaved: boolean }): string {
+/** Who serves the application, for the texts about when a change reaches visitors. */
+export interface Serving {
+  /** A WAF agent serves the application. */
+  assigned: boolean;
+  /** That agent is connected (undefined: not known). */
+  online: boolean | undefined;
+  /** The name of that agent, '' when not known. */
+  agent: string;
+}
+
+/** Said on the Maintenance tab and on the Assignment tab: the agent of an application in maintenance mode is not free to change. */
+export const MOVE_NOTE = 'While maintenance mode is on, the application can only move to a WAF agent that supports it.';
+
+const ALLOWED_STILL_REACH = 'Requests from allowed IP addresses and paths still reach the site.';
+const CLOSED_FOR_OTHERS = 'Open WebSocket connections and live event streams of visitors who are not allowed are closed.';
+const NOBODY_SERVES = 'No WAF agent serves this application, so nothing changes for visitors until one is assigned on the Assignment tab.';
+
+/** "once edge-1 reconnects" for an offline agent, "once edge-1 has applied the change" when it is not known; '' for a connected one. */
+function afterwards(o: Serving): string {
+  const agent = o.agent || 'the WAF agent';
+  if (o.online === false) return `once ${agent} reconnects`;
+  return o.online === undefined ? `once ${agent} has applied the change` : '';
+}
+
+/**
+ * Body of the confirmation that turns maintenance mode on. "Within a few seconds" is said only for an
+ * agent that is connected: an offline or unknown one is named instead, and with no agent nothing changes yet.
+ */
+export function enableConfirmMessage(o: Serving & { noAllowedIps: boolean; unsaved: boolean }): string {
+  const lead = !o.assigned
+    ? NOBODY_SERVES
+    : o.online
+      ? 'Visitors will see the maintenance page instead of the site within a few seconds, with HTTP status 503.'
+      : `Visitors will see the maintenance page instead of the site, with HTTP status 503, ${afterwards(o)}.`;
   return [
-    'Visitors will see the maintenance page instead of the site within a few seconds, with HTTP status 503. Requests from allowed IP addresses and paths still reach the site.',
+    lead,
+    o.assigned ? ` ${ALLOWED_STILL_REACH}` : '',
+    o.assigned && o.online !== false ? ` ${CLOSED_FOR_OTHERS}` : '',
     o.noAllowedIps ? ' No IP addresses are allowed, so your team cannot open the site either.' : '',
     o.unsaved ? ' Your unsaved changes on this page are saved too.' : '',
   ].join('');
 }
 
 /** Toast after "Save changes". */
-export function savedMessage(enabled: boolean): string {
-  return enabled ? 'Maintenance settings saved. The agent applies them within a few seconds.' : 'Maintenance settings saved.';
+export function savedMessage(enabled: boolean, o: Serving): string {
+  if (!enabled) return 'Maintenance settings saved.';
+  if (!o.assigned) return `Maintenance settings saved. ${NOBODY_SERVES}`;
+  const wait = afterwards(o);
+  return `Maintenance settings saved. ${wait ? `The new settings reach visitors ${wait}.` : 'The agent applies them within a few seconds.'}`;
+}
+
+/** Toast after the switch went on. */
+export function enabledToast(o: Serving): string {
+  if (!o.assigned) return `Maintenance mode is on. ${NOBODY_SERVES}`;
+  const wait = afterwards(o);
+  return wait ? `Maintenance mode is on. Visitors see the maintenance page ${wait}.` : `Maintenance mode is on. Visitors now see the maintenance page. ${CLOSED_FOR_OTHERS}`;
+}
+
+/** Toast after the switch went off. Connections need no action when it does. */
+export function disabledToast(o: Serving): string {
+  if (!o.assigned) return 'Maintenance mode is off. No WAF agent serves this application, so nothing changed for visitors.';
+  const wait = afterwards(o);
+  return wait ? `Maintenance mode is off. Visitors see the site again ${wait}.` : 'Maintenance mode is off. Visitors see the site again.';
+}
+
+// ── Refusals of the server ─────────────────────────────────────────────────
+
+/** Where the answer of a refused save is shown. */
+export type Refusal = { kind: 'field'; field: MaintenanceField; message: string } | { kind: 'unsupported' | 'save'; message: string };
+
+/**
+ * A 400 INVALID_MAINTENANCE, and a 409 MAINTENANCE_BUNDLE_TOO_LARGE that names the custom page, belong to a
+ * field of the form (only when the form was sent: the stored value sent by "off" has no field to show them
+ * under). The rest is shown above the buttons; MAINTENANCE_UNSUPPORTED also tells the panel the agent cannot.
+ */
+export function classifyRefusal(error: { code?: string; field?: string; error?: string } | undefined, owner: 'form' | 'stored'): Refusal {
+  const message = error?.error || 'Could not save the maintenance settings.';
+  const field = error?.field;
+  if ((error?.code === 'INVALID_MAINTENANCE' || error?.code === 'MAINTENANCE_BUNDLE_TOO_LARGE') && isMaintenanceField(field) && owner === 'form') {
+    return { kind: 'field', field, message: stripFieldPrefix(message, field) };
+  }
+  return { kind: error?.code === 'MAINTENANCE_UNSUPPORTED' ? 'unsupported' : 'save', message };
 }
 
 // ── Preview ────────────────────────────────────────────────────────────────

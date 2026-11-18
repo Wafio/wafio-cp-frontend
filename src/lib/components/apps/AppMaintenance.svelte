@@ -5,7 +5,9 @@
   the standard one (message and expected end) or the owner's own HTML. The
   switch has its own flow: turning it on validates the form, asks once and
   saves the form too; turning it off saves nothing else. "Save changes" keeps
-  the switch where it is. Maintenance never ends by itself.
+  the switch where it is. Maintenance never ends by itself. The texts about
+  when visitors see a change depend on who serves the application: a connected
+  agent, an offline one, or none.
 -->
 <script lang="ts">
   import { onDestroy, tick, untrack } from 'svelte';
@@ -19,11 +21,15 @@
   import { PreviewScheduler } from '#lib/components/waf-policy/responses.js';
   import {
     MAINTENANCE_LIMITS,
+    MOVE_NOTE,
+    classifyRefusal,
+    disabledToast,
     enableConfirmMessage,
+    enabledToast,
     formatKiB,
     formFromMaintenance,
     fromLocalInput,
-    isMaintenanceField,
+    groupDigits,
     localInputBounds,
     maintenanceBody,
     maintenanceFromForm,
@@ -33,12 +39,12 @@
     previewDocument,
     sameSettings,
     savedMessage,
-    stripFieldPrefix,
     switchDisabled,
     utf8Bytes,
     validateMaintenance,
     type MaintenanceField,
     type MaintenanceForm,
+    type Serving,
   } from './maintenance';
 
   let {
@@ -51,6 +57,7 @@
     canConfigure = false,
     dirty = $bindable(false),
     onchange = undefined,
+    initial = undefined,
   }: {
     projectId: string;
     appId: string;
@@ -66,6 +73,8 @@
     dirty?: boolean;
     /** The switch changed (or was read): the page updates its badge. */
     onchange?: (enabled: boolean) => void;
+    /** Settings to start from, as the server answers them (tests render the panel without a request). The browser still loads. */
+    initial?: MaintenanceState;
   } = $props();
 
   const uid = $props.id();
@@ -83,18 +92,20 @@
   })();
 
   // ── Data ────────────────────────────────────────────────────────────────
-  let loaded = $state<MaintenanceState | null>(null);
-  let loading = $state(true);
+  const seed = untrack(() => (initial ? normalizeMaintenanceState(initial) : null));
+  let loaded = $state<MaintenanceState | null>(seed);
+  let loading = $state(!seed);
   let loadFailed = $state(false);
   let busy = $state(false);
   let saving = $state(false);
   let epoch = 0;
-  let form = $state<MaintenanceForm>(formFromMaintenance(normalizeMaintenanceState(null).maintenance));
+  let form = $state<MaintenanceForm>(formFromMaintenance((seed ?? normalizeMaintenanceState(null)).maintenance));
   let now = $state(Date.now());
 
   const stored = $derived(loaded?.maintenance ?? normalizeMaintenanceState(null).maintenance);
   const enabled = $derived(stored.enabled);
   const agent = $derived(agentName || 'The WAF agent');
+  const serving: Serving = $derived({ assigned, online: agentOnline, agent: agentName });
 
   async function load() {
     const my = ++epoch;
@@ -228,13 +239,13 @@
   }
 
   function refused(error: ApiError | undefined, sent: Maintenance, owner: 'form' | 'stored') {
-    const field = error?.field;
-    if (error?.code === 'INVALID_MAINTENANCE' && isMaintenanceField(field) && owner === 'form') {
-      serverError = { field, message: stripFieldPrefix(error.error, field), sent: JSON.stringify(sent[field]) };
+    const refusal = classifyRefusal(error, owner);
+    if (refusal.kind === 'field') {
+      serverError = { field: refusal.field, message: refusal.message, sent: JSON.stringify(sent[refusal.field]) };
       return;
     }
-    if (error?.code === 'MAINTENANCE_UNSUPPORTED' && loaded) loaded = { ...loaded, agent_supported: false };
-    saveError = error?.error || 'Could not save the maintenance settings.';
+    if (refusal.kind === 'unsupported' && loaded) loaded = { ...loaded, agent_supported: false };
+    saveError = refusal.message;
   }
 
   async function save() {
@@ -252,7 +263,7 @@
       return;
     }
     adopt(next, true);
-    toast.success(savedMessage(next.maintenance.enabled), 'Saved');
+    toast.success(savedMessage(next.maintenance.enabled, serving), 'Saved');
   }
 
   function requestToggle(next: boolean) {
@@ -284,7 +295,7 @@
       return;
     }
     adopt(next, true);
-    toast.success('Maintenance mode is on. Visitors now see the maintenance page.', 'Maintenance on');
+    toast.success(enabledToast(serving), 'Maintenance on');
   }
 
   /** Off saves the stored settings, not the form: edits stay unsaved, and an invalid form cannot keep the site down. */
@@ -294,7 +305,7 @@
     const next = await send({ ...stored, enabled: false }, 'stored');
     if (!next) return;
     adopt(next, !keepEdits);
-    toast.success('Maintenance mode is off. Visitors see the site again.', 'Maintenance off');
+    toast.success(disabledToast(serving), 'Maintenance off');
   }
 
   function discard() {
@@ -337,7 +348,7 @@
   const endHint = $derived(
     `${zone ? `In your time zone (${zone}).` : 'In your time zone.'} Visitors see it in theirs, and browsers and search engines get it as Retry-After. Maintenance does not end by itself: turn it off when you are done.`,
   );
-  const confirmText = $derived(enableConfirmMessage({ noAllowedIps: parseLines(form.ips).length === 0, unsaved: isDirty }));
+  const confirmText = $derived(enableConfirmMessage({ ...serving, noAllowedIps: parseLines(form.ips).length === 0, unsaved: isDirty }));
   const footerNote = $derived(busy ? 'Saving…' : isDirty && invalid ? 'Fix the marked fields to save.' : isDirty ? 'Unsaved changes' : '');
 </script>
 
@@ -345,6 +356,12 @@
   <header class="mt-head">
     <h2 id="{uid}-title">Maintenance mode</h2>
     <p>Show visitors a maintenance page instead of the site while you work on it. The WAF agent answers every request itself, so nothing reaches your upstream.</p>
+    <ul class="mt-facts">
+      <li>Requests get the maintenance page with status 503 unless they come from an allowed IP address or go to an allowed path. This is decided before the request body is read, so uploads of any size get it too.</li>
+      <li>Open WebSocket connections and live event streams of visitors who are not allowed are closed; downloads already running finish.</li>
+      <li>Browser apps on other sites can read the JSON answer. A request that sends cookies and needs a preflight still fails in the browser.</li>
+      <li>{MOVE_NOTE}</li>
+    </ul>
   </header>
 
   {#if loading && !loaded}
@@ -431,7 +448,7 @@
                   group
                   label="Custom HTML"
                   error={shownErrors.custom_html}
-                  hint="Up to 64 KiB. Images, styles and scripts loaded from this application's own address get the maintenance page too: inline them or load them from another host."
+                  hint={`Up to 64 KiB. Images, styles and scripts loaded from this application's own address get the maintenance page too: inline them or load them from another host. The custom pages of all applications on one WAF agent count toward the ${groupDigits(MAINTENANCE_LIMITS.agentBundleBytes)} bytes (about 4 MiB) of configuration that agent can receive, and each <, > and & counts as six bytes there.`}
                 >
                   {#snippet children()}
                     <div class="mt-editor-tools">
@@ -490,7 +507,7 @@
                 label="Allowed paths"
                 optional
                 error={shownErrors.allow_paths}
-                hint={`One path per line, up to ${MAINTENANCE_LIMITS.allowPaths}. Requests to these paths and anything below them reach the site as usual, for example health checks and payment webhooks.`}
+                hint={`One path per line, up to ${MAINTENANCE_LIMITS.allowPaths}, at most ${MAINTENANCE_LIMITS.pathBytes} bytes each. Requests to these paths and anything below them reach the site as usual, for example health checks and payment webhooks.`}
               >
                 {#snippet children(c)}
                   <textarea {...c} class="mono" rows="3" spellcheck="false" autocomplete="off" placeholder={'/healthz\n/api/payments/webhook'} bind:value={form.paths}></textarea>
@@ -553,6 +570,7 @@
   .mt { display: flex; flex-direction: column; gap: var(--sp-4); width: 100%; min-width: 0; container-type: inline-size; }
   .mt-head h2 { margin: 0; font-size: var(--fs-md); }
   .mt-head p { margin: var(--sp-1) 0 0; font-size: var(--fs-sm); color: var(--text-muted); max-width: 70ch; line-height: 1.5; }
+  .mt-facts { display: flex; flex-direction: column; gap: var(--sp-1); margin: var(--sp-2) 0 0; padding-left: var(--sp-5); max-width: 70ch; font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.5; }
   .mt-notices { display: flex; flex-direction: column; gap: var(--sp-2); }
 
   .mt-status {
