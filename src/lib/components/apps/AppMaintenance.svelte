@@ -357,7 +357,7 @@
     <h2 id="{uid}-title">Maintenance mode</h2>
     <p>Show visitors a maintenance page instead of the site while you work on it. The WAF agent answers every request itself, so nothing reaches your upstream.</p>
     <ul class="mt-facts">
-      <li>Every request gets the maintenance page with status 503, decided before the request body is read, so uploads are refused.</li>
+      <li>Requests get the maintenance page with status 503 unless they come from an allowed IP address or go to an allowed path. This is decided before the request body is read, so uploads of any size get it too.</li>
       <li>Open WebSocket connections and live event streams of visitors who are not allowed are closed; downloads already running finish.</li>
       <li>Browser apps on other sites can read the JSON answer. A request that sends cookies and needs a preflight still fails in the browser.</li>
       <li>{MOVE_NOTE}</li>
@@ -448,7 +448,7 @@
                   group
                   label="Custom HTML"
                   error={shownErrors.custom_html}
-                  hint={`Up to 64 KiB. Images, styles and scripts loaded from this application's own address get the maintenance page too: inline them or load them from another host. The custom pages of all applications on one WAF agent count toward the ${groupDigits(MAINTENANCE_LIMITS.agentBundleBytes)} bytes (about 4 MiB) of configuration that agent can receive.`}
+                  hint={`Up to 64 KiB. Images, styles and scripts loaded from this application's own address get the maintenance page too: inline them or load them from another host. The custom pages of all applications on one WAF agent count toward the ${groupDigits(MAINTENANCE_LIMITS.agentBundleBytes)} bytes (about 4 MiB) of configuration that agent can receive, and each <, > and & counts as six bytes there.`}
                 >
                   {#snippet children()}
                     <div class="mt-editor-tools">

@@ -56,7 +56,7 @@ function switchTag(html: string): string {
 }
 
 const FACTS = [
-  'Every request gets the maintenance page with status 503, decided before the request body is read, so uploads are refused.',
+  'Requests get the maintenance page with status 503 unless they come from an allowed IP address or go to an allowed path. This is decided before the request body is read, so uploads of any size get it too.',
   'Open WebSocket connections and live event streams of visitors who are not allowed are closed; downloads already running finish.',
   'Browser apps on other sites can read the JSON answer. A request that sends cookies and needs a preflight still fails in the browser.',
   'While maintenance mode is on, the application can only move to a WAF agent that supports it.',
@@ -165,7 +165,7 @@ describe('Maintenance tab, a custom page', () => {
   test('tells that the pages of all applications on an agent share what the agent can receive', async () => {
     const html = await render(custom);
     expect(html).toContain('Up to 64 KiB.');
-    expect(html).toContain('The custom pages of all applications on one WAF agent count toward the 4,193,280 bytes (about 4 MiB) of configuration that agent can receive.');
+    expect(html).toContain('The custom pages of all applications on one WAF agent count toward the 4,193,280 bytes (about 4 MiB) of configuration that agent can receive, and each &lt;, > and &amp; counts as six bytes there.');
   });
 
   test('shows the editor, the size and the placeholders', async () => {
