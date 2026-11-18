@@ -1,6 +1,8 @@
 # wafio-cp-frontend
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16871/badge)](https://www.bestpractices.dev/projects/16871) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Wafio/wafio-cp-frontend/badge)](https://scorecard.dev/viewer/?uri=github.com/Wafio/wafio-cp-frontend)
 
+This repository is one part of [WAFio](https://github.com/Wafio/wafio). Start there to install WAFio, to see the releases, or to report a problem when you do not know which part it is in.
+
 The Wafio control plane dashboard: projects, applications, WAF agents and policies, hosts (firewall and runtime security), credentials, members, audit log and system administration.
 
 It is a static single-page app (SvelteKit 3, Svelte 5 with runes, TypeScript 6, Vite 8, `adapter-static`). It runs in the browser; the control plane serves the built files from its `server.frontend_path` directory and answers the app's API calls.
