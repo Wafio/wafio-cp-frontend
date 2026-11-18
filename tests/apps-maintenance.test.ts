@@ -56,6 +56,7 @@ describe('control plane parity', () => {
       allow_paths: MAINTENANCE_LIMITS.allowPaths,
       path_bytes: MAINTENANCE_LIMITS.pathBytes,
       end_time_max_days: MAINTENANCE_LIMITS.endTimeMaxDays,
+      agent_bundle_bytes: MAINTENANCE_LIMITS.agentBundleBytes,
     });
   });
 
@@ -256,10 +257,13 @@ describe('checks', () => {
       expect(validateMaintenance(off({ allow_paths: [ok] }), off(), NOW)).toEqual({});
     }
     expect(validateMaintenance(off({ allow_paths: ['healthz'] }), off(), NOW).allow_paths).toBe('"healthz" must start with /');
-    expect(validateMaintenance(off({ allow_paths: ['/' + 'a'.repeat(256)] }), off(), NOW).allow_paths).toBe(`"${'/' + 'a'.repeat(63)}" must be at most 256 characters`);
+    expect(validateMaintenance(off({ allow_paths: ['/' + 'a'.repeat(256)] }), off(), NOW).allow_paths).toBe(`"${'/' + 'a'.repeat(63)}" must be at most 256 bytes`);
     expect(validateMaintenance(off({ allow_paths: ['/' + 'a'.repeat(255)] }), off(), NOW)).toEqual({});
     // The limit is in bytes: 129 two-byte characters plus the slash are 259 bytes.
-    expect(validateMaintenance(off({ allow_paths: ['/' + 'é'.repeat(129)] }), off(), NOW).allow_paths).toContain('must be at most 256 characters');
+    expect(validateMaintenance(off({ allow_paths: ['/' + 'é'.repeat(129)] }), off(), NOW).allow_paths).toContain('must be at most 256 bytes');
+    // Three-byte characters: the slash and 85 of them are exactly 256 bytes, 86 are 259.
+    expect(validateMaintenance(off({ allow_paths: ['/' + 'あ'.repeat(85)] }), off(), NOW)).toEqual({});
+    expect(validateMaintenance(off({ allow_paths: ['/' + 'あ'.repeat(86)] }), off(), NOW).allow_paths).toMatch(/ must be at most 256 bytes$/);
     for (const bad of ['/a b', '/a?b=1', '/a#top', '/a%2Fb', '/a\u0001b', '/a b', '/a　b']) {
       expect(validateMaintenance(off({ allow_paths: [bad] }), off(), NOW).allow_paths).toMatch(/ must not contain spaces, \?, #, % or control characters$/);
     }

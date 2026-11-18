@@ -14,6 +14,8 @@ export const MAINTENANCE_LIMITS = {
   allowPaths: 20,
   pathBytes: 256,
   endTimeMaxDays: 365,
+  /** What an agent accepts as its whole configuration, all applications and rules together. */
+  agentBundleBytes: 4193280,
 } as const;
 
 export type MaintenanceField = 'message' | 'end_time' | 'custom_html' | 'allow_ips' | 'allow_paths';
@@ -149,7 +151,7 @@ function ipProblem(value: string): string {
 
 function pathProblem(value: string): string {
   if (!value.startsWith('/')) return 'must start with /';
-  if (utf8Bytes(value) > MAINTENANCE_LIMITS.pathBytes) return `must be at most ${MAINTENANCE_LIMITS.pathBytes} characters`;
+  if (utf8Bytes(value) > MAINTENANCE_LIMITS.pathBytes) return `must be at most ${MAINTENANCE_LIMITS.pathBytes} bytes`;
   if (PATH_FORBIDDEN.test(value)) return 'must not contain spaces, ?, #, % or control characters';
   if (value.split('/').some((segment) => segment === '.' || segment === '..')) return 'must not contain . or .. segments';
   // "/" matches every request, so the page would never be shown.
