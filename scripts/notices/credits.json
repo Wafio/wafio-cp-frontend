@@ -24,8 +24,10 @@
       "name": "Icons from svelte-awesome",
       "lines": [
         "The icons come from the svelte-awesome package (MIT, listed above). Its glyph paths are Font Awesome 4.7",
-        "by Dave Gandy (https://fontawesome.io), whose icons are under the SIL Open Font License 1.1."
-      ]
+        "by Dave Gandy (https://fontawesome.io), whose font is under the SIL Open Font License 1.1. The copyright",
+        "line of the font and the licence text follow."
+      ],
+      "licence_file": "font-awesome-ofl.txt"
     },
     {
       "name": "Theme toggle icon: moon, from Feather",
