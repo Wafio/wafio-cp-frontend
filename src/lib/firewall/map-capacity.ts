@@ -93,14 +93,28 @@ function header(s: MapSizing): string {
   return text;
 }
 
+// The agent's rows that have a name and a size, first of each name only: the
+// status passes through unchecked, and a repeated name would make the keyed
+// {#each} throw and take the page down.
+function usableMaps(s: MapSizing | null | undefined): MapCapacity[] {
+  const seen = new Set<string>();
+  const out: MapCapacity[] = [];
+  for (const m of Array.isArray(s?.maps) ? s.maps : []) {
+    if (typeof m?.name !== 'string' || !Number.isFinite(m.max_entries) || seen.has(m.name)) continue;
+    seen.add(m.name);
+    out.push(m);
+  }
+  return out;
+}
+
 /** Number of maps that were full within the last 10 minutes. */
 export function fullMapCount(s: MapSizing | null | undefined, now: number): number {
-  return (s?.maps ?? []).filter((m) => mapState(m, now) === 'full').length;
+  return usableMaps(s).filter((m) => mapState(m, now) === 'full').length;
 }
 
 /** Null when the agent reports no usable map sizes. */
 export function mapCapacityView(s: MapSizing | null | undefined, now: number): MapCapacityView | null {
-  const maps = Array.isArray(s?.maps) ? s.maps.filter((m) => typeof m?.name === 'string' && Number.isFinite(m.max_entries)) : [];
+  const maps = usableMaps(s);
   if (!s || maps.length === 0) return null;
   const rows = maps.map((m) => row(m, now));
   return {

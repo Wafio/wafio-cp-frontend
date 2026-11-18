@@ -108,6 +108,17 @@ describe('map capacity view', () => {
     expect(view.rows.map((r) => r.label)).toEqual(['wafio_new_map']);
   });
 
+  test('a malformed list from the agent neither throws nor repeats a name', () => {
+    const full = { ...conntrack, last_full_at: ago(MIN) };
+    for (const maps of [{}, 'x', 7, [null, 3, 'x']] as never[]) {
+      expect(mapCapacityView(sizing({ maps }), now)).toBeNull();
+      expect(fullMapCount(sizing({ maps }), now)).toBe(0);
+    }
+    const twice = sizing({ maps: [full, null as never, { ...full, entries: 1 }] });
+    expect(mapCapacityView(twice, now)!.rows.map((r) => r.usage)).toEqual(['4,210 of 119,750']);
+    expect(fullMapCount(twice, now)).toBe(1);
+  });
+
   test('state and time follow last_full_at per row', () => {
     const maps: MapCapacity[] = [
       { ...conntrack, last_full_at: ago(2 * MIN) },
