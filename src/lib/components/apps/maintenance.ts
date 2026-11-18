@@ -97,9 +97,11 @@ export function fromLocalInput(value: string): string {
   if (!match) return '';
   const [year, month, day, hour, minute] = match.slice(1, 6).map(Number);
   const second = Number(match[6] ?? 0);
-  const d = new Date(year, month - 1, day, hour, minute, second);
-  const real = d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day && d.getHours() === hour && d.getMinutes() === minute;
-  return real ? isoSeconds(d.getTime()) : '';
+  // The fields are checked, not the local clock: a time the clock skips at a daylight saving change
+  // is still kept, as the browser reads it, instead of clearing the end time without a word.
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  const real = probe.getUTCMonth() === month - 1 && probe.getUTCDate() === day && hour < 24 && minute < 60 && second < 60;
+  return real ? isoSeconds(new Date(year, month - 1, day, hour, minute, second).getTime()) : '';
 }
 
 /** `min` and `max` of the end time input: now, and now plus the longest end time the server accepts. */

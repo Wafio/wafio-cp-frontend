@@ -151,6 +151,19 @@ describe('times', () => {
     expect(fromLocalInput('2026-11-18T25:00')).toBe('');
   });
 
+  test('a time the clock skips at a daylight saving change is kept, not cleared', () => {
+    const zone = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      expect(new Date(2026, 0, 15).getTimezoneOffset()).toBe(300);
+      // 2026-03-08 02:30 does not exist in New York: the clock goes from 02:00 EST to 03:00 EDT.
+      expect(['2026-03-08T07:30:00Z', '2026-03-08T06:30:00Z']).toContain(fromLocalInput('2026-03-08T02:30'));
+    } finally {
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
+    }
+  });
+
   test('the end time input accepts from this minute to 365 days on', () => {
     const { min, max } = localInputBounds(NOW + 30_000);
     expect(fromLocalInput(min)).toBe('2026-11-18T12:00:00Z');
