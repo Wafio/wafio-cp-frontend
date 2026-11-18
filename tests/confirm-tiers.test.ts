@@ -13,7 +13,7 @@ import {
 
 describe('confirmation tier table', () => {
   test('typed: destructive, disconnecting or lockout-prone actions', () => {
-    for (const action of ['delete-host', 'delete-app', 'delete-route', 'revoke-host', 'revoke-credential', 'deny-all', 'disable-firewall', 'leave-enforce', 'enable-kill-policy', 'enable-block-policy', 'save-kill-policy', 'save-block-policy'] as const) {
+    for (const action of ['delete-host', 'delete-app', 'delete-route', 'revoke-host', 'revoke-credential', 'deny-all', 'disable-firewall', 'leave-enforce', 'enable-kill-policy', 'save-kill-policy'] as const) {
       expect(tierFor(action)).toBe('typed');
     }
   });
@@ -58,14 +58,15 @@ describe('typed confirmation', () => {
 });
 
 describe('runtime policy saves', () => {
-  test('kill and block policies need typed confirmation whenever they end up enabled', () => {
+  test('kill policies need typed confirmation whenever they end up enabled', () => {
     expect(tierForPolicySave({ action: 'kill', enabled: true })).toBe('typed');
-    expect(tierForPolicySave({ action: 'block', enabled: true })).toBe('typed');
   });
   test('disabled or non-enforcing policies need none', () => {
     expect(tierForPolicySave({ action: 'kill', enabled: false })).toBe('none');
     expect(tierForPolicySave({ action: 'alert', enabled: true })).toBe('none');
     expect(tierForPolicySave({ action: 'simulate', enabled: true })).toBe('none');
+    // A policy still stored as block by an older control plane enforces nothing.
+    expect(tierForPolicySave({ action: 'block', enabled: true })).toBe('none');
   });
 });
 

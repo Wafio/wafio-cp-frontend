@@ -2,7 +2,6 @@
 // Firewall URL state (lib/components/firewall/tabs.ts).
 import { describe, expect, test } from 'bun:test';
 import {
-  bpfLsmState,
   hostDisks,
   hostInfoBytes,
   hostInfoDisplay,
@@ -42,13 +41,10 @@ describe('host inventory', () => {
     expect(hostInfoDisplay({ cpu_mhz: 2399.9 }, 'cpu_mhz')).toBe('2400 MHz');
   });
 
-  test('load average, BPF LSM state, disks and interfaces', () => {
+  test('load average, disks and interfaces', () => {
     expect(hostLoadAverage({ load_avg_1: 0.5, load_avg_5: 0.25, load_avg_15: 0.125 })).toBe('0.50 / 0.25 / 0.13');
     expect(hostLoadAverage({ load_average: '1 2 3' })).toBe('1 2 3');
     expect(hostLoadAverage(null)).toBe('n/a');
-    expect(bpfLsmState({ bpf_lsm: true }).state).toBe('active');
-    expect(bpfLsmState({ bpf_lsm_enabled: 'disabled' }).state).toBe('inactive');
-    expect(bpfLsmState({}).state).toBe('unknown');
     expect(hostDisks({ disks: [{ mountpoint: '/', size_bytes: 100, used_bytes: 25, filesystem: 'ext4' }] })).toEqual([{ mount: '/', total: 100, used: 25, fs: 'ext4' }]);
     expect(usedPercent(25, 100)).toBe('25%');
     expect(usedPercent(null, 100)).toBe('n/a');

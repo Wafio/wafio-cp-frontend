@@ -86,7 +86,6 @@
   import { toast } from '#lib/stores/toast.js';
   import { usePageDetail } from '#lib/page-meta.svelte.js';
   import {
-    bpfLsmDisplay,
     hostDisks,
     hostInfoDisplay,
     hostInterfaces,
@@ -284,7 +283,6 @@
   const info = $derived((host?.host_info ?? null) as Record<string, unknown> | null);
   const disks = $derived(hostDisks(info));
   const nics = $derived(hostInterfaces(info));
-  const bpfLsm = $derived(bpfLsmDisplay(rtStatus, info));
   const STREAM_LIMIT_LABEL = 'Waiting: too many live views open for this project, retrying every 30 s';
   const infoStream = $derived.by((): { status: StatusKind; label: string } => {
     if (!hostAgentReady) return { status: 'disabled', label: 'Snapshot (no host agent streaming)' };
@@ -816,18 +814,6 @@
               <section class="card" aria-labelledby="hd-security">
                 <h2 id="hd-security">Security and runtime</h2>
                 <dl class="facts">
-                  <div>
-                    <dt>BPF LSM</dt>
-                    <dd>
-                      {#if hostAgentReady && !rtLoaded}
-                        <span class="muted">Loading…</span>
-                      {:else}
-                        {#if bpfLsm.tone}<Badge tone={bpfLsm.tone} title={bpfLsm.source === 'agent' ? 'Reported by the host agent' : undefined}>{bpfLsm.label}</Badge>{:else}{bpfLsm.label}{/if}
-                        {#if bpfLsm.hint}<span class="muted">{bpfLsm.hint}</span>{/if}
-                        {#if bpfLsm.meaning}<p class="note lsm-note">{bpfLsm.meaning}{bpfLsm.action ? ` ${bpfLsm.action}` : ''}</p>{/if}
-                      {/if}
-                    </dd>
-                  </div>
                   {#each SECURITY_FIELDS as [label, field] (field)}<div><dt>{label}</dt><dd>{hostInfoDisplay(info, field)}</dd></div>{/each}
                 </dl>
               </section>
@@ -970,7 +956,6 @@
   .facts-inline { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); column-gap: var(--sp-5); }
   .note { margin: 0; font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.5; }
   .muted { color: var(--text-muted); font-size: var(--fs-xs); }
-  .lsm-note { margin-top: var(--sp-1); }
   .mini-scroll { position: relative; overflow-x: auto; }
   .mini-scroll:focus-visible { outline: var(--ring-width) solid var(--ring-color); outline-offset: 2px; }
   .mini { width: 100%; border-collapse: collapse; font-size: var(--fs-xs); }

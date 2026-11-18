@@ -1,10 +1,8 @@
-// Runtime-security trace status fields for protected processes, the
-// kill-candidate priority ring and the BPF-LSM state, as GET /host/trace/status
+// Runtime-security trace status fields for protected processes and the
+// kill-candidate priority ring, as GET /host/trace/status
 // passes them through from the host agent. Older agents omit them.
 import type { TraceStatus } from './api';
 import { formatNumber } from './format';
-import { lsmStateTone, type BadgeTone } from './tone';
-import type { AlertTone } from './components/ui/types';
 
 export type PriorityRingState = 'not-reported' | 'inactive' | 'active';
 
@@ -111,80 +109,4 @@ export function traceLossBreakdown(s: TraceStatus | null | undefined): string | 
     `send queue ${formatNumber(s.queue_dropped)} (${classes(s.queue_dropped_significant, s.queue_dropped_watched)})`,
     `unconfirmed batches ${formatNumber(delivery)} (${classes(s.delivery_lost_significant, s.delivery_lost_watched)})`,
   ].join(' · ');
-}
-
-export type LsmState = 'active' | 'kernel_lacks_bpf' | 'unverified' | 'disabled' | 'failed';
-
-export interface LsmReport {
-  /** The state as the agent sent it; a name this dashboard does not know is kept as sent. */
-  state: string;
-  label: string;
-  tone: BadgeTone;
-  /** Tone of the alert shown for a state that needs a look. */
-  alert: AlertTone;
-  /** What the state means for the operator. */
-  meaning: string;
-  /** What to do about it; null when nothing needs doing. */
-  action: string | null;
-}
-
-const REACTIVE = 'Block policies cannot deny, and Kill policies stop a process only after it has made the call.';
-const BOOT_PARAMETER = 'add bpf to the lsm= boot parameter of the kernel (lsm=...,bpf) and reboot the host';
-
-const LSM_TEXT: Record<LsmState, { label: string; meaning: string; action: string | null }> = {
-  active: {
-    label: 'Active',
-    meaning: 'The kernel runs the BPF-LSM programs of the agent. A Block policy whose only match is a destination IPv4 address denies connections to that address in the kernel.',
-    action: null,
-  },
-  kernel_lacks_bpf: {
-    label: 'Kernel lacks BPF-LSM',
-    meaning: `The kernel does not run BPF-LSM programs, so the agent attached none. ${REACTIVE}`,
-    action: `To turn it on, ${BOOT_PARAMETER}.`,
-  },
-  unverified: {
-    label: 'Unverified',
-    meaning: 'The agent attached its BPF-LSM programs but could not read the kernel list of active security modules, so it cannot tell whether the kernel runs them.',
-    action: `On the host, check that /sys/kernel/security/lsm lists bpf. If it does not, ${BOOT_PARAMETER}.`,
-  },
-  disabled: {
-    label: 'Disabled',
-    meaning: `The agent was started with BPF-LSM off (--lsm=false). ${REACTIVE}`,
-    action: 'To turn it on, restart the agent without --lsm=false.',
-  },
-  failed: {
-    label: 'Failed',
-    meaning: `The agent could not load or attach its BPF-LSM programs. ${REACTIVE}`,
-    action: 'Read the host agent log for the error, fix it and restart the agent.',
-  },
-};
-
-function isLsmState(key: string): key is LsmState {
-  return Object.keys(LSM_TEXT).includes(key);
-}
-
-function alertTone(tone: BadgeTone): AlertTone {
-  return tone === 'danger' ? 'error' : tone === 'warning' ? 'warning' : 'info';
-}
-
-/**
- * The BPF-LSM state the agent reports in its trace status, or null when it does not
- * (an older agent, or tracing stopped). The agent's state is the truth: the host
- * inventory field can disagree with what the agent does. `lsm_active` alone is not
- * enough, it is false while tracing is stopped.
- */
-export function lsmReport(s: Pick<TraceStatus, 'lsm_state'> | null | undefined): LsmReport | null {
-  const raw = typeof s?.lsm_state === 'string' ? s.lsm_state.trim() : '';
-  if (!raw) return null;
-  const key = raw.toLowerCase();
-  const tone = lsmStateTone(key);
-  if (isLsmState(key)) return { state: key, tone, alert: alertTone(tone), ...LSM_TEXT[key] };
-  return {
-    state: raw,
-    label: raw,
-    tone,
-    alert: alertTone(tone),
-    meaning: `The agent reported the BPF-LSM state "${raw}", which this dashboard does not know.`,
-    action: 'Read the host agent log for details.',
-  };
 }

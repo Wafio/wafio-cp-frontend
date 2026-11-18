@@ -7,10 +7,8 @@
  * *_mb). These helpers read the first alias present and format with
  * $lib/format, so every page shows the same value the same way.
  */
-import type { Host, TraceStatus } from '#lib/api.js';
+import type { Host } from '#lib/api.js';
 import { formatBytes, formatDateTime, formatDuration } from '#lib/format.js';
-import { capabilityTone, type BadgeTone } from '#lib/tone.js';
-import { lsmReport } from '#lib/trace-status.js';
 import { hasUnsafeChars } from '#lib/validation.js';
 
 export type HostInfo = Record<string, unknown>;
@@ -36,7 +34,6 @@ export const HOST_INFO_ALIASES = {
   interface: ['primary_interface', 'interface'],
   selinux: ['selinux_mode', 'selinux'],
   apparmor: ['apparmor', 'apparmor_enabled'],
-  bpf_lsm: ['bpf_lsm', 'bpf_lsm_enabled'],
   container_runtime: ['container_runtime'],
   virtualization: ['virt_type', 'virtualization'],
   agent_version: ['agent_version'],
@@ -108,8 +105,6 @@ export function hostInfoDisplay(info: HostInfo | null | undefined, field: HostIn
       const n = positive(hostInfoEntry(info, field)?.value);
       return n === null ? EMPTY : `${Math.round(n)} MHz`;
     }
-    case 'bpf_lsm':
-      return bpfLsmState(info).label;
     default:
       return hostInfoText(info, field) || EMPTY;
   }
@@ -122,41 +117,6 @@ export function hostLoadAverage(info: HostInfo | null | undefined): string {
     return [info.load_avg_1, info.load_avg_5, info.load_avg_15].map((v) => (typeof v === 'number' ? v.toFixed(2) : EMPTY)).join(' / ');
   }
   return present(info.load_average) ? String(info.load_average) : EMPTY;
-}
-
-/** BPF LSM availability: decides whether a runtime `block` policy can deny connections to its IPv4 address. */
-export function bpfLsmState(info: HostInfo | null | undefined): { state: 'active' | 'inactive' | 'unknown'; label: string } {
-  const raw = hostInfoText(info, 'bpf_lsm').toLowerCase();
-  if (['true', 'active', 'enabled', '1'].includes(raw)) return { state: 'active', label: 'Active' };
-  if (['false', 'inactive', 'disabled', '0'].includes(raw)) return { state: 'inactive', label: 'Inactive (kprobe fallback)' };
-  return { state: 'unknown', label: raw ? raw : EMPTY };
-}
-
-export interface BpfLsmDisplay {
-  /** The agent's own trace status, or the host inventory when the agent reports no state. */
-  source: 'agent' | 'inventory';
-  /** null: plain text without a badge (the inventory has no usable value). */
-  tone: BadgeTone | null;
-  label: string;
-  /** Short inline remark, inventory only. */
-  hint: string | null;
-  /** What the agent's state means, and what to do about it; agent only. */
-  meaning: string | null;
-  action: string | null;
-}
-
-/**
- * The BPF LSM line of the host page. The agent's `lsm_state` is the truth; an agent
- * that does not report it keeps the display of the host inventory field.
- */
-export function bpfLsmDisplay(status: Pick<TraceStatus, 'lsm_state'> | null | undefined, info: HostInfo | null | undefined): BpfLsmDisplay {
-  const report = lsmReport(status);
-  if (report) return { source: 'agent', tone: report.tone, label: report.label, hint: null, meaning: report.meaning, action: report.action };
-  const inventory = bpfLsmState(info);
-  const base = { source: 'inventory', meaning: null, action: null } as const;
-  if (inventory.state === 'active') return { ...base, tone: capabilityTone(true), label: 'Active', hint: null };
-  if (inventory.state === 'inactive') return { ...base, tone: capabilityTone(false), label: 'Inactive', hint: 'kprobe fallback; block policies cannot deny' };
-  return { ...base, tone: null, label: inventory.label, hint: null };
 }
 
 export interface HostDisk {

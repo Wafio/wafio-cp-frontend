@@ -1,8 +1,8 @@
 <!--
   EnforcementPolicies: the host's runtime enforcement policies. Enabling a
-  kill or block policy from the status switch goes through the same typed
-  confirmation as saving it; disabling needs none. A block policy the kernel
-  cannot enforce is not enabled and shows as Not enforced. Hit counts refresh
+  kill policy from the status switch goes through the same typed
+  confirmation as saving it; disabling needs none. A policy with an action
+  that no longer exists (Block) is not enabled and shows as Not enforced. Hit counts refresh
   every 15 s while the list is visible.
 -->
 <script lang="ts">
@@ -19,7 +19,7 @@
   import DateTime from '#lib/components/ui/DateTime.svelte';
   import type { DataTableColumn } from '#lib/components/ui/types.js';
   import CopyRuntimeFlow from '#lib/components/hosts/CopyRuntimeFlow.svelte';
-  import { BLOCK_NOT_ENFORCED, blockPolicyEnforces, hasEnforcingPolicies, needsKillAcknowledgement, policyMatchSummary, policyPlacement, policySaveTier, draftFromPolicy } from './policy';
+  import { hasEnforcingPolicies, isPolicyAction, needsKillAcknowledgement, policyMatchSummary, policyPlacement, policySaveTier, draftFromPolicy } from './policy';
 
   let {
     projectId,
@@ -101,8 +101,8 @@
   function requestToggle(policy: EnforcementPolicy) {
     if (!canConfigure) return;
     const next = !policy.enabled;
-    if (next && policy.action === 'block' && !blockPolicyEnforces(policy)) {
-      toast.error(BLOCK_NOT_ENFORCED, 'Policy not changed');
+    if (next && !isPolicyAction(policy.action)) {
+      toast.error('This action is no longer available. Edit the policy and choose another action.', 'Policy not changed');
       return;
     }
     if (next && policySaveTier({ action: policy.action, enabled: true }) !== 'none') {
@@ -146,7 +146,7 @@
     <div>
       <h2 id="enf-title" class="section-title">Enforcement policies</h2>
       <p class="caption">
-        {formatNumber(policies.length)} policies · {formatNumber(policies.filter((p) => p.enabled).length)} enabled · {formatNumber(enforcing)} enforcing (kill or block).
+        {formatNumber(policies.length)} policies · {formatNumber(policies.filter((p) => p.enabled).length)} enabled · {formatNumber(enforcing)} enforcing (kill).
         New policies start in Simulate.
       </p>
     </div>
@@ -216,7 +216,7 @@
 <ConfirmModal
   open={confirmEnable !== null}
   title={confirmEnable ? `Enable ${confirmEnable.action} policy "${confirmEnable.name}"?` : ''}
-  confirmLabel={confirmEnable?.action === 'block' ? 'Enable and block matches' : 'Enable and kill matches'}
+  confirmLabel="Enable and kill matches"
   tone="danger"
   requireText={confirmEnable?.name ?? ''}
   requireTextLabel={confirmEnable ? `Type the policy name, ${confirmEnable.name}, to confirm` : undefined}
@@ -226,11 +226,7 @@
 >
   {#if confirmEnable}
     <div class="confirm-body">
-      <p>
-        {confirmEnable.action === 'block'
-          ? `The kernel denies outbound connections to ${confirmEnable.match_dest_ip} on this host.`
-          : 'The agent sends SIGKILL to every matching process. Misconfiguration can stop legitimate services.'}
-      </p>
+      <p>The agent sends SIGKILL to every matching process. Misconfiguration can stop legitimate services.</p>
       <p>Match: {policyMatchSummary(confirmEnable).join(' · ')}.</p>
       {#if needsKillAcknowledgement(draftFromPolicy(confirmEnable))}<p>It has no narrowing match (UID 0, “/”, system directories such as /usr/ or /tmp/ and terms shorter than 3 characters do not narrow): every process that emits its events is killed, except PID 1, the agent and verified host daemons (sshd, systemd, containerd, dockerd, kubelet and names added on the host agent). Confirming records your acknowledgement.</p>{/if}
     </div>

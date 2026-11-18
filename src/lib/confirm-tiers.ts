@@ -17,7 +17,7 @@ export type ConfirmTier = 'typed' | 'simple' | 'none';
 
 export const CONFIRM_TIERS = {
   // Typed: delete host/app/route, revoke host or credential,
-  // Deny-All, disabling the firewall or leaving enforce, kill/block policies.
+  // Deny-All, disabling the firewall or leaving enforce, kill policies.
   'delete-host': 'typed',
   'delete-app': 'typed',
   'delete-route': 'typed',
@@ -27,9 +27,7 @@ export const CONFIRM_TIERS = {
   'disable-firewall': 'typed',
   'leave-enforce': 'typed',
   'enable-kill-policy': 'typed',
-  'enable-block-policy': 'typed',
   'save-kill-policy': 'typed',
-  'save-block-policy': 'typed',
   // Same impact class as the other typed actions: the project and every
   // resource in it disappear; a rotated key disconnects the running agent
   // until it is reinstalled; a deleted agent loses its history.
@@ -114,12 +112,12 @@ export function strictestTier(...tiers: ConfirmTier[]): ConfirmTier {
   return tiers.reduce<ConfirmTier>((a, b) => (RANK[b] > RANK[a] ? b : a), 'none');
 }
 
-/** Runtime enforcement policy actions that can stop a process or deny connections. */
-export const ENFORCING_POLICY_ACTIONS = ['kill', 'block'] as const;
+/** Runtime enforcement policy actions that can stop a process. */
+export const ENFORCING_POLICY_ACTIONS = ['kill'] as const;
 
 /**
  * Tier for saving or enabling a runtime (trace) enforcement policy: every
- * save or enable of a kill or block policy that ends up enabled
+ * save or enable of a kill policy that ends up enabled
  * needs the typed confirmation, including the status toggle and re-saving an
  * already enabled policy, since either changes live enforcement. Disabling a
  * policy or saving a non-enforcing one needs none.
@@ -127,7 +125,7 @@ export const ENFORCING_POLICY_ACTIONS = ['kill', 'block'] as const;
 export function tierForPolicySave(next: { action: string; enabled: boolean }): ConfirmTier {
   const enforcing = (ENFORCING_POLICY_ACTIONS as readonly string[]).includes(next.action);
   if (!enforcing || !next.enabled) return 'none';
-  return tierFor(next.action === 'kill' ? 'save-kill-policy' : 'save-block-policy');
+  return tierFor('save-kill-policy');
 }
 
 /** Firewall global switches (EBPFGlobalConfig subset). */

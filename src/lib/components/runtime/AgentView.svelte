@@ -2,12 +2,12 @@
   AgentView: the host agent behind Runtime security: connection and tracing
   status, capture health (probes, loss, buffers, delivery) and the trace
   configuration. Saving a configuration that captures less asks first;
-  disabling tracing while kill/block policies are enabled needs the typed
+  disabling tracing while kill policies are enabled needs the typed
   confirmation (it removes their enforcement).
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { killCandidatesLost, lsmReport, priorityRingSummary, protectedSummary, traceLossBreakdown, traceLossNotice } from '#lib/trace-status.js';
+  import { killCandidatesLost, priorityRingSummary, protectedSummary, traceLossBreakdown, traceLossNotice } from '#lib/trace-status.js';
   import { telemetryRows, telemetrySummary } from '#lib/telemetry-status.js';
   import { getTraceConfig, listPolicies, updateTraceConfig, type TraceConfig, type TraceEventTypeInfo, type TraceStats, type TraceStatus } from '#lib/api.js';
   import { createDirtyTracker } from '#lib/dirty.svelte.js';
@@ -17,7 +17,6 @@
   import HostConfigEvidence from '#lib/components/HostConfigEvidence.svelte';
   import MapCapacity from '#lib/components/firewall/MapCapacity.svelte';
   import Alert from '#lib/components/ui/Alert.svelte';
-  import Badge from '#lib/components/ui/Badge.svelte';
   import Button from '#lib/components/ui/Button.svelte';
   import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
   import DateTime from '#lib/components/ui/DateTime.svelte';
@@ -150,7 +149,6 @@
   const agentOnline = $derived(status?.agent_online === true);
   /** GET /trace/status answers {running:false, agent_online, never_reported:true} before the first report. */
   const neverReported = $derived(Boolean((status as (TraceStatus & { never_reported?: boolean }) | null)?.never_reported));
-  const lsm = $derived(lsmReport(status));
   const lossNotice = $derived(traceLossNotice(status));
   const lossBreakdown = $derived(traceLossBreakdown(status));
   const reportsRecentLoss = $derived(typeof status?.loss_window_sec === 'number');
@@ -182,15 +180,8 @@
         <div><dt>Uptime</dt><dd>{formatDuration(status.uptime_ms, 'ms')}</dd></div>
         <div><dt>Userspace process kill</dt><dd>{status.userspace_kill_supported === false ? 'Unavailable (no stable process identity)' : status.userspace_kill_supported ? 'Supported' : 'Unknown'}</dd></div>
         <div><dt>Protected processes</dt><dd>{protectedSummary(status)}</dd></div>
-        <div><dt>BPF-LSM</dt><dd>{#if lsm}<Badge tone={lsm.tone}>{lsm.label}</Badge>{:else}Not reported{status.running ? '' : ' (tracing is stopped)'}{/if}</dd></div>
         <div><dt>Agent ID</dt><dd><code>{scope.agentId ?? 'n/a'}</code></dd></div>
       </dl>
-      {#if lsm && lsm.state !== 'active'}
-        <Alert tone={lsm.alert} title={`BPF-LSM: ${lsm.label}`}>
-          <p class="lsm-text">{lsm.meaning}</p>
-          {#if lsm.action}<p class="lsm-text">{lsm.action}</p>{/if}
-        </Alert>
-      {/if}
       {#if !status.running}
         <Alert tone="warning" compact message="Tracing is not running on this host. Enable it below, or start the agent with runtime tracing (--trace)." />
       {/if}
@@ -342,7 +333,7 @@
 >
   <div class="confirm-body">
     <p>This configuration stops capturing {losses.join('; ') || 'some activity'}.</p>
-    {#if !config.enabled && enforcing}<p>Kill and block policies are enabled on this host; they stop enforcing while tracing is off.</p>{/if}
+    {#if !config.enabled && enforcing}<p>Kill policies are enabled on this host; they stop enforcing while tracing is off.</p>{/if}
     <p>Activity that is not captured cannot raise incidents, trigger policies or appear in Explore.</p>
   </div>
 </ConfirmModal>
@@ -356,8 +347,6 @@
   .facts dd { margin: var(--sp-1) 0 0; font-size: var(--fs-sm); color: var(--text-primary); font-variant-numeric: tabular-nums; }
   .muted { margin: 0; font-size: var(--fs-xs); color: var(--text-muted); }
   .plain { margin: 0; padding-left: var(--sp-5); }
-  .lsm-text { margin: 0; }
-  .lsm-text + .lsm-text { margin-top: var(--sp-1); }
   .more summary { cursor: pointer; font-size: var(--fs-sm); color: var(--text-secondary); }
   .probes { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); }
   .transport { display: grid; gap: var(--sp-2); margin-top: var(--sp-2); font-size: var(--fs-sm); color: var(--text-secondary); }

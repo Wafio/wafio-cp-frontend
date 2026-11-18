@@ -1,7 +1,7 @@
 <!--
   PolicyEditor: create or edit a runtime enforcement policy in a drawer.
   New policies start in Simulate. Saving an enabled
-  kill or block policy goes through the typed confirmation (the operator
+  kill policy goes through the typed confirmation (the operator
   types the policy name); a kill policy without a narrowing match is sent
   with kill_acknowledged only after that confirmation. "Preview matches"
   replays the policy against recent events of the host.
@@ -12,6 +12,7 @@
   import { createDirtyTracker } from '#lib/dirty.svelte.js';
   import { formatNumber } from '#lib/format.js';
   import type { HostScope } from '#lib/host-scope.svelte.js';
+  import { base } from '#lib/paths.js';
   import { toast } from '#lib/stores/toast.js';
   import Alert from '#lib/components/ui/Alert.svelte';
   import Button from '#lib/components/ui/Button.svelte';
@@ -22,13 +23,12 @@
   import { timeRangeLabel, timeRangeMinutes, type TimeRangeKey } from '#lib/components/ui/time-range.js';
   import { mitreFromEventTypes } from './mitre';
   import {
-    BLOCK_NOT_ENFORCED,
     COMM_MATCH_MODES,
     MIN_SEVERITY_CHOICES,
     POLICY_ACTIONS,
-    blockPolicyEnforces,
     defaultPolicyDraft,
     draftFromPolicy,
+    isPolicyAction,
     kernelWillDowngrade,
     needsKillAcknowledgement,
     policySaveTier,
@@ -101,7 +101,8 @@
   const tier = $derived(policySaveTier(draft));
   const broadKill = $derived(needsKillAcknowledgement(draft));
   const downgrade = $derived(kernelWillDowngrade(draft));
-  const blockIdle = $derived(draft.action === 'block' && !blockPolicyEnforces(draft));
+  const legacyAction = $derived(!isPolicyAction(draft.action));
+  const egressHref = $derived(`${base}/projects/${projectId}/host/firewall?${new URLSearchParams({ host: scope.hostId, tab: 'rules', type: 'egress' })}`);
   const preview = $derived(sample ? previewMatches(draft, sample) : null);
   const commModeHelp = $derived(COMM_MATCH_MODES.find((m) => m.value === draft.match_comm_mode)?.help ?? '');
 
@@ -235,16 +236,14 @@
         </label>
       {/each}
     </fieldset>
-    {#if blockIdle}
-      <Alert tone={draft.enabled ? 'error' : 'warning'} title="This block policy would not be enforced">
-        {BLOCK_NOT_ENFORCED}
-        {#if draft.enabled}Turn Enabled off to save it as it is, or choose another action.{/if}
-      </Alert>
+    <span class="hint">To block outbound traffic to an address, use <a href={egressHref}>Firewall, Access rules, Egress blocklist</a>.</span>
+    {#if legacyAction}
+      <Alert tone="warning" title={`The ${draft.action} action is no longer available`}>Choose one of the actions above before saving this policy.</Alert>
     {/if}
-    {#if tier === 'typed' && !blockIdle}
-      <Alert tone="warning" title={draft.action === 'kill' ? 'This policy kills processes' : 'This policy denies connections'}>
+    {#if tier === 'typed'}
+      <Alert tone="warning" title="This policy kills processes">
         {#if broadKill}It has no narrowing process, file, UID, port or IP match (UID 0, “/”, system directories such as /usr/ or /tmp/ and terms shorter than 3 characters do not narrow), so it applies to every process that emits its events. Exempt are only PID 1, the agent and verified host daemons: sshd, sshd-session, sshd-auth, systemd, systemd-journald, containerd, dockerd, kubelet and names added on the host agent, running as root from the host’s own binary.{/if}
-        {#if draft.action === 'kill' && draft.kernel_enforce}In the kernel a daemon is exempt once the agent has listed it (at start, then every 5 seconds); a child it forks stays exempt until it runs another program.{/if}
+        {#if draft.kernel_enforce}In the kernel a daemon is exempt once the agent has listed it (at start, then every 5 seconds); a child it forks stays exempt until it runs another program.{/if}
         Saving asks you to type the policy name. Run it in Simulate first and check Explore → Enforcement actions.
       </Alert>
     {/if}
@@ -290,7 +289,7 @@
         <label class="field">
           <span class="label">Destination IP</span>
           <input class="input" bind:value={draft.match_dest_ip} placeholder="203.0.113.7" />
-          <span class="hint">One IPv4 address, for connect and sendto events. A Block policy needs this and no other match.</span>
+          <span class="hint">One IPv4 address, for connect and sendto events.</span>
         </label>
       </div>
     </fieldset>
@@ -336,7 +335,7 @@
     <div class="checks">
       <Switch bind:checked={draft.kernel_enforce} label="Enforce in the kernel" hint="Instant; evaluates event type and severity only." />
       {#if downgrade}
-        <Alert tone="warning" compact message="The kernel cannot evaluate process, file or UID matches: the agent keeps this rule in userspace, one ring-buffer round trip later. Clear those fields for in-kernel enforcement." />
+        <Alert tone="warning" compact message="The kernel cannot evaluate process, file, UID or destination matches: the agent keeps this rule in userspace, one ring-buffer round trip later. Clear those fields for in-kernel enforcement." />
       {/if}
       <Switch bind:checked={draft.enabled} label="Enabled" />
     </div>
@@ -380,8 +379,8 @@
 
 <ConfirmModal
   open={confirmOpen}
-  title={draft.action === 'kill' ? `Enable kill policy "${draft.name.trim()}"?` : draft.action === 'block' ? `Enable block policy "${draft.name.trim()}"?` : 'Save this policy?'}
-  confirmLabel={draft.action === 'kill' ? 'Save and kill matches' : draft.action === 'block' ? 'Save and block matches' : 'Save'}
+  title={draft.action === 'kill' ? `Enable kill policy "${draft.name.trim()}"?` : 'Save this policy?'}
+  confirmLabel={draft.action === 'kill' ? 'Save and kill matches' : 'Save'}
   tone={tier === 'typed' ? 'danger' : 'warning'}
   requireText={tier === 'typed' ? draft.name.trim() : ''}
   requireTextLabel={tier === 'typed' ? `Type the policy name, ${draft.name.trim()}, to confirm` : undefined}
@@ -392,8 +391,6 @@
   <div class="confirm-body">
     {#if draft.action === 'kill'}
       <p>The agent sends SIGKILL to every process that matches, on {scope.agent?.hostname || 'this host'}. Misconfiguration can stop legitimate services.</p>
-    {:else if draft.action === 'block'}
-      <p>The kernel denies outbound connections to {draft.match_dest_ip?.trim()} on {scope.agent?.hostname || 'this host'}.</p>
     {/if}
     {#if broadKill}<p>It has no narrowing match: every process that emits its events is killed, except PID 1, the agent and verified host daemons (sshd, systemd, containerd, dockerd, kubelet and names added on the host agent). Confirming records your acknowledgement.</p>{/if}
     {#if preview}<p>Preview: {formatNumber(preview.matched)} of the newest {formatNumber(preview.sampled)} stored events would have matched.</p>{:else}<p>No preview was run. Consider Simulate first.</p>{/if}
