@@ -15,6 +15,7 @@
   import { createLifecycle, type HostScope } from '#lib/host-scope.svelte.js';
   import { toast } from '#lib/stores/toast.js';
   import HostConfigEvidence from '#lib/components/HostConfigEvidence.svelte';
+  import MapCapacity from '#lib/components/firewall/MapCapacity.svelte';
   import Alert from '#lib/components/ui/Alert.svelte';
   import Badge from '#lib/components/ui/Badge.svelte';
   import Button from '#lib/components/ui/Button.svelte';
@@ -227,6 +228,7 @@
         <div><dt>Buffer used</dt><dd>{bufferRatio === null ? 'Unknown' : formatPercent(bufferRatio)}</dd></div>
         <div><dt>Kill-candidate ring</dt><dd>{priorityRingSummary(status)}</dd></div>
       </dl>
+      <MapCapacity sizing={status.map_sizing} />
       {#if status.probe_names?.length}
         <details class="more">
           <summary>Loaded probes ({formatNumber(status.probe_names.length)})</summary>

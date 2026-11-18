@@ -98,7 +98,7 @@
   {/each}
 
   {#if coverageFailures}
-    <Alert tone="warning" compact title="Coverage gap" message={`Since the agent started: ${formatNumber(metrics?.state_table_full ?? 0)} state-table capacity failures and ${formatNumber(metrics?.packet_parse_failures ?? 0)} packet parse failures. Affected packets were not fully inspected.`} />
+    <Alert tone="warning" compact title="Coverage gap" message={`Since the agent started: ${formatNumber(metrics?.state_table_full ?? 0)} state-table capacity failures and ${formatNumber(metrics?.packet_parse_failures ?? 0)} packet parse failures. Affected packets were not fully inspected.${status.map_sizing ? ' See Map capacity on the Firewall page.' : ''}`} />
   {/if}
 </section>
 

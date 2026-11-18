@@ -66,6 +66,73 @@ describe('firewall error states are not "no data"', () => {
   });
 });
 
+describe('BPF map capacity', () => {
+  const overview = '../src/lib/components/firewall/FirewallOverview.svelte';
+  const banner = '../src/lib/components/firewall/FirewallStatusBanner.svelte';
+  const props = (status: Record<string, unknown>) => ({
+    range: '24h',
+    onrangechange: () => {},
+    onretryanalytics: () => {},
+    onreloadtopips: () => {},
+    onblockip: () => {},
+    status: { running: true, ...status },
+  });
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+  // Badge children render between empty comment markers.
+  const plain = (html: string) => html.replace(/<!--.*?-->/g, '');
+  const sizing = (maps: Record<string, unknown>[]) => ({
+    scale: 0.2395,
+    source: 'auto',
+    memory_bytes: 2057306112,
+    memory_source: 'meminfo',
+    maps,
+  });
+  const conntrack = { name: 'wafio_conntrack', max_entries: 119750, default_max_entries: 500000, entries: 4210 };
+  const syn = { name: 'wafio_syn_state', max_entries: 47900, default_max_entries: 200000, entries: 47900, full_count: 3 };
+
+  test('the overview shows each map with its fill, its reduced size and the scale', async () => {
+    const html = plain(await render(overview, props({ map_sizing: sizing([conntrack, { ...syn, last_full_at: ago(60 * 60_000) }]) })));
+    expect(html).toContain('Map capacity');
+    expect(html).toContain('Map scale 0.24, automatic, from 1.9 GiB memory');
+    expect(html).toContain('Connection tracking');
+    expect(html).toContain('4,210 of 119,750');
+    expect(html).toContain('reduced from 500,000');
+    expect(html).toContain('SYN flood sources');
+    expect(html).toContain('>Was full</span>');
+    expect(html).not.toContain('>Full</span>');
+    expect(html).not.toContain('map full');
+  });
+
+  test('an agent without map_sizing shows "Not reported", not an empty or broken table', async () => {
+    const html = await render(overview, props({}));
+    expect(html).toContain('Map capacity');
+    expect(html).toContain('Not reported');
+    expect(html).not.toContain('Map scale');
+  });
+
+  test('a map that is full now is marked Full, counted in the summary and the advice is shown', async () => {
+    const html = plain(await render(overview, props({ map_sizing: sizing([conntrack, { ...syn, last_full_at: ago(60_000) }]) })));
+    expect(html).toContain('>Full</span>');
+    expect(html).toContain('1 map full');
+    expect(html).toContain('Raise WAFIO_EBPF_MAP_SCALE (at most 1) or look for a flood.');
+    expect(html).toContain('>OK</span>');
+  });
+
+  test('the Coverage gap alert points to Map capacity only when the agent reports map_sizing', async () => {
+    const base = { setupHref: '/host', metrics: { state_table_full: 3, packet_parse_failures: 0 } };
+    const with_ = await render(banner, { ...base, status: { running: true, agent_online: true, map_sizing: sizing([conntrack]) } });
+    expect(with_).toContain('Coverage gap');
+    expect(with_).toContain('See Map capacity on the Firewall page.');
+    const without = await render(banner, { ...base, status: { running: true, agent_online: true } });
+    expect(without).toContain('Coverage gap');
+    expect(without).not.toContain('Map capacity');
+  });
+
+  test('the trace view renders the component for the trace maps', () => {
+    expect(src('lib/components/runtime/AgentView.svelte')).toContain('<MapCapacity sizing={status.map_sizing} />');
+  });
+});
+
 describe('country codes, app geo and range changes', () => {
   test('the WAF policy form shows an InlineError with retry when the country list fails', () => {
     const form = src('lib/components/ConfigWafForm.svelte');

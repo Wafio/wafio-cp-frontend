@@ -18,12 +18,14 @@
   import DateTime from '#lib/components/ui/DateTime.svelte';
   import Spinner from '#lib/components/ui/Spinner.svelte';
   import HostConfigEvidence from '#lib/components/HostConfigEvidence.svelte';
+  import MapCapacity from './MapCapacity.svelte';
   import type { KpiItem, DataTableColumn } from '#lib/components/ui/types.js';
   import type { TimeRangeKey } from '#lib/components/ui/time-range.js';
   import type { EBPFMetrics, EBPFStatus, FirewallAnalytics, FirewallDropsSummary, FirewallTopIPRow } from '#lib/api.js';
   import { categoricalColor } from '#lib/tone.js';
   import { formatBitRate, formatBytes, formatCount, formatNumber, formatPercent, formatRelative, utcHourBucketsToLocal } from '#lib/format.js';
   import { countryFlag, formatCountryName } from '#lib/geo.js';
+  import { fullMapCount } from '#lib/firewall/map-capacity.js';
 
   let {
     range,
@@ -148,6 +150,7 @@
     return { hours, max, hour: hours.indexOf(max), zone: local ? '' : ' UTC' };
   });
   const pad = (n: number) => String(n).padStart(2, '0');
+  const mapsFull = $derived(fullMapCount(status.map_sizing, Date.now()));
 </script>
 
 <div class="ov">
@@ -334,6 +337,7 @@
       <h2 class="quality-title">Data quality and delivery</h2>
       <span class="fw-muted quality-signals">
         {#if status.coverage_warnings?.length}{formatCount(status.coverage_warnings.length, 'coverage note')} · {/if}
+        {#if mapsFull > 0}{formatCount(mapsFull, 'map')} full · {/if}
         {#if status.telemetry_delivery}{formatNumber(status.telemetry_delivery.pending_batches)} pending · {formatNumber(status.telemetry_delivery.dropped_events)} discarded · {/if}
         would-drop {metrics?.would_drop_packets !== undefined ? formatNumber(metrics.would_drop_packets) : 'unknown'}
       </span>
@@ -349,6 +353,7 @@
         <p>Control-plane ingestion for this agent since the control plane started: {formatNumber(status.ingestion.accepted_events)} events queued, {formatNumber(status.ingestion.rejected_events)} queue rejections, {formatNumber(status.ingestion.db_write_failures)} database write failures.</p>
       {/if}
       <p>Monitor-only would-drop packets: {metrics?.would_drop_packets !== undefined ? formatNumber(metrics.would_drop_packets) : 'unknown'} (not blocked). Egress IPv6: {status.egress_ipv6_supported === undefined ? 'unknown' : status.egress_ipv6_supported ? 'supported' : 'not supported'}.</p>
+      <MapCapacity sizing={status.map_sizing} />
       <HostConfigEvidence bundles={status.bundle_status} headingLevel={3} />
     </div>
   </details>
