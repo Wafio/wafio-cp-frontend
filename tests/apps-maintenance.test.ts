@@ -5,10 +5,14 @@ import type { Maintenance } from '../src/lib/api';
 import {
   MAINTENANCE_LIMITS,
   endPassed,
+  classifyRefusal,
+  disabledToast,
   enableConfirmMessage,
+  enabledToast,
   formatKiB,
   formFromMaintenance,
   fromLocalInput,
+  groupDigits,
   isMaintenanceField,
   isoSeconds,
   localInputBounds,
@@ -26,6 +30,7 @@ import {
   toLocalInput,
   utf8Bytes,
   validateMaintenance,
+  type Serving,
 } from '../src/lib/components/apps/maintenance';
 
 // The control plane's page and limits.
@@ -415,23 +420,130 @@ describe('notices and texts', () => {
     expect(switchDisabled({ ...open, supported: false, enabled: true })).toBe(false);
   });
 
+  const connected: Serving = { assigned: true, online: true, agent: 'edge-1' };
+  const offline: Serving = { assigned: true, online: false, agent: 'edge-1' };
+  const unknown: Serving = { assigned: true, online: undefined, agent: '' };
+  const nobody: Serving = { assigned: false, online: undefined, agent: '' };
+  const closes = 'Open WebSocket connections and live event streams of visitors who are not allowed are closed.';
+  const nothingChanges = 'No WAF agent serves this application, so nothing changes for visitors until one is assigned on the Assignment tab.';
+
   test('the confirmation says who is locked out and what is saved with it', () => {
-    const plain = enableConfirmMessage({ noAllowedIps: false, unsaved: false });
-    expect(plain).toBe('Visitors will see the maintenance page instead of the site within a few seconds, with HTTP status 503. Requests from allowed IP addresses and paths still reach the site.');
-    expect(enableConfirmMessage({ noAllowedIps: true, unsaved: false })).toBe(`${plain} No IP addresses are allowed, so your team cannot open the site either.`);
-    expect(enableConfirmMessage({ noAllowedIps: false, unsaved: true })).toBe(`${plain} Your unsaved changes on this page are saved too.`);
-    expect(enableConfirmMessage({ noAllowedIps: true, unsaved: true })).toBe(
+    const none = { noAllowedIps: false, unsaved: false };
+    const plain = enableConfirmMessage({ ...connected, ...none });
+    expect(plain).toBe(
+      `Visitors will see the maintenance page instead of the site within a few seconds, with HTTP status 503. Requests from allowed IP addresses and paths still reach the site. ${closes}`,
+    );
+    expect(enableConfirmMessage({ ...connected, noAllowedIps: true, unsaved: false })).toBe(`${plain} No IP addresses are allowed, so your team cannot open the site either.`);
+    expect(enableConfirmMessage({ ...connected, noAllowedIps: false, unsaved: true })).toBe(`${plain} Your unsaved changes on this page are saved too.`);
+    expect(enableConfirmMessage({ ...connected, noAllowedIps: true, unsaved: true })).toBe(
       `${plain} No IP addresses are allowed, so your team cannot open the site either. Your unsaved changes on this page are saved too.`,
     );
   });
 
-  test('the toast after saving depends on the switch', () => {
-    expect(savedMessage(false)).toBe('Maintenance settings saved.');
-    expect(savedMessage(true)).toBe('Maintenance settings saved. The agent applies them within a few seconds.');
+  test('the confirmation names an offline agent, says nothing of a delay it cannot promise, and tells when nobody serves the application', () => {
+    const none = { noAllowedIps: false, unsaved: false };
+    expect(enableConfirmMessage({ ...offline, ...none })).toBe(
+      'Visitors will see the maintenance page instead of the site, with HTTP status 503, once edge-1 reconnects. Requests from allowed IP addresses and paths still reach the site.',
+    );
+    expect(enableConfirmMessage({ ...unknown, ...none })).toBe(
+      `Visitors will see the maintenance page instead of the site, with HTTP status 503, once the WAF agent has applied the change. Requests from allowed IP addresses and paths still reach the site. ${closes}`,
+    );
+    expect(enableConfirmMessage({ ...nobody, ...none })).toBe(nothingChanges);
+    expect(enableConfirmMessage({ ...nobody, noAllowedIps: true, unsaved: true })).toBe(
+      `${nothingChanges} No IP addresses are allowed, so your team cannot open the site either. Your unsaved changes on this page are saved too.`,
+    );
+  });
+
+  test('the toast after saving depends on the switch and on who serves the application', () => {
+    expect(savedMessage(false, connected)).toBe('Maintenance settings saved.');
+    expect(savedMessage(false, nobody)).toBe('Maintenance settings saved.');
+    expect(savedMessage(true, connected)).toBe('Maintenance settings saved. The agent applies them within a few seconds.');
+    expect(savedMessage(true, offline)).toBe('Maintenance settings saved. The new settings reach visitors once edge-1 reconnects.');
+    expect(savedMessage(true, unknown)).toBe('Maintenance settings saved. The new settings reach visitors once the WAF agent has applied the change.');
+    expect(savedMessage(true, nobody)).toBe(`Maintenance settings saved. ${nothingChanges}`);
+  });
+
+  test('the toasts of the switch: connections are closed when it goes on, nothing is said of them when it goes off', () => {
+    expect(enabledToast(connected)).toBe(`Maintenance mode is on. Visitors now see the maintenance page. ${closes}`);
+    expect(enabledToast(offline)).toBe('Maintenance mode is on. Visitors see the maintenance page once edge-1 reconnects.');
+    expect(enabledToast(unknown)).toBe('Maintenance mode is on. Visitors see the maintenance page once the WAF agent has applied the change.');
+    expect(enabledToast(nobody)).toBe(`Maintenance mode is on. ${nothingChanges}`);
+    expect(disabledToast(connected)).toBe('Maintenance mode is off. Visitors see the site again.');
+    expect(disabledToast(offline)).toBe('Maintenance mode is off. Visitors see the site again once edge-1 reconnects.');
+    expect(disabledToast(unknown)).toBe('Maintenance mode is off. Visitors see the site again once the WAF agent has applied the change.');
+    expect(disabledToast(nobody)).toBe('Maintenance mode is off. No WAF agent serves this application, so nothing changed for visitors.');
+  });
+
+  test('"within a few seconds" is said only when a connected agent serves the application', () => {
+    const none = { noAllowedIps: true, unsaved: true };
+    for (const who of [offline, unknown, nobody]) {
+      for (const text of [enableConfirmMessage({ ...who, ...none }), savedMessage(true, who), enabledToast(who), disabledToast(who)]) {
+        expect(text).not.toContain('within a few seconds');
+      }
+    }
+    expect(enableConfirmMessage({ ...connected, ...none })).toContain('within a few seconds');
+    expect(savedMessage(true, connected)).toContain('within a few seconds');
+  });
+
+  test('an agent that cannot be reached closes nothing yet, so the connections are not mentioned', () => {
+    expect(enableConfirmMessage({ ...offline, noAllowedIps: false, unsaved: false })).not.toContain('WebSocket');
+    expect(enableConfirmMessage({ ...nobody, noAllowedIps: false, unsaved: false })).not.toContain('WebSocket');
+    expect(enabledToast(offline)).not.toContain('WebSocket');
+    expect(disabledToast(connected)).not.toContain('WebSocket');
   });
 
   test('no text has an em dash', () => {
-    for (const text of [enableConfirmMessage({ noAllowedIps: true, unsaved: true }), savedMessage(true), savedMessage(false)]) expect(text).not.toContain('—');
+    for (const who of [connected, offline, unknown, nobody]) {
+      for (const text of [enableConfirmMessage({ ...who, noAllowedIps: true, unsaved: true }), savedMessage(true, who), savedMessage(false, who), enabledToast(who), disabledToast(who)]) {
+        expect(text).not.toContain('\u2014');
+      }
+    }
+  });
+});
+
+describe('refusals of the server', () => {
+  const tooLarge = 'The WAF agent "edge-1" can receive a configuration of at most 4,193,280 bytes; with this maintenance page it would be 4,300,000 bytes. Use a smaller custom page, or serve some applications from another agent.';
+
+  test('too large with a custom page is shown under that field, as sent', () => {
+    expect(classifyRefusal({ code: 'MAINTENANCE_BUNDLE_TOO_LARGE', field: 'custom_html', error: tooLarge }, 'form')).toEqual({ kind: 'field', field: 'custom_html', message: tooLarge });
+  });
+
+  test('too large without a custom page has no field: it is shown above the buttons', () => {
+    expect(classifyRefusal({ code: 'MAINTENANCE_BUNDLE_TOO_LARGE', error: tooLarge }, 'form')).toEqual({ kind: 'save', message: tooLarge });
+    expect(classifyRefusal({ code: 'MAINTENANCE_BUNDLE_TOO_LARGE', field: 'nonsense', error: tooLarge }, 'form')).toEqual({ kind: 'save', message: tooLarge });
+  });
+
+  test('a stored value sent by "off" has no field to show an answer under', () => {
+    expect(classifyRefusal({ code: 'INVALID_MAINTENANCE', field: 'message', error: 'message: too long' }, 'stored')).toEqual({ kind: 'save', message: 'message: too long' });
+    expect(classifyRefusal({ code: 'MAINTENANCE_BUNDLE_TOO_LARGE', field: 'custom_html', error: tooLarge }, 'stored')).toEqual({ kind: 'save', message: tooLarge });
+  });
+
+  test('a rule of the form: the field prefix of the server text is cut', () => {
+    expect(classifyRefusal({ code: 'INVALID_MAINTENANCE', field: 'allow_paths', error: 'allow_paths: "/a b" must not contain spaces, ?, #, % or control characters' }, 'form')).toEqual({
+      kind: 'field',
+      field: 'allow_paths',
+      message: '"/a b" must not contain spaces, ?, #, % or control characters',
+    });
+    // Another code with a field is not a rule of the form.
+    expect(classifyRefusal({ code: 'CONFLICT', field: 'message', error: 'x' }, 'form')).toEqual({ kind: 'save', message: 'x' });
+  });
+
+  test('an agent without support is told to the panel, with the text of the server', () => {
+    expect(classifyRefusal({ code: 'MAINTENANCE_UNSUPPORTED', error: 'The WAF agent serving this application does not support maintenance mode. Upgrade the agent first.' }, 'form')).toEqual({
+      kind: 'unsupported',
+      message: 'The WAF agent serving this application does not support maintenance mode. Upgrade the agent first.',
+    });
+  });
+
+  test('without a text, a fallback is shown', () => {
+    expect(classifyRefusal(undefined, 'form')).toEqual({ kind: 'save', message: 'Could not save the maintenance settings.' });
+    expect(classifyRefusal({ code: 'MAINTENANCE_BUNDLE_TOO_LARGE', field: 'custom_html' }, 'form')).toEqual({ kind: 'field', field: 'custom_html', message: 'Could not save the maintenance settings.' });
+  });
+
+  test('sizes are written with groups of three digits, as the server writes them', () => {
+    expect(groupDigits(MAINTENANCE_LIMITS.agentBundleBytes)).toBe('4,193,280');
+    expect(groupDigits(999)).toBe('999');
+    expect(groupDigits(65536)).toBe('65,536');
   });
 });
 
