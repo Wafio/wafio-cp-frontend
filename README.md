@@ -48,7 +48,7 @@ scripts/ci-local.sh
 
 It runs, in order:
 
-1. the agent-material check: no `AGENTS.md`, `CLAUDE.md`, `.claude/` or similar files, and no tracker, finding or planning IDs in code or strings (Markdown files are excluded);
+1. the agent-material check: no `CLAUDE.md`, `.claude/` or similar files, and no `AGENTS.md` other than the one at the root, and no tracker, finding or planning IDs in code or strings (Markdown files are excluded);
 2. the secret scan, `gitleaks git` with `.gitleaks.toml`;
 3. the fixture copies: `tests/fixtures/backend/*.json` are copies of `test/frontend-fixtures/` in wafio-cp-backend (`correlation.json`: the correlation fields, operators and destination scopes; `defaults.json`: the default policy rules). The check compares them with `cmp` when wafio-cp-backend sits next to this repo (`WAFIO_BACKEND_DIR` overrides) and prints a note instead when it is not there. A Go test in wafio-cp-backend keeps its files equal to the code; after a backend change, rewrite them there with `WAFIO_UPDATE_FRONTEND_FIXTURES=1` and copy them here;
 4. `bun install --frozen-lockfile`;

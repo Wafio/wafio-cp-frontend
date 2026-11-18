@@ -29,10 +29,17 @@ scripts/ci-local.sh
 - Say what the change does and how you checked it.
 - Commit messages and comments are plain English.
 - Do not commit secrets, local configuration, certificates or keys.
-- Do not add instruction files for coding assistants, or planning notes, to the repository. The gate refuses them.
+- `AGENTS.md` at the root is the one instruction file for coding assistants. Do not add another one, or planning notes; the gate refuses them.
 
 ## Licence of your contribution
 
 The project is under the GNU General Public License, version 3 only (`LICENSE`). Before a contribution can be merged you must agree to the Wafio Contributor Licence Agreement in `CLA.md`. You keep your copyright; the agreement gives Wafio the right to publish your contribution in this project and in the products built from it. Section 5 of `CLA.md` says how to agree.
 
 If part of a change comes from another project, say so in the pull request: the project, the copyright holder and the licence. Such code needs an entry in the third-party notices.
+
+## Work done with a coding assistant
+
+You may use a coding assistant. `AGENTS.md` holds the short form of these rules for it; tools that read another
+file can be pointed at that one. The person who opens the pull request has read the change, understands it and
+answers for it, and is the one who agrees to `CLA.md`. A security report must be reproduced before it is sent: a finding that
+nobody ran is not a report.
