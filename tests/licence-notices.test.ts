@@ -1,7 +1,7 @@
 // The notices the dashboard build writes: which package a module id belongs to, what a package with
 // no licence file does, and what the file holds.
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 // @ts-expect-error plain JavaScript module of the build
@@ -92,5 +92,24 @@ describe('renderNotices', () => {
     expect(text).toContain('clsx 2.0.0\nhttps://github.com/lukeed/clsx\nLicence: MIT\n\nMIT text');
     expect(text).toContain('Map tiles\nEsri, HERE, Garmin');
     expect(text).toContain('icon licence');
+  });
+});
+
+describe('credits.json', () => {
+  const credits = JSON.parse(readFileSync(new URL('../scripts/notices/credits.json', import.meta.url), 'utf8')).credits as {
+    name: string;
+    licence_file?: string;
+  }[];
+  const text = (file: string) => readFileSync(new URL(`../scripts/notices/texts/${file}`, import.meta.url), 'utf8');
+
+  test('every licence file a credit names exists and has a text in it', () => {
+    for (const c of credits) if (c.licence_file) expect(text(c.licence_file).length).toBeGreaterThan(200);
+  });
+
+  test('the Font Awesome credit carries the copyright line of the font and the OFL 1.1 text', () => {
+    const file = credits.find((c) => c.name === 'Icons from svelte-awesome')?.licence_file;
+    expect(file).toBeDefined();
+    expect(text(file!)).toContain('Copyright Dave Gandy 2016. All rights reserved.');
+    expect(text(file!)).toContain('SIL OPEN FONT LICENSE Version 1.1');
   });
 });
