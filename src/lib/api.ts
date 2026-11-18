@@ -882,8 +882,34 @@ export interface TelemetryDelivery {
 export interface IngestionStatus {
  acceptance:'process_accepted';durable:false;accepted_events:number;rejected_events:number;db_write_failures:number;
 }
+/** One BPF map the host agent sizes from the host memory. */
+export interface MapCapacity {
+  name: string;
+  /** Entries the map holds; for the trace ring, its size in bytes. */
+  max_entries: number;
+  /** Size without scaling, the most the agent allocates. */
+  default_max_entries?: number;
+  /** Live count, sampled every 30 s; absent for the ring. */
+  entries?: number;
+  /** Inserts refused since the agent started; absent for maps that evict the oldest entry. */
+  full_count?: number;
+  /** Last time full_count grew; for a map that evicts, the last sample close to full (UTC ISO 8601). */
+  last_full_at?: string;
+}
+/** Map sizes of the firewall (`EBPFStatus`) or of tracing (`TraceStatus`); absent on older agents. */
+export interface MapSizing {
+  /** Share of the largest sizes, above 0 and at most 1. */
+  scale: number;
+  /** 'auto' when the agent computed the scale from memory, anything else when WAFIO_EBPF_MAP_SCALE or the flag set it. */
+  source: 'auto' | (string & {});
+  memory_bytes?: number;
+  memory_source?: string;
+  sampled_at?: string;
+  maps: MapCapacity[];
+}
 export interface EBPFStatus {
  ingestion?:IngestionStatus;
+  map_sizing?: MapSizing;
  telemetry_delivery?:TelemetryDelivery;
  telemetry_send_failures?:number;
   bundle_status?: Record<string, HostBundleStatus>;
@@ -1525,6 +1551,7 @@ export interface TraceEvent {
 
 export interface TraceStatus {
  ingestion?:IngestionStatus;
+  map_sizing?: MapSizing;
  telemetry_delivery?:TelemetryDelivery;
  telemetry_send_failures?:number;
   bundle_status?: EBPFStatus["bundle_status"];
