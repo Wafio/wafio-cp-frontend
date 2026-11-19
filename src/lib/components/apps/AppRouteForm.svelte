@@ -272,7 +272,7 @@
               <Switch
                 bind:checked={form.fcgiKeepConn}
                 label="Keep FastCGI connections open between requests"
-                hint="Same as nginx fastcgi_keep_conn. Off, the agent opens a new connection to PHP-FPM for each request. Turn it on only if PHP is 8.2.36, 8.3.37, 8.4.28, 8.5.13 or newer: older PHP-FPM can run part of a request body as a second request (CVE-2026-129289)."
+                hint="Same as nginx fastcgi_keep_conn. Off, the agent opens a new connection to PHP-FPM for each request. Turn it on only if PHP is at least 8.2.36, 8.3.37, 8.4.28 or 8.5.13 for its 8.2, 8.3, 8.4 or 8.5 series; 8.1 and older are not fixed. Unfixed PHP-FPM can run part of a request body as a second request (CVE-2026-129289). Agents released before this option ignore it and keep connections open."
               />
             </div>
           {/if}
