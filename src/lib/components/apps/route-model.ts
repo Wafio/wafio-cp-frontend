@@ -60,6 +60,8 @@ export interface RouteForm {
   upstreamAddr: string;
   fcgiDocRoot: string;
   fcgiIndex: string;
+  /** Keep the FastCGI connection open between requests (the agent closes it after each reply when off). */
+  fcgiKeepConn: boolean;
   /** Bind address (IP); empty = 0.0.0.0. */
   listenHost: string;
   listenPort: number | null;
@@ -131,6 +133,7 @@ export function emptyRouteForm(): RouteForm {
     upstreamAddr: '',
     fcgiDocRoot: '',
     fcgiIndex: DEFAULT_FCGI_INDEX,
+    fcgiKeepConn: false,
     listenHost: '',
     listenPort: DEFAULT_LISTEN_PORT,
     mode: 'block',
@@ -245,6 +248,7 @@ export function routeFormFromAgentRoute(route: AgentRoute): RouteForm {
     upstreamAddr: upstream.addr,
     fcgiDocRoot: route.fcgi_doc_root ?? '',
     fcgiIndex: route.fcgi_index || DEFAULT_FCGI_INDEX,
+    fcgiKeepConn: route.fcgi_keep_conn === true,
     listenHost: route.listen_host === '0.0.0.0' ? '' : (route.listen_host ?? ''),
     listenPort: route.listen_port > 0 ? route.listen_port : null,
     mode: route.mode === 'monitor' ? 'monitor' : 'block',
@@ -266,6 +270,7 @@ export function routeFormFromApp(app: App, route?: AgentRoute | null): RouteForm
     upstreamAddr: upstream.addr,
     fcgiDocRoot: app.fcgi_doc_root ?? '',
     fcgiIndex: app.fcgi_index || DEFAULT_FCGI_INDEX,
+    fcgiKeepConn: app.fcgi_keep_conn === true,
     listenHost: host === '0.0.0.0' ? '' : host,
     listenPort: typeof app.listen_port === 'number' && app.listen_port > 0 ? app.listen_port : null,
     mode: 'block',
@@ -374,10 +379,14 @@ export function upstreamFrom(form: Pick<RouteForm, 'upstreamType' | 'upstreamAdd
  * (absent = keep the stored value, an empty index = index.php), so an empty
  * document root is left out instead of clearing the stored one.
  */
-function fcgiFields(form: RouteForm): { fcgi_doc_root?: string; fcgi_index?: string } {
+function fcgiFields(form: RouteForm): { fcgi_doc_root?: string; fcgi_index?: string; fcgi_keep_conn?: boolean } {
   if (form.upstreamType !== 'fcgi') return {};
   const docRoot = form.fcgiDocRoot.trim();
-  return { ...(docRoot ? { fcgi_doc_root: docRoot } : {}), fcgi_index: form.fcgiIndex.trim() || DEFAULT_FCGI_INDEX };
+  return {
+    ...(docRoot ? { fcgi_doc_root: docRoot } : {}),
+    fcgi_index: form.fcgiIndex.trim() || DEFAULT_FCGI_INDEX,
+    fcgi_keep_conn: form.fcgiKeepConn,
+  };
 }
 
 /** Body of POST/PUT …/agents/:agentId/routes[/:appId]. */

@@ -161,6 +161,24 @@ describe('wire → form', () => {
     expect(body).not.toHaveProperty('fcgi_doc_root');
     expect(body.fcgi_index).toBe('app.php');
   });
+
+  test('FastCGI connection reuse is off unless the stored value is true', () => {
+    const app: App = {
+      id: 'app-5',
+      project_id: 'p',
+      name: 'php',
+      upstream_url: 'fcgi:127.0.0.1:9000',
+      created_at: '',
+      updated_at: '',
+    };
+    expect(emptyRouteForm().fcgiKeepConn).toBe(false);
+    expect(routeFormFromApp(app).fcgiKeepConn).toBe(false);
+    expect(routeFormFromApp({ ...app, fcgi_keep_conn: false }).fcgiKeepConn).toBe(false);
+    expect(routeFormFromApp({ ...app, fcgi_keep_conn: true }).fcgiKeepConn).toBe(true);
+    expect(routeFormFromAgentRoute(route).fcgiKeepConn).toBe(false);
+    expect(routeFormFromAgentRoute({ ...route, fcgi_keep_conn: true }).fcgiKeepConn).toBe(true);
+    expect(routeFormFromApp(app, { ...route, fcgi_keep_conn: true }).fcgiKeepConn).toBe(true);
+  });
 });
 
 describe('form → wire', () => {
@@ -186,6 +204,19 @@ describe('form → wire', () => {
     const body = agentRouteBodyFrom(form);
     expect('fcgi_doc_root' in body).toBe(false);
     expect(body.proxy_config?.host_header).toEqual({ mode: 'preserve', value: '' });
+  });
+
+  test('FastCGI bodies carry fcgi_keep_conn, HTTP bodies do not', () => {
+    const fcgi = routeFormFromAgentRoute({ ...route, fcgi_keep_conn: true });
+    expect(agentRouteBodyFrom(fcgi).fcgi_keep_conn).toBe(true);
+    expect(appUpdateBodyFrom(fcgi).fcgi_keep_conn).toBe(true);
+    fcgi.fcgiKeepConn = false;
+    expect(agentRouteBodyFrom(fcgi).fcgi_keep_conn).toBe(false);
+    expect(appUpdateBodyFrom(fcgi).fcgi_keep_conn).toBe(false);
+
+    const http = routeFormFromAgentRoute({ ...route, upstream: 'http://127.0.0.1:3000', fcgi_keep_conn: true });
+    expect(agentRouteBodyFrom(http)).not.toHaveProperty('fcgi_keep_conn');
+    expect(appUpdateBodyFrom(http)).not.toHaveProperty('fcgi_keep_conn');
   });
 
   test('app bodies omit empty routing and flag a follow-up update', () => {

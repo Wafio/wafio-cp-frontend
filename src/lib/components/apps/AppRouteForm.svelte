@@ -268,6 +268,13 @@
             <Field label="Index file" id={fid('fcgiIndex')} error={shown.fcgiIndex} hint={`Default: ${DEFAULT_FCGI_INDEX}.`}>
               {#snippet children(c)}<input {...c} type="text" class="mono" autocomplete="off" placeholder={DEFAULT_FCGI_INDEX} bind:value={form.fcgiIndex} />{/snippet}
             </Field>
+            <div class="span-full">
+              <Switch
+                bind:checked={form.fcgiKeepConn}
+                label="Keep FastCGI connections open between requests"
+                hint="Same as nginx fastcgi_keep_conn. Off, the agent opens a new connection to PHP-FPM for each request. Turn it on only if PHP is 8.2.36, 8.3.37, 8.4.28, 8.5.13 or newer: older PHP-FPM can run part of a request body as a second request (CVE-2026-129289)."
+              />
+            </div>
           {/if}
         </div>
       </section>

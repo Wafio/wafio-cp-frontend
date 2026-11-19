@@ -1845,6 +1845,8 @@ export interface App {
   /** FastCGI upstream settings ('' when unused; absent from older control planes). */
   fcgi_doc_root?: string;
   fcgi_index?: string;
+  /** Keep the FastCGI connection open between requests (absent from older control planes: off). */
+  fcgi_keep_conn?: boolean;
   /** Maintenance mode is on: the serving agent answers with the maintenance page (absent from older control planes). */
   maintenance_enabled?: boolean;
   created_at: string;
@@ -1860,6 +1862,8 @@ export interface AppUpdateBody {
   /** Each FastCGI field is optional and patched on its own: absent keeps the stored value; an empty fcgi_index means index.php. */
   fcgi_doc_root?: string;
   fcgi_index?: string;
+  /** Absent keeps the stored value. */
+  fcgi_keep_conn?: boolean;
   proxy_config?: ProxyConfig;
 }
 
@@ -2506,6 +2510,7 @@ export interface AgentRoute {
   body_limit_bytes?: number;
   fcgi_doc_root?: string;
   fcgi_index?: string;
+  fcgi_keep_conn?: boolean;
   // Per-app reverse-proxy config (migration 000061).
   proxy_config?: ProxyConfig;
   /** Read-only: present when proxy_config needs attention. */
