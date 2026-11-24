@@ -128,6 +128,10 @@
   }
 
   const uid = $props.id();
+
+  function describedBy(index: number, field: string) {
+    return [field === 'args' && `${uid}-cond-${index}-hint`, conditionErrors[index] && `${uid}-cond-${index}`].filter(Boolean).join(' ') || undefined;
+  }
 </script>
 
 <Drawer
@@ -210,11 +214,12 @@
               class="input"
               bind:value={condition.value}
               aria-invalid={conditionErrors[index] ? 'true' : undefined}
-              aria-describedby={conditionErrors[index] ? `${uid}-cond-${index}` : undefined}
+              aria-describedby={describedBy(index, condition.field)}
               placeholder={condition.op === 'in' || condition.op === 'not_in' ? 'a, b, c' : ''}
             />
           </label>
           <Button variant="ghost" size="sm" disabled={draft.conditions.length <= 1} aria-label={`Remove condition ${index + 1}`} onclick={() => removeCondition(index)}>Remove</Button>
+          {#if condition.field === 'args'}<p class="hint" id="{uid}-cond-{index}-hint">The new path of a renamed file. Only rename events carry it.</p>{/if}
           {#if conditionErrors[index]}<p class="error" id="{uid}-cond-{index}">{conditionErrors[index]}</p>{/if}
         </div>
       {/each}
@@ -257,7 +262,8 @@
   .input[aria-invalid='true'] { border-color: var(--danger); }
   .conditions { display: grid; gap: var(--sp-2); margin: 0; padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-lg); }
   .condition { display: grid; grid-template-columns: minmax(9rem, 1fr) minmax(8rem, 0.8fr) minmax(8rem, 1.2fr) auto; gap: var(--sp-2); align-items: center; }
-  .condition .error { grid-column: 1 / -1; }
+  .condition .error, .condition .hint { grid-column: 1 / -1; }
+  .condition .hint { margin: 0; }
   .error { margin: 0; font-size: var(--fs-xs); color: var(--danger); }
   @media (max-width: 640px) {
     .condition { grid-template-columns: minmax(0, 1fr); }
