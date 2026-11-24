@@ -1,0 +1,637 @@
+import { afterEach, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import type { ApiError, ApiResult, AppTLSCertificate, AppTLSCertificateInput, AppTLSInput, AppTLSState, AppTLSStatus } from '../src/lib/api';
+import {
+  ACME_REQUEST_GAP_MS,
+  NO_REPORT_AFTER_MS,
+  POLL_FAST_MS,
+  POLL_SLOW_MS,
+  TLS_LIMITS,
+  canonicalListen,
+  certificateCoversHost,
+  checkTLSFit,
+  createEpoch,
+  currentStatus,
+  expiryOf,
+  listenersOverlap,
+  mergeEdits,
+  mergePoll,
+  noReportYet,
+  normalizeTLS,
+  pollIntervalMs,
+  readPemFile,
+  renewalStart,
+  requestOpensAt,
+  retryUntil,
+  sendCertificate,
+  waitingSince,
+  type CertificateForm,
+} from '../src/lib/components/apps/tls';
+
+// The control plane's cases (domain.TLSSettings.Normalize and CertificateCoversHost).
+interface NormalizeCase {
+  name: string;
+  in: AppTLSInput;
+  out?: AppTLSInput;
+  field?: string;
+  message?: string;
+}
+const backend = JSON.parse(readFileSync(new URL('./fixtures/backend/tls-checks.json', import.meta.url), 'utf8')) as {
+  normalize: NormalizeCase[];
+  covers: { names: string[]; host: string; covered: boolean }[];
+};
+
+const NON_ASCII = /[^\u0000-\u007f]/;
+const NOW = Date.UTC(2026, 10, 24, 12, 0, 0);
+const iso = (ms: number) => new Date(ms).toISOString();
+const HOUR = 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
+
+function input(over: Partial<AppTLSInput> = {}): AppTLSInput {
+  return { mode: 'gateway', hosts: ['a.example.com'], listen: '', redirect_listen: '', source: 'uploaded', ...over };
+}
+
+function certificate(over: Partial<AppTLSCertificate> = {}): AppTLSCertificate {
+  return {
+    id: 'cert-1',
+    source: 'uploaded',
+    names: ['shop.example.com'],
+    issuer: 'Example CA',
+    not_before: iso(NOW - 10 * 24 * HOUR),
+    not_after: iso(NOW + 80 * 24 * HOUR),
+    days_left: 80,
+    leaf_sha256: 'a'.repeat(64),
+    key_type: 'ecdsa-p256',
+    trusted: true,
+    created_at: iso(NOW - HOUR),
+    ...over,
+  };
+}
+
+function status(over: Partial<AppTLSStatus> = {}): AppTLSStatus {
+  return {
+    agent_id: 'agent-1',
+    source: 'acme',
+    state: 'active',
+    certificate_id: null,
+    leaf_sha256: 'b'.repeat(64),
+    error: '',
+    next_attempt_at: null,
+    request_id: 'req-1',
+    received_at: iso(NOW - MINUTE),
+    names: ['shop.example.com'],
+    issuer: 'Example CA',
+    not_before: null,
+    not_after: null,
+    ...over,
+  };
+}
+
+function state(over: Partial<AppTLSState> = {}): AppTLSState {
+  return {
+    mode: 'gateway',
+    hosts: ['shop.example.com'],
+    listen: '0.0.0.0:443',
+    redirect_listen: '',
+    source: 'acme',
+    certificate: null,
+    acme: { request_id: 'req-1', requested_at: iso(NOW - 30 * MINUTE) },
+    status: status(),
+    agent_supported: true,
+    agent_host_bound: true,
+    warnings: [],
+    ...over,
+  };
+}
+
+describe('control plane parity', () => {
+  test('the fixture holds the characters Go and JavaScript fold differently', () => {
+    const text = JSON.stringify(backend);
+    for (const ch of ['İ', '﻿', '\u0085']) expect(text).toContain(ch);
+  });
+
+  test('every ASCII case of Normalize gets the stored form or the refusal of the server', () => {
+    const judged = backend.normalize.filter((c) => !NON_ASCII.test(JSON.stringify(c.in)));
+    expect(judged.length).toBeGreaterThan(100);
+    for (const c of judged) {
+      const got = normalizeTLS(c.in);
+      if (c.out) expect({ name: c.name, got: got.settings, error: got.error }).toEqual({ name: c.name, got: c.out, error: undefined });
+      else expect({ name: c.name, error: got.error }).toEqual({ name: c.name, error: { field: c.field, message: c.message } });
+    }
+  });
+
+  test('a case with a non-ASCII value is never refused when the server takes it', () => {
+    const unjudged = backend.normalize.filter((c) => NON_ASCII.test(JSON.stringify(c.in)));
+    expect(unjudged.length).toBeGreaterThan(8);
+    for (const c of unjudged) {
+      if (c.out) expect({ name: c.name, error: normalizeTLS(c.in).error }).toEqual({ name: c.name, error: undefined });
+    }
+  });
+
+  test('coverage agrees with the server, and says nothing for a non-ASCII value that decides it', () => {
+    for (const c of backend.covers) {
+      const got = certificateCoversHost(c.names, c.host);
+      if (NON_ASCII.test(JSON.stringify(c))) expect([c.covered, null]).toContain(got);
+      else expect({ ...c, got }).toEqual({ ...c, got: c.covered });
+    }
+  });
+});
+
+describe('ASCII-only folding', () => {
+  const hosts = (...list: string[]) => normalizeTLS(input({ hosts: list }));
+
+  test('ASCII letters are lower-cased and ASCII white space is trimmed', () => {
+    expect(hosts('\t Shop.EXAMPLE.com\r\n').settings?.hosts).toEqual(['shop.example.com']);
+  });
+
+  test('other characters stay as typed and go to the server', () => {
+    expect(hosts('Shop.İ.example.com').settings?.hosts).toEqual(['shop.İ.example.com']);
+    expect(hosts('a.example.com﻿').settings?.hosts).toEqual(['a.example.com﻿']);
+    expect(hosts('\u0085a.example.com ').settings?.hosts).toEqual(['\u0085a.example.com ']);
+  });
+
+  test('the host limit is judged only when every name was', () => {
+    const many = Array.from({ length: TLS_LIMITS.hosts + 1 }, (_, i) => `h${i}.example.com`);
+    expect(hosts(...many).error).toEqual({ field: 'hosts', message: 'at most 100 hosts' });
+    expect(hosts(...many.slice(0, TLS_LIMITS.hosts), 'İ.example.com').error).toBeUndefined();
+  });
+
+  test('a listener with a non-ASCII character is left to the server', () => {
+    expect(normalizeTLS(input({ listen: ' 10.0.0.1:443' })).settings?.listen).toBe(' 10.0.0.1:443');
+  });
+});
+
+describe('listeners', () => {
+  test('two addresses on one port overlap when one is a wildcard', () => {
+    const overlap: [string, string][] = [
+      ['0.0.0.0:443', '10.0.0.1:443'],
+      ['10.0.0.1:443', '0.0.0.0:443'],
+      ['[::]:443', '10.0.0.1:443'],
+      ['[::]:443', '[2001:db8::1]:443'],
+      ['[::]:443', '0.0.0.0:443'],
+    ];
+    for (const [a, b] of overlap) expect({ a, b, overlap: listenersOverlap(a, b) }).toEqual({ a, b, overlap: true });
+  });
+
+  test('the same address, other ports, other families and two specific addresses do not overlap', () => {
+    const apart: [string, string][] = [
+      ['0.0.0.0:443', '0.0.0.0:443'],
+      ['0.0.0.0:443', '10.0.0.1:8443'],
+      ['0.0.0.0:443', '[2001:db8::1]:443'],
+      ['0.0.0.0:443', '[::ffff:10.0.0.1]:443'],
+      ['10.0.0.1:443', '10.0.0.2:443'],
+      ['', '0.0.0.0:443'],
+      ['0.0.0.0:443', 'not an address'],
+    ];
+    for (const [a, b] of apart) expect({ a, b, overlap: listenersOverlap(a, b) }).toEqual({ a, b, overlap: false });
+  });
+
+  test('canonical form follows Go', () => {
+    expect(canonicalListen('[2001:0db8:0:0:1:0:0:1]:0443')).toBe('[2001:db8::1:0:0:1]:443');
+    expect(canonicalListen('[1:0:2:3:4:5:6:7]:80')).toBe('[1:0:2:3:4:5:6:7]:80');
+    expect(canonicalListen('[0:0:0:0:0:0:0:0]:80')).toBe('[::]:80');
+    expect(canonicalListen('[::ffff:a00:5]:80')).toBe('[::ffff:10.0.0.5]:80');
+    expect(canonicalListen('[::1.2.3.4]:80')).toBe('[::102:304]:80');
+    for (const bad of ['', '0.0.0.0', '0.0.0.0:0', '0.0.0.0:65536', '::1:443', '[1.2.3.4]:80', '[fe80::1%eth0]:80', '01.2.3.4:80']) {
+      expect({ bad, got: canonicalListen(bad) }).toEqual({ bad, got: null });
+    }
+  });
+
+  test('the own listener of the application counts in the fit check', () => {
+    const own = 'The listen address on the Routing tab of this application uses it.';
+    const settings = { listen: '0.0.0.0:443', redirect_listen: '0.0.0.0:80' };
+    expect(checkTLSFit(settings, { host: '', port: 8080 })).toBeNull();
+    expect(checkTLSFit(settings, { host: '', port: null })).toBeNull();
+    expect(checkTLSFit(settings, { host: '', port: 443 })).toEqual({ field: 'listen', message: own });
+    expect(checkTLSFit(settings, { host: '127.0.0.1', port: 443 })).toEqual({ field: 'listen', message: own });
+    expect(checkTLSFit(settings, { host: '0.0.0.0', port: 80 })).toEqual({ field: 'redirect_listen', message: own });
+    expect(checkTLSFit({ listen: '[::]:443', redirect_listen: '' }, { host: '::1', port: 443 })).toEqual({ field: 'listen', message: own });
+    expect(checkTLSFit({ listen: '10.0.0.5:443', redirect_listen: '' }, { host: '10.0.0.6', port: 443 })).toBeNull();
+  });
+});
+
+describe('coverage of the host names', () => {
+  test('a name matches exactly, or a wildcard matches one label', () => {
+    expect(certificateCoversHost(['shop.example.com'], 'SHOP.example.com')).toBe(true);
+    expect(certificateCoversHost(['*.example.com'], 'shop.example.com')).toBe(true);
+    expect(certificateCoversHost(['*.example.com'], 'example.com')).toBe(false);
+    expect(certificateCoversHost(['*.example.com'], 'a.b.example.com')).toBe(false);
+    expect(certificateCoversHost([], 'shop.example.com')).toBe(false);
+  });
+
+  test('a non-ASCII name that could fold into the host leaves it open, a match elsewhere still counts', () => {
+    expect(certificateCoversHost(['shop.İ.example.com'], 'shop.i.example.com')).toBeNull();
+    expect(certificateCoversHost(['münchen.de', '*.example.com'], 'shop.example.com')).toBe(true);
+    expect(certificateCoversHost(['münchen.de'], 'shop.example.com')).toBeNull();
+  });
+});
+
+describe('expiry', () => {
+  test('5 hours left is the last day, shown in hours', () => {
+    expect(expiryOf(iso(NOW + 5 * HOUR), NOW)).toEqual({ expired: false, days: 0, hours: 5 });
+  });
+
+  test('1 hour past is expired, and days round down as the server does', () => {
+    expect(expiryOf(iso(NOW - HOUR), NOW)).toEqual({ expired: true, days: -1, hours: 0 });
+    expect(expiryOf(iso(NOW), NOW)).toEqual({ expired: true, days: 0, hours: 0 });
+  });
+
+  test('a part of an hour counts as an hour and 36 hours are one day', () => {
+    expect(expiryOf(iso(NOW + 30 * MINUTE), NOW)?.hours).toBe(1);
+    expect(expiryOf(iso(NOW + 36 * HOUR), NOW)).toEqual({ expired: false, days: 1, hours: 36 });
+  });
+
+  test('something that is not a date gives nothing', () => {
+    expect(expiryOf('soon', NOW)).toBeNull();
+  });
+});
+
+describe('renewal start', () => {
+  test('a third of the lifetime before the end', () => {
+    const at = renewalStart('2026-11-01T00:00:00Z', '2027-01-30T00:00:00Z');
+    expect(at === null ? null : iso(at)).toBe('2026-12-31T00:00:00.000Z');
+  });
+
+  test('without a start, or with an end before it, there is no date', () => {
+    expect(renewalStart(null, '2027-01-30T00:00:00Z')).toBeNull();
+    expect(renewalStart('2027-01-30T00:00:00Z', '2026-11-01T00:00:00Z')).toBeNull();
+    expect(renewalStart('2026-11-01T00:00:00Z', null)).toBeNull();
+  });
+});
+
+describe('request window', () => {
+  test('5 minutes after the last request', () => {
+    const requested = iso(NOW - MINUTE);
+    expect(requestOpensAt(requested, null, NOW)).toBe(NOW - MINUTE + ACME_REQUEST_GAP_MS);
+    expect(requestOpensAt(iso(NOW - 6 * MINUTE), null, NOW)).toBeLessThan(NOW);
+    expect(requestOpensAt(null, null, NOW)).toBe(0);
+  });
+
+  test('the wait a refusal named comes first, while it runs', () => {
+    const requested = iso(NOW - MINUTE);
+    expect(requestOpensAt(requested, NOW + 20_000, NOW)).toBe(NOW + 20_000);
+    expect(requestOpensAt(requested, NOW + 3600_000, NOW)).toBe(NOW + 3600_000);
+    expect(requestOpensAt(requested, NOW - 1, NOW)).toBe(NOW - MINUTE + ACME_REQUEST_GAP_MS);
+  });
+
+  test('retry_after of a 409 ACME_REQUEST_TOO_SOON is a time, nothing else is', () => {
+    const tooSoon: ApiError = { kind: 'http', status: 409, error: 'wait', code: 'ACME_REQUEST_TOO_SOON', retry_after: 90 };
+    expect(retryUntil(tooSoon, NOW)).toBe(NOW + 90_000);
+    expect(retryUntil({ ...tooSoon, code: 'LISTEN_CONFLICT' }, NOW)).toBeNull();
+    expect(retryUntil({ ...tooSoon, retry_after: undefined }, NOW)).toBeNull();
+    expect(retryUntil(undefined, NOW)).toBeNull();
+  });
+});
+
+describe('current status', () => {
+  const uploaded = (over: Partial<AppTLSState> = {}) =>
+    state({ source: 'uploaded', certificate: certificate(), acme: null, status: status({ source: 'uploaded', certificate_id: 'cert-1', request_id: '' }), ...over });
+
+  test('a Let\'s Encrypt report is current for the saved request id', () => {
+    const s = state();
+    expect(currentStatus(s)).toBe(s.status);
+    expect(currentStatus(state({ status: status({ request_id: 'req-0' }) }))).toBeNull();
+    expect(currentStatus(state({ acme: null }))).toBeNull();
+    expect(currentStatus(state({ acme: { request_id: '', requested_at: null }, status: status({ request_id: '' }) }))).toBeNull();
+  });
+
+  test('an uploaded report is current for the saved certificate id', () => {
+    const s = uploaded();
+    expect(currentStatus(s)).toBe(s.status);
+    expect(currentStatus(uploaded({ certificate: certificate({ id: 'cert-2' }) }))).toBeNull();
+    expect(currentStatus(uploaded({ certificate: null }))).toBeNull();
+    expect(currentStatus(uploaded({ status: status({ source: 'uploaded', certificate_id: null }) }))).toBeNull();
+  });
+
+  test('the old row of another source is never current, whatever its ids say', () => {
+    expect(currentStatus(uploaded({ status: status({ source: 'acme', request_id: 'req-1', certificate_id: 'cert-1' }), acme: { request_id: 'req-1', requested_at: null } }))).toBeNull();
+    expect(currentStatus(state({ source: '' }))).toBeNull();
+  });
+});
+
+describe('poll merge', () => {
+  const dns = { code: 'dns_mismatch' as const, host: 'shop.example.com', resolved: ['203.0.113.7'], agent_addresses: ['203.0.113.9'] };
+  const soon = { code: 'expires_soon' as const, days_left: 3 };
+
+  test('the server state replaces the old one, the DNS hints of the last save stay', () => {
+    const current = state({ warnings: [dns, { code: 'not_trusted' }] });
+    const polled = state({ status: status({ state: 'pending' }), warnings: [soon] });
+    expect(mergePoll(current, polled)).toEqual({ ...polled, warnings: [soon, dns] });
+  });
+
+  test('a poll without hints on a state without hints changes nothing else', () => {
+    const polled = state({ warnings: [soon] });
+    expect(mergePoll(state(), polled)).toEqual(polled);
+  });
+
+  test('an edited field stays, the others follow the poll', () => {
+    const base = { hosts: 'a.example.com', listen: '', source: 'acme' };
+    const draft = { hosts: 'a.example.com\nb.example.com', listen: '', source: 'acme' };
+    const polled = { hosts: 'c.example.com', listen: '0.0.0.0:8443', source: 'uploaded' };
+    expect(mergeEdits(draft, base, polled)).toEqual({ hosts: 'a.example.com\nb.example.com', listen: '0.0.0.0:8443', source: 'uploaded' });
+    expect(mergeEdits(base, base, polled)).toEqual(polled);
+  });
+});
+
+describe('epoch', () => {
+  test('an answer that was asked for before a newer one is late', () => {
+    const epoch = createEpoch();
+    const first = epoch.next();
+    const second = epoch.next();
+    expect(epoch.isCurrent(first)).toBe(false);
+    expect(epoch.isCurrent(second)).toBe(true);
+    epoch.next();
+    expect(epoch.isCurrent(second)).toBe(false);
+  });
+});
+
+describe('cadence and the wait for the agent', () => {
+  const interval = (s: AppTLSState, over: { agent?: boolean; action?: number | null } = {}) =>
+    pollIntervalMs(s, over.agent ?? true, over.action ?? null, NOW);
+  const uploadedWith = (st: AppTLSStatus | null) =>
+    state({ source: 'uploaded', certificate: certificate(), acme: null, status: st });
+
+  test('10 seconds until the agent has reported, 60 once it has', () => {
+    expect(interval(state({ status: null }))).toBe(POLL_FAST_MS);
+    expect(interval(state({ status: status({ request_id: 'old' }) }))).toBe(POLL_FAST_MS);
+    expect(interval(state({ status: status({ state: 'pending' }) }))).toBe(POLL_FAST_MS);
+    expect(interval(uploadedWith(status({ source: 'uploaded', certificate_id: 'cert-1', state: 'missing' })))).toBe(POLL_FAST_MS);
+    expect(interval(state())).toBe(POLL_SLOW_MS);
+    expect(interval(state({ status: status({ state: 'failed' }) }))).toBe(POLL_SLOW_MS);
+    expect(interval(uploadedWith(status({ source: 'uploaded', certificate_id: 'cert-1', state: 'active' })))).toBe(POLL_SLOW_MS);
+  });
+
+  test('10 seconds for 2 minutes after an action, even when the old report is current', () => {
+    expect(interval(state(), { action: NOW - 119_000 })).toBe(POLL_FAST_MS);
+    expect(interval(state(), { action: NOW - NO_REPORT_AFTER_MS })).toBe(POLL_SLOW_MS);
+  });
+
+  test('nothing to wait for behind a proxy or without an agent', () => {
+    expect(interval(state({ mode: 'proxy', status: null }), { action: NOW })).toBe(POLL_SLOW_MS);
+    expect(interval(state({ status: null }), { agent: false, action: NOW })).toBe(POLL_SLOW_MS);
+  });
+
+  test('the 2 minutes count from the later of the request and the last action', () => {
+    const requested = NOW - 10 * MINUTE;
+    const s = state({ acme: { request_id: 'req-1', requested_at: iso(requested) } });
+    expect(waitingSince(s, null)).toBe(requested);
+    expect(waitingSince(s, requested + MINUTE)).toBe(requested + MINUTE);
+    expect(waitingSince(s, requested - MINUTE)).toBe(requested);
+    expect(waitingSince(state({ acme: null }), null)).toBe(0);
+  });
+
+  test('an uploaded certificate counts from its upload', () => {
+    const s = state({ source: 'uploaded', certificate: certificate({ created_at: iso(NOW - 5 * MINUTE) }), acme: { request_id: 'req-1', requested_at: iso(NOW - 99 * MINUTE) } });
+    expect(waitingSince(s, null)).toBe(NOW - 5 * MINUTE);
+  });
+
+  test('the agent is late from 2 minutes on', () => {
+    const s = state({ acme: { request_id: 'req-1', requested_at: iso(NOW - NO_REPORT_AFTER_MS + 1000) } });
+    expect(noReportYet(s, null, NOW)).toBe(false);
+    expect(noReportYet(s, null, NOW + 1000)).toBe(true);
+    expect(noReportYet(s, NOW, NOW + NO_REPORT_AFTER_MS - 1)).toBe(false);
+    expect(noReportYet(state({ acme: null }), null, NOW)).toBe(true);
+  });
+});
+
+describe('sendCertificate', () => {
+  const BEGIN_KEY = '-----BEGIN ' + 'PRIVATE KEY-----';
+  const END_KEY = '-----END ' + 'PRIVATE KEY-----';
+  const CHAIN = '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n';
+  const form = (over: Partial<CertificateForm> = {}): CertificateForm => ({ chain: CHAIN, key: 'KEYTEXT', keyFile: null, ...over });
+  const httpError = (status: number, over: Partial<ApiError> = {}): ApiResult<AppTLSCertificate> => ({
+    error: { kind: 'http', status, error: 'Refused by the server.', ...over },
+  });
+
+  /** A send that records what it was given and answers `answer`. */
+  function sender(answer: ApiResult<AppTLSCertificate> | (() => never)) {
+    const bodies: AppTLSCertificateInput[] = [];
+    const send = async (body: AppTLSCertificateInput) => {
+      bodies.push({ ...body });
+      return typeof answer === 'function' ? answer() : answer;
+    };
+    return { send, bodies };
+  }
+
+  function expectDropped(f: CertificateForm) {
+    expect(f.key).toBe('');
+    expect(f.keyFile).toBeNull();
+  }
+
+  test('201: the certificate comes back, the chain stays and the key is dropped', async () => {
+    const f = form();
+    const { send, bodies } = sender({ data: certificate() });
+    expect(await sendCertificate(f, send)).toEqual({ ok: true, certificate: certificate() });
+    expect(bodies).toEqual([{ chain_pem: CHAIN, key_pem: 'KEYTEXT' }]);
+    expect(f.chain).toBe(CHAIN);
+    expectDropped(f);
+  });
+
+  test('400: the field of the server decides where its text goes', async () => {
+    for (const [field, place] of [['chain_pem', 'chain'], ['key_pem', 'key'], ['body', 'form'], [undefined, 'form']] as const) {
+      const f = form();
+      const outcome = await sendCertificate(f, sender(httpError(400, { code: 'INVALID_CERTIFICATE', field, reason: 'bad_pem' })).send);
+      expect({ field, outcome }).toEqual({ field, outcome: { ok: false, aborted: false, place, message: 'Refused by the server.' } });
+      expectDropped(f);
+    }
+  });
+
+  test('409: the codes the dashboard has its own text for', async () => {
+    const f = form();
+    const notBound = await sendCertificate(f, sender(httpError(409, { code: 'AGENT_NOT_HOST_BOUND' })).send, 'edge-1');
+    expect(notBound).toMatchObject({ ok: false, place: 'form' });
+    expect(notBound.ok ? '' : notBound.message).toStartWith('edge-1 needs a credential bound to its host to receive an uploaded key.');
+    expect(notBound.ok ? '' : notBound.message).toContain('WAFIO_HOST_KEY in /etc/wafio/waf-agent.env');
+    expectDropped(f);
+
+    const unnamed = await sendCertificate(form(), sender(httpError(409, { code: 'AGENT_NOT_HOST_BOUND' })).send);
+    expect(unnamed.ok ? '' : unnamed.message).toStartWith('The WAF agent needs a credential bound to its host');
+
+    const other = await sendCertificate(form(), sender(httpError(409, { code: 'SOMETHING_ELSE', error: 'The server says so.' })).send);
+    expect(other).toEqual({ ok: false, aborted: false, place: 'form', message: 'The server says so.' });
+  });
+
+  test('429 and a control plane without an encryption key', async () => {
+    const f = form();
+    expect(await sendCertificate(f, sender(httpError(429)).send)).toEqual({
+      ok: false,
+      aborted: false,
+      place: 'form',
+      message: 'Too many uploads in the last minute. Try again soon.',
+    });
+    expectDropped(f);
+    expect(await sendCertificate(form(), sender(httpError(503, { code: 'KEY_ENCRYPTION_UNAVAILABLE' })).send)).toEqual({
+      ok: false,
+      aborted: false,
+      place: 'form',
+      message: 'The control plane cannot store keys: totp.enc_key is not set.',
+    });
+  });
+
+  test('a failed send keeps the text of the call, an aborted one says nothing', async () => {
+    const failed = form();
+    expect(await sendCertificate(failed, sender({ error: { kind: 'network', error: 'Unable to reach the server. Please retry.' } }).send)).toEqual({
+      ok: false,
+      aborted: false,
+      place: 'form',
+      message: 'Unable to reach the server. Please retry.',
+    });
+    expectDropped(failed);
+
+    const aborted = form();
+    expect(await sendCertificate(aborted, sender({ error: { kind: 'aborted', error: 'Request cancelled' } }).send)).toEqual({ ok: false, aborted: true, place: 'form', message: '' });
+    expectDropped(aborted);
+  });
+
+  test('a send that throws never puts what it carried into the answer', async () => {
+    const thrown = form();
+    const outcome = await sendCertificate(thrown, sender(() => { throw new Error('boom KEYTEXT'); }).send);
+    expect(outcome).toEqual({ ok: false, aborted: false, place: 'form', message: 'Unable to reach the server. Please retry.' });
+    expect(JSON.stringify(outcome)).not.toContain('KEYTEXT');
+    expectDropped(thrown);
+
+    const abort = form();
+    const stopped = await sendCertificate(abort, sender(() => { throw new DOMException('stopped', 'AbortError'); }).send);
+    expect(stopped).toEqual({ ok: false, aborted: true, place: 'form', message: '' });
+    expectDropped(abort);
+  });
+
+  test('a chain with a private key is not sent and is cleared with the key', async () => {
+    const f = form({ chain: `${CHAIN}${BEGIN_KEY}\nQUJD\n${END_KEY}\n` });
+    const { send, bodies } = sender({ data: certificate() });
+    expect(await sendCertificate(f, send)).toEqual({
+      ok: false,
+      aborted: false,
+      place: 'chain',
+      message: 'This text holds a private key. Put only certificates here and the key in the key field.',
+    });
+    expect(bodies).toEqual([]);
+    expect(f.chain).toBe('');
+    expectDropped(f);
+  });
+
+  test('a key file is read when sending, wins over the text and is dropped', async () => {
+    const f = form({ key: '', keyFile: new File(['KEYFROMFILE'], 'server.key') });
+    const { send, bodies } = sender({ data: certificate() });
+    expect((await sendCertificate(f, send)).ok).toBe(true);
+    expect(bodies).toEqual([{ chain_pem: CHAIN, key_pem: 'KEYFROMFILE' }]);
+    expectDropped(f);
+  });
+
+  test('a key file that is not UTF-8 text is not sent', async () => {
+    const f = form({ key: '', keyFile: new File([new Uint8Array([0x30, 0x82, 0x01, 0x0a])], 'server.der') });
+    const { send, bodies } = sender({ data: certificate() });
+    const outcome = await sendCertificate(f, send);
+    expect(outcome).toMatchObject({ ok: false, place: 'key' });
+    expect(outcome.ok ? '' : outcome.message).toStartWith('This file is not PEM text. Convert it first (.pfx: openssl pkcs12 -in file.pfx -nodes -nocerts for the key, -nokeys for the chain).');
+    expect(bodies).toEqual([]);
+    expectDropped(f);
+  });
+
+  test('a key file over 16 KiB is not read and not sent, one of 16 KiB is', async () => {
+    let reads = 0;
+    class Spy extends File {
+      override arrayBuffer() {
+        reads++;
+        return super.arrayBuffer();
+      }
+    }
+    const big = form({ key: '', keyFile: new Spy(['k'.repeat(TLS_LIMITS.keyBytes + 1)], 'big.key') });
+    const refused = sender({ data: certificate() });
+    expect(await sendCertificate(big, refused.send)).toEqual({ ok: false, aborted: false, place: 'key', message: 'This file is larger than 16 KiB.' });
+    expect(reads).toBe(0);
+    expect(refused.bodies).toEqual([]);
+    expectDropped(big);
+
+    const edge = form({ key: '', keyFile: new Spy(['k'.repeat(TLS_LIMITS.keyBytes)], 'edge.key') });
+    const taken = sender({ data: certificate() });
+    expect((await sendCertificate(edge, taken.send)).ok).toBe(true);
+    expect(reads).toBe(1);
+    expect(taken.bodies[0].key_pem).toHaveLength(TLS_LIMITS.keyBytes);
+  });
+
+  test('a chain file is capped at 64 KiB and must be text', async () => {
+    let reads = 0;
+    class Spy extends File {
+      override arrayBuffer() {
+        reads++;
+        return super.arrayBuffer();
+      }
+    }
+    expect(await readPemFile(new Spy(['c'.repeat(TLS_LIMITS.chainBytes + 1)], 'big.pem'), 'chain')).toEqual({ message: 'This file is larger than 64 KiB.' });
+    expect(reads).toBe(0);
+    expect(await readPemFile(new Spy(['c'.repeat(TLS_LIMITS.chainBytes)], 'edge.pem'), 'chain')).toEqual({ text: 'c'.repeat(TLS_LIMITS.chainBytes) });
+    const binary = await readPemFile(new File([new Uint8Array([0x30, 0x82, 0xff])], 'chain.p12'), 'chain');
+    expect(binary.message).toStartWith('This file is not PEM text.');
+  });
+});
+
+describe('the five calls of api.ts', () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  function answer(body: unknown, status = 200) {
+    const calls: { url: string; method: string; body: string | undefined }[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: new URL(String(url), 'http://localhost').pathname, method: init?.method ?? 'GET', body: init?.body as string | undefined });
+      return Response.json(body, { status });
+    }) as unknown as typeof fetch;
+    return calls;
+  }
+
+  test('paths, methods and bodies', async () => {
+    const api = await import('../src/lib/api');
+    const settings = input({ source: 'acme' });
+    const calls = answer(state());
+    expect((await api.getAppTLS('p1', 'a1')).data?.mode).toBe('gateway');
+    expect((await api.putAppTLS('p1', 'a1', settings)).data?.mode).toBe('gateway');
+    expect((await api.requestAppACME('p1', 'a1')).data?.mode).toBe('gateway');
+    expect(calls).toEqual([
+      { url: '/api/projects/p1/apps/a1/tls', method: 'GET', body: undefined },
+      { url: '/api/projects/p1/apps/a1/tls', method: 'PUT', body: JSON.stringify(settings) },
+      { url: '/api/projects/p1/apps/a1/tls/acme', method: 'POST', body: undefined },
+    ]);
+
+    const upload = answer(certificate());
+    const sent = { chain_pem: 'chain', key_pem: 'key' };
+    expect((await api.uploadAppCertificate('p1', 'a1', sent)).data?.id).toBe('cert-1');
+    expect(upload).toEqual([{ url: '/api/projects/p1/apps/a1/tls/certificate', method: 'POST', body: JSON.stringify(sent) }]);
+
+    const removal = answer({ deleted: true });
+    expect((await api.deleteAppCertificate('p1', 'a1')).data).toEqual({ deleted: true });
+    expect(removal).toEqual([{ url: '/api/projects/p1/apps/a1/tls/certificate', method: 'DELETE', body: undefined }]);
+  });
+
+  test('an answer of another shape is a protocol failure', async () => {
+    const api = await import('../src/lib/api');
+    answer({ maintenance: {} });
+    expect((await api.getAppTLS('p1', 'a1')).error?.kind).toBe('protocol');
+    answer({ id: 7 });
+    expect((await api.uploadAppCertificate('p1', 'a1', { chain_pem: '', key_pem: '' })).error?.kind).toBe('protocol');
+    answer({ ok: true });
+    expect((await api.deleteAppCertificate('p1', 'a1')).error?.kind).toBe('protocol');
+  });
+
+  test('a refusal keeps reason, host and retry_after', async () => {
+    const api = await import('../src/lib/api');
+    answer({ error: 'The leaf does not cover a.example.com', code: 'INVALID_CERTIFICATE', field: 'chain_pem', reason: 'names_do_not_cover', host: 'a.example.com' }, 400);
+    expect((await api.uploadAppCertificate('p1', 'a1', { chain_pem: '', key_pem: '' })).error).toMatchObject({
+      status: 400,
+      code: 'INVALID_CERTIFICATE',
+      field: 'chain_pem',
+      reason: 'names_do_not_cover',
+      host: 'a.example.com',
+    });
+    answer({ error: 'Wait', code: 'ACME_REQUEST_TOO_SOON', retry_after: 90 }, 409);
+    expect((await api.requestAppACME('p1', 'a1')).error).toMatchObject({ status: 409, code: 'ACME_REQUEST_TOO_SOON', retry_after: 90 });
+  });
+});
+
+describe('the TLS model holds no storage, log or markup', () => {
+  test('tls.ts', () => {
+    const source = readFileSync(new URL('../src/lib/components/apps/tls.ts', import.meta.url), 'utf8');
+    for (const word of ['{@html', 'localStorage', 'sessionStorage', 'console.']) expect(source).not.toContain(word);
+  });
+});

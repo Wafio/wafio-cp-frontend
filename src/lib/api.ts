@@ -77,6 +77,12 @@ export interface ApiError {
   matched?: number;
   /** 400 VALIDATION_FAILED / 409 SMTP_SETTINGS_MANAGED: the request field it names. */
   field?: string;
+  /** 400 INVALID_CERTIFICATE: why the upload was refused (bad_pem, key_mismatch, ...). */
+  reason?: string;
+  /** 400 INVALID_CERTIFICATE (names_do_not_cover), 409 CERTIFICATE_DOES_NOT_COVER: the host the certificate misses. */
+  host?: string;
+  /** 409 ACME_REQUEST_TOO_SOON: seconds until a new request is accepted. */
+  retry_after?: number;
 }
 
 /**
@@ -313,6 +319,9 @@ export async function api<T>(
           : undefined,
         matched: typeof body?.matched === 'number' ? body.matched : undefined,
         field: typeof body?.field === 'string' ? body.field : undefined,
+        reason: typeof body?.reason === 'string' ? body.reason : undefined,
+        host: typeof body?.host === 'string' ? body.host : undefined,
+        retry_after: typeof body?.retry_after === 'number' ? body.retry_after : undefined,
       },
     };
   }
@@ -1942,6 +1951,139 @@ export async function putAppMaintenance(projectId: string, appId: string, body: 
     `/api/projects/${projectId}/apps/${appId}/maintenance`,
     { method: 'PUT', body: JSON.stringify(body) },
     hasMaintenance
+  );
+}
+
+// ── HTTPS (per application) ─────────────────────────────────────────────
+
+export type TLSMode = 'proxy' | 'gateway';
+export type TLSSource = '' | 'acme' | 'uploaded';
+
+/** The saved TLS settings: PUT …/apps/:appId/tls takes exactly these. */
+export interface AppTLSInput {
+  mode: TLSMode;
+  hosts: string[];
+  /** Empty means 0.0.0.0:443. */
+  listen: string;
+  /** '' = no redirect listener. */
+  redirect_listen: string;
+  /** Required in gateway mode. */
+  source: TLSSource;
+}
+
+/** The uploaded certificate without its chain and key; the answer of POST …/tls/certificate too. */
+export interface AppTLSCertificate {
+  id: string;
+  source: 'uploaded';
+  names: string[];
+  issuer: string;
+  not_before: string;
+  not_after: string;
+  /** Whole days until not_after, rounded down: 0 on the last day, negative once expired. */
+  days_left: number;
+  leaf_sha256: string;
+  key_type: string;
+  trusted: boolean;
+  created_at: string;
+}
+
+/** The last ACME request; a new id asks the agent to order now. */
+export interface AppTLSACMERequest {
+  request_id: string;
+  requested_at: string | null;
+}
+
+/** Why the agent refused an uploaded certificate or could not install it ('' for any other text). */
+export type AppTLSErrorCode =
+  | 'bad_pem' | 'too_large' | 'key_mismatch' | 'leaf_mismatch' | 'unsupported_key'
+  | 'write_failed' | 'invalid_ack' | 'key_unreadable';
+
+/** What the agent last reported about the certificate it serves. */
+export interface AppTLSStatus {
+  agent_id: string;
+  source: 'acme' | 'uploaded';
+  state: 'pending' | 'active' | 'failed' | 'missing';
+  /** The uploaded certificate the report is about; null for acme. */
+  certificate_id: string | null;
+  leaf_sha256: string;
+  /** For failed, cleaned of control characters; show it as plain text. */
+  error: string;
+  /** Set for uploaded and failed only; absent from control planes that do not classify the text. */
+  error_code?: AppTLSErrorCode | '';
+  next_attempt_at: string | null;
+  request_id: string;
+  received_at: string;
+  names: string[];
+  issuer: string;
+  not_before: string | null;
+  not_after: string | null;
+}
+
+export interface AppTLSWarning {
+  code: 'not_trusted' | 'expires_soon' | 'dns_mismatch';
+  /** dns_mismatch only: the host, what it resolves to and what the agent host reports. */
+  host?: string;
+  resolved?: string[];
+  agent_addresses?: string[];
+  /** expires_soon only. */
+  days_left?: number;
+  not_after?: string;
+}
+
+/** Answer of GET and PUT …/apps/:appId/tls and of POST …/tls/acme. dns_mismatch warnings come with a PUT only. */
+export interface AppTLSState extends AppTLSInput {
+  certificate: AppTLSCertificate | null;
+  acme: AppTLSACMERequest | null;
+  status: AppTLSStatus | null;
+  /** The serving agent says it serves certificates: false = it does not, null = no agent or it never said. */
+  agent_supported: boolean | null;
+  /** The agent has a credential bound to its host, which an uploaded key needs; null = no agent. */
+  agent_host_bound: boolean | null;
+  warnings: AppTLSWarning[];
+}
+
+/** POST body of …/tls/certificate. */
+export interface AppTLSCertificateInput {
+  chain_pem: string;
+  key_pem: string;
+}
+
+const hasTLSState = (body: unknown): boolean => {
+  const value = body as { mode?: unknown; hosts?: unknown } | null;
+  return typeof value?.mode === 'string' && Array.isArray(value.hosts);
+};
+
+export async function getAppTLS(projectId: string, appId: string) {
+  return api<AppTLSState>(`/api/projects/${projectId}/apps/${appId}/tls`, {}, hasTLSState);
+}
+
+export async function putAppTLS(projectId: string, appId: string, body: AppTLSInput) {
+  return api<AppTLSState>(
+    `/api/projects/${projectId}/apps/${appId}/tls`,
+    { method: 'PUT', body: JSON.stringify(body) },
+    hasTLSState
+  );
+}
+
+/** Asks the agent to order a certificate now, or to try again. */
+export async function requestAppACME(projectId: string, appId: string) {
+  return api<AppTLSState>(`/api/projects/${projectId}/apps/${appId}/tls/acme`, { method: 'POST' }, hasTLSState);
+}
+
+export async function uploadAppCertificate(projectId: string, appId: string, body: AppTLSCertificateInput) {
+  return api<AppTLSCertificate>(
+    `/api/projects/${projectId}/apps/${appId}/tls/certificate`,
+    { method: 'POST', body: JSON.stringify(body) },
+    (value) => typeof (value as { id?: unknown } | null)?.id === 'string'
+  );
+}
+
+/** Removes the private keys of every uploaded certificate of the application. */
+export async function deleteAppCertificate(projectId: string, appId: string) {
+  return api<{ deleted: boolean }>(
+    `/api/projects/${projectId}/apps/${appId}/tls/certificate`,
+    { method: 'DELETE' },
+    (value) => typeof (value as { deleted?: unknown } | null)?.deleted === 'boolean'
   );
 }
 

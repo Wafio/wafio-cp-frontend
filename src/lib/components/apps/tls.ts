@@ -1,0 +1,419 @@
+/**
+ * HTTPS tab of an application: the checks the control plane makes on the settings (same field keys and
+ * texts, never stricter), certificate dates and statuses, how often to poll, and the sending of an
+ * uploaded certificate. Pure functions, no component state.
+ */
+import type {
+  ApiError,
+  ApiResult,
+  AppTLSCertificate,
+  AppTLSCertificateInput,
+  AppTLSInput,
+  AppTLSState,
+  AppTLSStatus,
+} from '../../api';
+import { ipToBytes, isIPv4 } from '../../validation';
+import { quoted } from './maintenance';
+
+/** The limits of the control plane (domain.TLSMaxHosts, CertChainMaxBytes, CertKeyMaxBytes). */
+export const TLS_LIMITS = { hosts: 100, hostBytes: 253, labelBytes: 63, chainBytes: 64 << 10, keyBytes: 16 << 10 } as const;
+
+export const DEFAULT_TLS_LISTEN = '0.0.0.0:443';
+
+// ── Settings: the checks of domain.TLSSettings.Normalize ───────────────────
+
+export type TLSField = 'mode' | 'hosts' | 'listen' | 'redirect_listen' | 'source';
+export interface TLSFieldError {
+  field: TLSField;
+  message: string;
+}
+
+// Go and JavaScript fold and trim Unicode differently (U+0130, U+FEFF, U+0085), so only ASCII is
+// folded here and a value with any other character goes to the server unjudged.
+const NON_ASCII = /[^\u0000-\u007f]/;
+const ASCII_SPACE = /^[ \t\n\v\f\r]+|[ \t\n\v\f\r]+$/g;
+
+const trimAscii = (value: string): string => value.replace(ASCII_SPACE, '');
+const lowerAscii = (value: string): string => value.replace(/[A-Z]+/g, (letters) => letters.toLowerCase());
+
+/** The reason a host name is not served, '' when it is fine. Only for ASCII names. */
+function hostProblem(host: string): string {
+  if (host === '') return 'is empty';
+  if (host.length > TLS_LIMITS.hostBytes) return `is longer than ${TLS_LIMITS.hostBytes} bytes`;
+  if (host.includes('*')) return 'must not contain a wildcard';
+  if (host.includes(':')) return 'must not contain a port or be an IPv6 address';
+  if (host.endsWith('.')) return 'must not end with a dot';
+  if (isIPv4(host)) return 'must be a DNS name, not an IP address';
+  if (!host.includes('.')) return 'must contain at least one dot';
+  const labels = host.split('.');
+  const last = labels[labels.length - 1];
+  // A browser reads a name like 10.1.1 as an address.
+  if (/^[0-9]+$/.test(last)) return 'must not end with a label of digits only';
+  for (const label of labels) {
+    if (label === '') return 'has an empty label';
+    if (label.length > TLS_LIMITS.labelBytes) return `has a label longer than ${TLS_LIMITS.labelBytes} bytes`;
+    if (label.startsWith('-') || label.endsWith('-')) return 'has a label that starts or ends with a hyphen';
+    if (!/^[a-z0-9-]+$/.test(label)) return 'must use only letters, digits, hyphens and dots (write an international name in its xn-- form)';
+  }
+  return '';
+}
+
+const LISTEN_MESSAGE = 'must be ip:port or [ipv6]:port with a port from 1 to 65535';
+
+interface ListenAddress {
+  /** 4 bytes for IPv4, 16 for IPv6 (a 4-in-6 address is IPv6, as in Go). */
+  ip: number[];
+  port: number;
+}
+
+/** netip.ParseAddrPort, without zones and port 0. */
+function parseListen(value: string): ListenAddress | null {
+  const colon = value.lastIndexOf(':');
+  if (colon < 0) return null;
+  let host = value.slice(0, colon);
+  const port = value.slice(colon + 1);
+  if (!host || !port) return null;
+  const bracketed = host.startsWith('[');
+  if (bracketed) {
+    if (host.length < 2 || !host.endsWith(']')) return null;
+    host = host.slice(1, -1);
+  }
+  if (!/^[0-9]+$/.test(port) || Number(port) < 1 || Number(port) > 65535) return null;
+  const ip = ipToBytes(host);
+  // Brackets are for IPv6 only, and IPv6 needs them.
+  if (!ip || bracketed !== (ip.length === 16)) return null;
+  return { ip, port: Number(port) };
+}
+
+/** netip.Addr.String: lower case, the first longest run of two or more zero groups as "::", "::ffff:a.b.c.d" for a 4-in-6 address. */
+function formatIP(ip: number[]): string {
+  if (ip.length === 4) return ip.join('.');
+  const groups = Array.from({ length: 8 }, (_, i) => (ip[2 * i] << 8) | ip[2 * i + 1]);
+  if (groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff) return `::ffff:${ip.slice(12).join('.')}`;
+  let start = -1;
+  let length = 1;
+  for (let i = 0; i < 8; ) {
+    let end = i;
+    while (end < 8 && groups[end] === 0) end++;
+    if (end - i > length) {
+      start = i;
+      length = end - i;
+    }
+    i = Math.max(end, i + 1);
+  }
+  const hex = (list: number[]) => list.map((g) => g.toString(16)).join(':');
+  return start < 0 ? hex(groups) : `${hex(groups.slice(0, start))}::${hex(groups.slice(start + length))}`;
+}
+
+/** The address as the server stores it; null when it is not ip:port with a port from 1 to 65535. */
+export function canonicalListen(value: string): string | null {
+  const parsed = parseListen(value);
+  if (!parsed) return null;
+  const ip = formatIP(parsed.ip);
+  return parsed.ip.length === 4 ? `${ip}:${parsed.port}` : `[${ip}]:${parsed.port}`;
+}
+
+const isWildcard = (ip: number[]): boolean => ip.every((byte) => byte === 0);
+
+/** "::" takes every address, "0.0.0.0" every IPv4 one. */
+function wildcardTakes(wildcard: ListenAddress['ip'], other: ListenAddress['ip']): boolean {
+  return isWildcard(wildcard) && (wildcard.length === 16 || other.length === 4);
+}
+
+/**
+ * Two different addresses on one port that cannot both be bound, because one is a wildcard
+ * (domain.listenersOverlap). The same address twice is one listener, not an overlap.
+ */
+export function listenersOverlap(a: string, b: string): boolean {
+  if (a === b || !a || !b) return false;
+  const x = parseListen(a);
+  const y = parseListen(b);
+  if (!x || !y || x.port !== y.port) return false;
+  return wildcardTakes(x.ip, y.ip) || wildcardTakes(y.ip, x.ip);
+}
+
+/** Listeners of different kinds can never be the same socket, so the same address clashes too. */
+const listenersClash = (a: string, b: string): boolean => a !== '' && b !== '' && (a === b || listenersOverlap(a, b));
+
+/** The address as typed, or its canonical form; null when it is refused. A non-ASCII value is left to the server. */
+function listenValue(value: string): string | null {
+  return NON_ASCII.test(value) ? value : canonicalListen(value);
+}
+
+export type NormalizedTLS = { settings: AppTLSInput; error?: undefined } | { settings?: undefined; error: TLSFieldError };
+
+/**
+ * What the server would do with `input`: the stored form (host names trimmed, lower-cased and kept once,
+ * listeners canonical, the default HTTPS address filled in) or the first refused field. The 100-host limit
+ * is judged only when every name was, since the server may fold some of the others into one.
+ */
+export function normalizeTLS(input: AppTLSInput): NormalizedTLS {
+  const fail = (field: TLSField, message: string): NormalizedTLS => ({ error: { field, message } });
+  if (input.mode !== 'proxy' && input.mode !== 'gateway') return fail('mode', 'must be "proxy" or "gateway"');
+  if (input.source !== '' && input.source !== 'acme' && input.source !== 'uploaded') return fail('source', 'must be "acme" or "uploaded"');
+  const gateway = input.mode === 'gateway';
+  if (gateway && input.source === '') return fail('source', 'is required when mode is "gateway"');
+
+  const hosts: string[] = [];
+  const seen = new Set<string>();
+  let judgedAll = true;
+  for (const raw of input.hosts ?? []) {
+    const host = lowerAscii(trimAscii(raw));
+    if (seen.has(host)) continue;
+    seen.add(host);
+    if (NON_ASCII.test(host)) {
+      judgedAll = false;
+    } else {
+      const problem = hostProblem(host);
+      if (problem) return fail('hosts', `${quoted(host)} ${problem}`);
+    }
+    hosts.push(host);
+  }
+  if (judgedAll && hosts.length > TLS_LIMITS.hosts) return fail('hosts', `at most ${TLS_LIMITS.hosts} hosts`);
+  if (gateway && hosts.length === 0) return fail('hosts', 'at least one host is required when mode is "gateway"');
+
+  const listen = listenValue(trimAscii(input.listen ?? '') || DEFAULT_TLS_LISTEN);
+  if (listen === null) return fail('listen', LISTEN_MESSAGE);
+  let redirect = '';
+  const redirectText = trimAscii(input.redirect_listen ?? '');
+  if (redirectText) {
+    const value = listenValue(redirectText);
+    if (value === null) return fail('redirect_listen', LISTEN_MESSAGE);
+    if (value === listen) return fail('redirect_listen', 'must differ from listen');
+    if (listenersOverlap(listen, value)) return fail('redirect_listen', 'must not use the port of listen on an address that overlaps it');
+    redirect = value;
+  }
+  return { settings: { mode: input.mode, hosts, listen, redirect_listen: redirect, source: input.source } };
+}
+
+const OWN_LISTENER = 'The listen address on the Routing tab of this application uses it.';
+
+/**
+ * Gateway only: the HTTPS or redirect address of `settings` (as normalizeTLS returns it) that clashes with the
+ * listener the application opens for itself on the Routing tab. `host` '' is 0.0.0.0; no port means no listener.
+ */
+export function checkTLSFit(settings: Pick<AppTLSInput, 'listen' | 'redirect_listen'>, own: { host: string; port: number | null }): TLSFieldError | null {
+  if (!own.port) return null;
+  const host = own.host.trim() || '0.0.0.0';
+  const mine = canonicalListen(host.includes(':') ? `[${host}]:${own.port}` : `${host}:${own.port}`);
+  if (!mine) return null;
+  for (const field of ['listen', 'redirect_listen'] as const) {
+    if (listenersClash(settings[field], mine)) return { field, message: OWN_LISTENER };
+  }
+  return null;
+}
+
+/**
+ * Whether a certificate with these DNS names serves `host` (domain.CertificateCoversHost): a name matches
+ * exactly, or a leading "*." matches exactly one label. null when a non-ASCII name leaves it open, since
+ * Go may fold such a name into the host.
+ */
+export function certificateCoversHost(names: readonly string[], host: string): boolean | null {
+  const wanted = lowerAscii(host);
+  let open = NON_ASCII.test(wanted);
+  for (const name of names) {
+    const have = lowerAscii(name);
+    if (have === wanted) return true;
+    const dot = wanted.indexOf('.');
+    if (have.startsWith('*.') && dot > 0 && wanted.slice(dot + 1) === have.slice(2)) return true;
+    open ||= NON_ASCII.test(have);
+  }
+  return open ? null : false;
+}
+
+// ── Dates ──────────────────────────────────────────────────────────────────
+
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+export interface Expiry {
+  /** not_after is at or before now. */
+  expired: boolean;
+  /** Whole days left, rounded down as the server does: 0 on the last day, negative once expired. */
+  days: number;
+  /** Hours left rounded up, so a certificate that has not expired never shows 0; 0 once expired. */
+  hours: number;
+}
+
+/** null when `notAfter` is not a date. */
+export function expiryOf(notAfter: string, now: number): Expiry | null {
+  const end = Date.parse(notAfter);
+  if (Number.isNaN(end)) return null;
+  const left = end - now;
+  return { expired: left <= 0, days: Math.floor(left / DAY_MS), hours: left <= 0 ? 0 : Math.ceil(left / HOUR_MS) };
+}
+
+/** Epoch ms at which the agent starts to renew a Let's Encrypt certificate: a third of its lifetime before it ends. */
+export function renewalStart(notBefore: string | null, notAfter: string | null): number | null {
+  const from = notBefore ? Date.parse(notBefore) : NaN;
+  const to = notAfter ? Date.parse(notAfter) : NaN;
+  if (Number.isNaN(from) || Number.isNaN(to) || to <= from) return null;
+  return to - (to - from) / 3;
+}
+
+// ── Requests ───────────────────────────────────────────────────────────────
+
+/** The control plane takes one Let's Encrypt request per application every 5 minutes. */
+export const ACME_REQUEST_GAP_MS = 5 * 60 * 1000;
+
+/** Epoch ms until which a 409 ACME_REQUEST_TOO_SOON says to wait; null for any other answer. */
+export function retryUntil(error: ApiError | undefined, now: number): number | null {
+  return error?.code === 'ACME_REQUEST_TOO_SOON' && typeof error.retry_after === 'number' ? now + error.retry_after * 1000 : null;
+}
+
+/**
+ * Epoch ms from which a new request is accepted (0: now). The wait a refusal named wins while it runs,
+ * since it can be longer than the gap (Let's Encrypt's own limit); then the gap after the last request counts.
+ */
+export function requestOpensAt(requestedAt: string | null | undefined, retryAt: number | null | undefined, now: number): number {
+  if (retryAt != null && retryAt > now) return retryAt;
+  const at = requestedAt ? Date.parse(requestedAt) : NaN;
+  return Number.isNaN(at) ? 0 : at + ACME_REQUEST_GAP_MS;
+}
+
+// ── Status and polling ─────────────────────────────────────────────────────
+
+/**
+ * The agent's report when it is about what is saved: the same source, and the id of the saved Let's Encrypt
+ * request or uploaded certificate. After a change the old row stays until the agent reports on the new id.
+ */
+export function currentStatus(state: Pick<AppTLSState, 'source' | 'acme' | 'certificate' | 'status'>): AppTLSStatus | null {
+  const status = state.status;
+  if (!status || status.source !== state.source) return null;
+  if (state.source === 'acme') return status.request_id !== '' && status.request_id === state.acme?.request_id ? status : null;
+  return state.source === 'uploaded' && status.certificate_id !== null && status.certificate_id === state.certificate?.id ? status : null;
+}
+
+/** The state after a poll: the server's own, plus the DNS hints of the last save, which only a save's answer carries. */
+export function mergePoll(current: AppTLSState, polled: AppTLSState): AppTLSState {
+  const dns = (warning: { code: string }) => warning.code === 'dns_mismatch';
+  return { ...polled, warnings: [...polled.warnings.filter((w) => !dns(w)), ...current.warnings.filter(dns)] };
+}
+
+/** A draft after a poll: a field the person changed since `base` stays as typed, the others follow `polled`. */
+export function mergeEdits<T extends object>(draft: T, base: T, polled: T): T {
+  const merged = { ...polled };
+  for (const key of Object.keys(draft) as (keyof T)[]) {
+    if (JSON.stringify(draft[key]) !== JSON.stringify(base[key])) merged[key] = draft[key];
+  }
+  return merged;
+}
+
+/** Counts what the panel waits for: of several answers in flight only the newest may be adopted. */
+export function createEpoch() {
+  let latest = 0;
+  return { next: () => ++latest, isCurrent: (token: number) => token === latest };
+}
+
+export const POLL_FAST_MS = 10_000;
+export const POLL_SLOW_MS = 60_000;
+/** How long the agent gets to report before the card says so. */
+export const NO_REPORT_AFTER_MS = 2 * 60 * 1000;
+
+/** In Gateway with an agent, and the agent has not yet reported on what is saved. */
+export function waitingForAgent(state: AppTLSState, hasAgent: boolean): boolean {
+  if (state.mode !== 'gateway' || !hasAgent) return false;
+  const status = currentStatus(state);
+  return !status || status.state === 'pending' || status.state === 'missing';
+}
+
+/** 10 s while waiting for the agent and for 2 minutes after an action of this tab, else 60 s. */
+export function pollIntervalMs(state: AppTLSState, hasAgent: boolean, lastActionAt: number | null, now: number): number {
+  if (state.mode !== 'gateway' || !hasAgent) return POLL_SLOW_MS;
+  const afterAction = lastActionAt !== null && now - lastActionAt < NO_REPORT_AFTER_MS;
+  return afterAction || waitingForAgent(state, hasAgent) ? POLL_FAST_MS : POLL_SLOW_MS;
+}
+
+/** Epoch ms the wait for the agent counts from: the later of the request (the upload, for an uploaded certificate) and the last action of this tab; 0 when neither is known. */
+export function waitingSince(state: Pick<AppTLSState, 'source' | 'acme' | 'certificate'>, lastActionAt: number | null): number {
+  const made = state.source === 'uploaded' ? state.certificate?.created_at : state.acme?.requested_at;
+  const at = made ? Date.parse(made) : NaN;
+  return Math.max(Number.isNaN(at) ? 0 : at, lastActionAt ?? 0);
+}
+
+/** The agent had 2 minutes and has not reported. */
+export function noReportYet(state: Pick<AppTLSState, 'source' | 'acme' | 'certificate'>, lastActionAt: number | null, now: number): boolean {
+  return now - waitingSince(state, lastActionAt) >= NO_REPORT_AFTER_MS;
+}
+
+// ── Sending a certificate ──────────────────────────────────────────────────
+
+/** What the person typed or chose. The key lives here only until the send ends. */
+export interface CertificateForm {
+  chain: string;
+  key: string;
+  /** A chosen key file; its text is read when sending and never shown. It wins over `key`. */
+  keyFile: File | null;
+}
+
+export type CertificatePlace = 'chain' | 'key' | 'form';
+
+/** `place` is where the text belongs: under the chain, under the key, or above both. */
+export type CertificateOutcome =
+  | { ok: true; certificate: AppTLSCertificate }
+  | { ok: false; aborted: boolean; place: CertificatePlace; message: string };
+
+const KEY_IN_CHAIN = 'This text holds a private key. Put only certificates here and the key in the key field.';
+const NOT_PEM_TEXT = 'This file is not PEM text. Convert it first (.pfx: openssl pkcs12 -in file.pfx -nodes -nocerts for the key, -nokeys for the chain).';
+const PRIVATE_KEY_BLOCK = /PRIVATE KEY-----/;
+
+/** The text of a chosen file, or why it is not used. A file over its cap is not read; a file that is not UTF-8 (DER, PKCS#12) is not PEM. */
+export async function readPemFile(file: File, kind: 'chain' | 'key'): Promise<{ text: string; message?: undefined } | { text?: undefined; message: string }> {
+  const cap = kind === 'chain' ? TLS_LIMITS.chainBytes : TLS_LIMITS.keyBytes;
+  if (file.size > cap) return { message: `This file is larger than ${cap >> 10} KiB.` };
+  try {
+    return { text: new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer()) };
+  } catch {
+    return { message: NOT_PEM_TEXT };
+  }
+}
+
+/** The texts of the codes an upload can be answered with that carry no field. */
+function uploadErrorText(error: ApiError, agent: string): string | null {
+  if (error.status === 429) return 'Too many uploads in the last minute. Try again soon.';
+  if (error.code === 'KEY_ENCRYPTION_UNAVAILABLE') return 'The control plane cannot store keys: totp.enc_key is not set.';
+  if (error.code === 'AGENT_NOT_HOST_BOUND') {
+    return `${agent || 'The WAF agent'} needs a credential bound to its host to receive an uploaded key. On a registered host, set WAFIO_HOST_KEY in /etc/wafio/waf-agent.env and restart it. Otherwise enroll it under a new name with a host key from the Hosts page, then move this application to it on the Assignment tab.`;
+  }
+  return null;
+}
+
+const failure = (place: CertificatePlace, message: string, aborted = false): CertificateOutcome => ({ ok: false, aborted, place, message });
+
+/**
+ * Sends the chain and key through `send` (the upload call). However the send ends, the key and its file are
+ * dropped from `form`, and nothing here keeps a reference to them; strings cannot be wiped, so this is best
+ * effort. Nothing is sent for a chain that holds a private key (the chain is cleared too) or a key file that
+ * is over its cap or not text. `agent` is the WAF agent's name for the texts that name it.
+ */
+export async function sendCertificate(
+  form: CertificateForm,
+  send: (body: AppTLSCertificateInput) => Promise<ApiResult<AppTLSCertificate>>,
+  agent = '',
+): Promise<CertificateOutcome> {
+  try {
+    if (PRIVATE_KEY_BLOCK.test(form.chain)) {
+      form.chain = '';
+      return failure('chain', KEY_IN_CHAIN);
+    }
+    let key = form.key;
+    if (form.keyFile) {
+      const read = await readPemFile(form.keyFile, 'key');
+      if (read.message !== undefined) return failure('key', read.message);
+      key = read.text;
+    }
+    const { data, error } = await send({ chain_pem: form.chain, key_pem: key });
+    if (data) return { ok: true, certificate: data };
+    if (error?.kind === 'aborted') return failure('form', '', true);
+    if (!error) return failure('form', 'Invalid response from server');
+    const place = error.field === 'chain_pem' ? 'chain' : error.field === 'key_pem' ? 'key' : 'form';
+    return failure(place, uploadErrorText(error, agent) ?? error.error);
+  } catch (cause) {
+    // Never the message of the exception: a failed send must not echo what it carried.
+    const aborted = cause instanceof Error && cause.name === 'AbortError';
+    return failure('form', aborted ? '' : 'Unable to reach the server. Please retry.', aborted);
+  } finally {
+    form.key = '';
+    form.keyFile = null;
+  }
+}
