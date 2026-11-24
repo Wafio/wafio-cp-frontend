@@ -44,7 +44,7 @@
     canConfigure?: boolean;
     /** Maintenance mode is on for the application: only an agent that supports it can serve it. */
     maintenance?: boolean;
-    /** The HTTPS settings the page read: in Gateway the agent holds the certificate, so a move has a consequence. */
+    /** The Gateway settings the page read: in Gateway the agent holds the certificate, so a move has a consequence. */
     tls?: Pick<AppTLSState, 'mode' | 'source'> | null;
     /** Called after a successful assign, move or unassign. */
     onchanged: () => void | Promise<void>;

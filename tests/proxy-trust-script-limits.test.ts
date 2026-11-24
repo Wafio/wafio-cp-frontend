@@ -136,22 +136,30 @@ describe('Cloudflare preset', () => {
     expect(CLOUDFLARE_RANGES.some((entry) => !entry.includes(':'))).toBe(true);
   });
 
-  test('replaces the list and trusts forwarded headers, and the saved routing carries exactly those entries', () => {
+  test('what the preset puts in the list is valid for the server too, and within 64 entries', () => {
+    const list = trustedProxyList(withCloudflare(emptyRouteForm().proxy));
+    expect(list.length).toBeLessThanOrEqual(64);
+    expect(new Set(list).size).toBe(list.length);
+    for (const entry of list) expect(isTrustedProxyEntry(entry)).toBe(true);
+    expect(validateTrustedProxies(list.join('\n'))).toBeNull();
+  });
+
+  test('replaces the list with Cloudflare\'s addresses and loopback, and trusts forwarded headers, and the saved routing carries exactly those entries', () => {
     const form = emptyRouteForm();
     form.proxy.trustedProxies = '10.0.0.5\n192.0.2.0/24';
     form.proxy.rejectInvalidPathEncoding = false;
     form.proxy = withCloudflare(form.proxy);
     expect(form.proxy.trustForwarded).toBe(true);
-    expect(trustedProxyList(form.proxy)).toEqual([...CLOUDFLARE_RANGES]);
+    expect(trustedProxyList(form.proxy)).toEqual([...CLOUDFLARE_RANGES, '127.0.0.1', '::1']);
     expect(validateRouteForm(form, { requireRouting: false })['proxy.trustedProxies']).toBeUndefined();
     const out = proxyConfigFrom(form.proxy);
     expect(out.trust_forwarded).toBe(true);
-    expect(out.trusted_proxies).toEqual([...CLOUDFLARE_RANGES]);
+    expect(out.trusted_proxies).toEqual([...CLOUDFLARE_RANGES, '127.0.0.1', '::1']);
     // The other proxy settings stay as they were.
     expect(out.reject_invalid_path_encoding).toBe(false);
   });
 
-  test('asks first when it would replace entries that are not Cloudflare\'s, or the default trust of an empty list', () => {
+  test('asks first when it would replace entries that are neither Cloudflare\'s nor loopback, or the default trust of an empty list', () => {
     const ask = (trustedProxies: string, trustForwarded: boolean) => replacesTrust({ trustForwarded, trustedProxies });
     // Nothing is trusted now: forwarded headers off and no list.
     expect(ask('', false)).toBe(false);
@@ -163,7 +171,14 @@ describe('Cloudflare preset', () => {
       expect(ask(CLOUDFLARE_RANGES.join('\n'), on)).toBe(false);
       expect(ask(CLOUDFLARE_RANGES.slice(0, 3).join(', '), on)).toBe(false);
       expect(ask('10.0.0.5', on)).toBe(true);
-      expect(ask(`${CLOUDFLARE_RANGES[0]}\n127.0.0.1`, on)).toBe(true);
+      // Loopback stays in the list, so nothing is lost.
+      expect(ask('127.0.0.1', on)).toBe(false);
+      expect(ask('::1', on)).toBe(false);
+      expect(ask(`${CLOUDFLARE_RANGES[0]}\n127.0.0.1\n::1`, on)).toBe(false);
+      expect(ask(`${CLOUDFLARE_RANGES.join('\n')}\n127.0.0.1\n::1`, on)).toBe(false);
+      expect(ask(`${CLOUDFLARE_RANGES[0]}\n127.0.0.1\n10.0.0.5`, on)).toBe(true);
+      // Another way to write loopback is the person's own entry.
+      expect(ask('127.0.0.0/8', on)).toBe(true);
       // An entry that is not an address is still the person's own text.
       expect(ask('proxy.local', on)).toBe(true);
     }
@@ -174,14 +189,17 @@ describe('Cloudflare preset', () => {
     expect(hint.startsWith(`Cloudflare's addresses on ${formatDate(CLOUDFLARE_RANGES_DATE)}. `)).toBe(true);
     expect(hint).toContain("Every Cloudflare customer's traffic comes from them, so another Cloudflare account may be able to set the client address WAFio sees.");
     expect(hint).toContain('To accept only your zone, use a Cloudflare Tunnel and trust the address cloudflared connects from instead of this list.');
-    expect(hint).toContain('If a web server or load balancer of yours sits between Cloudflare and the agent, add its address to the list too (127.0.0.1 for one on this host).');
+    expect(hint).toContain('Loopback (127.0.0.1 and ::1) stays in the list for a web server on this host.');
+    expect(hint).toContain('If a web server or load balancer on another machine sits between Cloudflare and the agent, add its address to the list too.');
     // The agent never asks a client for a certificate, so that setting would limit nobody.
     expect(hint).not.toContain('Authenticated Origin Pulls');
   });
 
-  test('the dialog says what is replaced, and that the server in front must be added', () => {
-    expect(CLOUDFLARE_CONFIRM_TEXT).toContain('They replace the entries now in the list or, when the list is empty, this host and the private networks that are trusted by default.');
-    expect(CLOUDFLARE_CONFIRM_TEXT).toContain('add its address to the list too (127.0.0.1 for one on this host). Without that address every visitor looks like that server.');
+  test('the dialog says what is replaced, that loopback stays, and that a server on another machine must be added', () => {
+    expect(CLOUDFLARE_CONFIRM_TEXT).toContain("Forwarded headers will be trusted from Cloudflare's addresses and loopback only.");
+    expect(CLOUDFLARE_CONFIRM_TEXT).toContain('They replace the other entries now in the list or, when the list is empty, the private networks that are trusted by default.');
+    expect(CLOUDFLARE_CONFIRM_TEXT).toContain('Loopback (127.0.0.1 and ::1) stays in the list for a web server on this host.');
+    expect(CLOUDFLARE_CONFIRM_TEXT).toContain('add its address to the list too. Without that address every visitor looks like that server.');
     expect(CLOUDFLARE_CONFIRM_TEXT.endsWith('Nothing is saved until you save the routing.')).toBe(true);
   });
 });

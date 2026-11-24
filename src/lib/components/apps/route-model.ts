@@ -387,25 +387,28 @@ export const CLOUDFLARE_RANGES: readonly string[] = [
   '2c0f:f248::/32',
 ];
 
+/** A web server on the agent's host connects from here, so the preset keeps it beside Cloudflare's ranges. */
+const LOOPBACK = ['127.0.0.1', '::1'];
+
 /**
- * The preset replaces the trust now in force: an entry that is not one of Cloudflare's, or, with forwarded headers on
- * and an empty list, the agent's default of this host and the private ranges. Either asks for a confirm first.
+ * The preset replaces the trust now in force, except Cloudflare's ranges and loopback: any other entry, or, with
+ * forwarded headers on and an empty list, the agent's default of loopback and the private ranges, asks for a confirm first.
  */
 export function replacesTrust(p: Pick<ProxyForm, 'trustForwarded' | 'trustedProxies'>): boolean {
   const entries = parseList(p.trustedProxies ?? '');
-  return entries.length === 0 ? p.trustForwarded : entries.some((entry) => !CLOUDFLARE_RANGES.includes(entry));
+  return entries.length === 0 ? p.trustForwarded : entries.some((entry) => !CLOUDFLARE_RANGES.includes(entry) && !LOOPBACK.includes(entry));
 }
 
-/** The proxy settings with forwarded headers trusted from Cloudflare's addresses only. */
-export const withCloudflare = (p: ProxyForm): ProxyForm => ({ ...p, trustForwarded: true, trustedProxies: CLOUDFLARE_RANGES.join('\n') });
+/** The proxy settings with forwarded headers trusted from Cloudflare's addresses and loopback only. */
+export const withCloudflare = (p: ProxyForm): ProxyForm => ({ ...p, trustForwarded: true, trustedProxies: [...CLOUDFLARE_RANGES, ...LOOPBACK].join('\n') });
 
-/** The peer of the agent is the server in front of it, not Cloudflare, so that server must stay in the list. */
-const CLOUDFLARE_IN_BETWEEN = 'If a web server or load balancer of yours sits between Cloudflare and the agent, add its address to the list too (127.0.0.1 for one on this host).';
+/** The peer of the agent is the server in front of it, not Cloudflare: one on this host is covered, one on another machine must be added. */
+const CLOUDFLARE_IN_BETWEEN = 'Loopback (127.0.0.1 and ::1) stays in the list for a web server on this host. If a web server or load balancer on another machine sits between Cloudflare and the agent, add its address to the list too.';
 
 export const cloudflareHint = (): string =>
   `Cloudflare's addresses on ${formatDate(CLOUDFLARE_RANGES_DATE)}. Every Cloudflare customer's traffic comes from them, so another Cloudflare account may be able to set the client address WAFio sees. To accept only your zone, use a Cloudflare Tunnel and trust the address cloudflared connects from instead of this list. ${CLOUDFLARE_IN_BETWEEN}`;
 
-export const CLOUDFLARE_CONFIRM_TEXT = `Forwarded headers will be trusted from Cloudflare's addresses only. They replace the entries now in the list or, when the list is empty, this host and the private networks that are trusted by default. ${CLOUDFLARE_IN_BETWEEN} Without that address every visitor looks like that server. Nothing is saved until you save the routing.`;
+export const CLOUDFLARE_CONFIRM_TEXT = `Forwarded headers will be trusted from Cloudflare's addresses and loopback only. They replace the other entries now in the list or, when the list is empty, the private networks that are trusted by default. ${CLOUDFLARE_IN_BETWEEN} Without that address every visitor looks like that server. Nothing is saved until you save the routing.`;
 
 /**
  * Field of a 400 INVALID_PROXY_CONFIG message such as

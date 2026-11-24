@@ -47,6 +47,7 @@ import {
   normalizeTLS,
   pollIntervalMs,
   portsText,
+  proxyModeText,
   readPemFile,
   renewalStart,
   requestAgainText,
@@ -738,10 +739,14 @@ describe('the form of the tab', () => {
     expect(chooseMode({ ...formFromTLS(gateway), mode: 'proxy' }, 'gateway', gateway)).toMatchObject({ mode: 'gateway', redirect: false, redirectListen: '' });
   });
 
-  test('choosing Behind a proxy puts the saved listeners back, and keeps the rest of the edits', () => {
-    const saved = input({ listen: '0.0.0.0:8443', redirect_listen: '0.0.0.0:80', hosts: ['a.example.com'] });
+  test('choosing Behind a proxy puts every saved value back, since nothing of an edit stays on screen', () => {
+    const saved = input({ listen: '0.0.0.0:8443', redirect_listen: '0.0.0.0:80', hosts: ['a.example.com'], source: 'uploaded' });
     const edited = { ...formFromTLS(saved), listen: 'junk', redirect: false, redirectListen: '', hosts: 'b.example.com', source: 'acme' as const };
-    expect(chooseMode(edited, 'proxy', saved)).toEqual({ ...formFromTLS(saved), mode: 'proxy', hosts: 'b.example.com', source: 'acme' });
+    expect(chooseMode(edited, 'proxy', saved)).toEqual({ ...formFromTLS(saved), mode: 'proxy' });
+    // Turning the switch on and off again on an app that is behind a proxy leaves nothing to save.
+    const proxy = input({ mode: 'proxy', hosts: ['a.example.com'], source: '' });
+    const on = chooseMode({ ...formFromTLS(proxy), hosts: 'junk' }, 'gateway', proxy);
+    expect(sameTLS(inputFromForm(chooseMode(on, 'proxy', proxy)), proxy)).toBe(true);
   });
 
   test('settings count as the same once the server normal form is applied', () => {
@@ -825,7 +830,7 @@ describe('the switch and the notices', () => {
       'edge-1 cannot serve certificates: it is older than this feature, or its key directory /var/lib/wafio-waf-agent/tls/ was unusable at start (its log says why). Upgrade it, or fix the directory and restart it.',
     );
     expect(noticeText('unsupported-gateway', 'edge-1')).toBe('edge-1 no longer serves certificates, so it serves this application in plain HTTP at its Routing listen address.');
-    expect(noticeText('readonly', '')).toBe('Read-only: changing HTTPS settings needs member or owner access.');
+    expect(noticeText('readonly', '')).toBe('Read-only: changing Gateway settings needs member or owner access.');
   });
 });
 
@@ -982,6 +987,11 @@ describe('the texts of the dialogs', () => {
     );
   });
 
+  test('with the switch off the tab says where requests arrive and who handles HTTPS, and names the agent', () => {
+    expect(proxyModeText('edge-1')).toBe('Requests reach edge-1 on the listen address of the Routing tab. A web server or CDN in front of it handles HTTPS.');
+    expect(proxyModeText('')).toBe('Requests reach the WAF agent on the listen address of the Routing tab. A web server or CDN in front of it handles HTTPS.');
+  });
+
   test('switching back names the listen address of the Routing tab and the ports it frees', () => {
     expect(backToProxyText({ agent: 'edge-1', own: { host: '127.0.0.1', port: 8080 }, ports: 'ports 443 and 80' })).toBe(
       'edge-1 stops serving HTTPS for this application and listens on 127.0.0.1:8080 again, which frees ports 443 and 80. Then start the web server in front of it; a load balancer on another machine can be switched first.',
@@ -1052,7 +1062,7 @@ describe('where a refused save is shown', () => {
   test('anything else keeps the text of the server, a rate limit included', () => {
     expect(refused({ status: 429, code: 'RATE_LIMITED', error: 'Too many requests' })).toEqual({ kind: 'save', message: 'Too many requests' });
     expect(refused({ status: 400, code: 'INVALID_TLS_SETTINGS', field: 'mode', error: 'mode: must be "proxy" or "gateway"' })).toMatchObject({ kind: 'save' });
-    expect(classifyTLSRefusal(undefined, '')).toEqual({ kind: 'save', message: 'Could not save the HTTPS settings.' });
+    expect(classifyTLSRefusal(undefined, '')).toEqual({ kind: 'save', message: 'Could not save the Gateway settings.' });
   });
 });
 
@@ -1379,10 +1389,10 @@ describe('the notes on the Assignment and Routing tabs and where an agent is rem
     const gateway = { mode: 'gateway' as const, listen: '10.0.0.5:8443', agent_supported: true };
     expect(routingNote(gateway, 'edge-1', true)).toEqual({
       tone: 'info',
-      text: 'In Gateway mode edge-1 serves this application on 10.0.0.5:8443 (HTTPS tab) and keeps the listen address below reserved, unopened.',
+      text: 'In Gateway mode edge-1 serves this application on 10.0.0.5:8443 (Gateway tab) and keeps the listen address below reserved, unopened.',
     });
     expect(routingNote({ ...gateway, listen: '', agent_supported: null }, '', true)?.text).toBe(
-      'In Gateway mode the WAF agent serves this application on 0.0.0.0:443 (HTTPS tab) and keeps the listen address below reserved, unopened.',
+      'In Gateway mode the WAF agent serves this application on 0.0.0.0:443 (Gateway tab) and keeps the listen address below reserved, unopened.',
     );
   });
 
@@ -1404,7 +1414,7 @@ describe('the notes on the Assignment and Routing tabs and where an agent is rem
     expect(routingNote(null, 'edge-1', true)).toBeNull();
   });
 
-  test('the application page shows the Routing note and hands its HTTPS read to the Assignment tab', () => {
+  test('the application page shows the Routing note and hands its Gateway read to the Assignment tab', () => {
     const source = page('apps/[appId]/+page.svelte');
     expect(source).toContain('routingNote(tls, agent?.name ?? \'\', assigned)');
     expect(source).toMatch(/\{#if gatewayRoutingNote\}\s*<Alert tone=\{gatewayRoutingNote\.tone\} message=\{gatewayRoutingNote\.text\} \/>/);

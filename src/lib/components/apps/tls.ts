@@ -1,5 +1,5 @@
 /**
- * HTTPS tab of an application: the checks the control plane makes on the settings (same field keys and
+ * Gateway tab of an application: the checks the control plane makes on the settings (same field keys and
  * texts, never stricter), certificate dates and statuses, how often to poll, and the sending of an
  * uploaded certificate. Pure functions, no component state.
  */
@@ -393,14 +393,11 @@ export function setRedirect(form: TLSForm, on: boolean): TLSForm {
 }
 
 /**
- * Choosing Gateway for the first time turns the redirect on at port 80. Choosing Behind a proxy puts the
- * saved listeners back, since that mode does not show them and an edit there could not be seen or fixed.
+ * Choosing Gateway for the first time turns the redirect on at port 80. Choosing Behind a proxy puts every saved
+ * value back, since that mode shows none of them and an edit there could not be seen or fixed.
  */
 export function chooseMode(form: TLSForm, mode: TLSMode, stored: AppTLSInput): TLSForm {
-  if (mode === 'proxy') {
-    const { listen, redirect, redirectListen } = formFromTLS(stored);
-    return { ...form, mode, listen, redirect, redirectListen };
-  }
+  if (mode === 'proxy') return { ...formFromTLS(stored), mode };
   const first = stored.mode !== 'gateway' && form.redirectListen.trim() === '';
   return first ? setRedirect({ ...form, mode }, true) : { ...form, mode };
 }
@@ -477,7 +474,7 @@ export function noticeText(notice: TLSNotice, agent: string): string {
     case 'offline':
       return `${agentStart(agent)} is offline. The change takes effect when it reconnects.`;
     case 'readonly':
-      return 'Read-only: changing HTTPS settings needs member or owner access.';
+      return 'Read-only: changing Gateway settings needs member or owner access.';
   }
 }
 
@@ -535,6 +532,10 @@ export function behindCloudflareText(source: TLSSource, redirect: boolean): stri
   const retry = 'tries HTTP-01 10 minutes later, or at once with Try again now after 5 minutes.';
   return redirect ? `${first}; the agent ${retry}` : `${first}. Turn on Redirect HTTP to HTTPS, which answers HTTP-01; the agent then ${retry}`;
 }
+
+/** The only line of the tab while the switch is off. */
+export const proxyModeText = (agent: string): string =>
+  `Requests reach ${agentMid(agent)} on the listen address of the Routing tab. A web server or CDN in front of it handles HTTPS.`;
 
 export function backToProxyText(o: { agent: string; own: OwnListener; ports: string }): string {
   return `${agentStart(o.agent)} stops serving HTTPS for this application and listens on ${ownAddress(o.own) ?? 'the listen address on the Routing tab'} again, which frees ${o.ports}. Then start the web server in front of it; a load balancer on another machine can be switched first.`;
@@ -642,7 +643,7 @@ export type TLSRefusal =
  * is a Routing setting. The rest is shown above the form, TLS_UNSUPPORTED also telling the panel the agent cannot.
  */
 export function classifyTLSRefusal(error: ApiError | undefined, agent: string): TLSRefusal {
-  const text = error?.error || 'Could not save the HTTPS settings.';
+  const text = error?.error || 'Could not save the Gateway settings.';
   const field = error?.field;
   const named = field === 'hosts' || field === 'listen' || field === 'redirect_listen' || field === 'source';
   if (error?.code === 'INVALID_TLS_SETTINGS' && named) return { kind: 'field', field, message: stripFieldPrefix(text, field) };
@@ -997,7 +998,7 @@ const MOVED_ACME_TEXT = 'The new agent requests its own certificate; meanwhile v
 /** In the confirms that delete an agent or revoke or delete its host. */
 export const REMOVED_AGENT_TEXT = 'Did a WAF agent here serve an uploaded certificate? Upload a new one for that application: its host keeps a copy of the private key.';
 
-/** The note on the Assignment tab of an application in Gateway; `state` is the page's read of the HTTPS settings. */
+/** The note on the Assignment tab of an application in Gateway; `state` is the page's read of the Gateway settings. */
 export function assignmentNote(state: Pick<AppTLSState, 'mode' | 'source'> | null): string | null {
   if (state?.mode !== 'gateway') return null;
   return state.source === 'uploaded' ? MOVED_UPLOAD_TEXT : state.source === 'acme' ? MOVED_ACME_TEXT : null;
@@ -1007,7 +1008,7 @@ export function assignmentNote(state: Pick<AppTLSState, 'mode' | 'source'> | nul
 export function routingNote(state: Pick<AppTLSState, 'mode' | 'listen' | 'agent_supported'> | null, agent: string, assigned: boolean): { tone: 'info' | 'error'; text: string } | null {
   if (!assigned || state?.mode !== 'gateway') return null;
   if (state.agent_supported === false) return { tone: 'error', text: noticeText('unsupported-gateway', agent) };
-  return { tone: 'info', text: `In Gateway mode ${agentMid(agent)} serves this application on ${state.listen || DEFAULT_TLS_LISTEN} (HTTPS tab) and keeps the listen address below reserved, unopened.` };
+  return { tone: 'info', text: `In Gateway mode ${agentMid(agent)} serves this application on ${state.listen || DEFAULT_TLS_LISTEN} (Gateway tab) and keeps the listen address below reserved, unopened.` };
 }
 
 /** What an upload over a source that is not the uploaded one does, in the text of the dialog. */

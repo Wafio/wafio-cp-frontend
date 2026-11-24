@@ -1,11 +1,12 @@
 <!--
-  AppTLS: the HTTPS tab. The mode says whether the WAF agent serves this application behind a web server, load
-  balancer or CDN (Behind a proxy) or straight to visitors with its own certificate (Gateway). Choosing a mode saves
-  nothing: "Save changes" keeps the saved mode, and "Switch to ..." saves with the other one after one confirm, as does
-  a change of certificate source in Gateway. The panel reads the settings when it opens (the page may hand over what it
-  read), then follows the server on a timer and keeps what the person is editing. Only the answer of a save carries the
-  DNS hints, so the panel keeps them until the next save. The card of the saved certificate source follows the agent's
-  report and carries the request, upload, replace and delete of the certificate.
+  AppTLS: the Gateway tab. The switch says whether the WAF agent serves this application straight to visitors with its
+  own certificate (on, Gateway) or behind a web server, load balancer or CDN (off, Behind a proxy, the default, which
+  shows one line and nothing else). Flipping it saves nothing: "Save changes" keeps the saved mode, and "Switch to ..."
+  saves with the other one after one confirm, as does a change of certificate source in Gateway. The panel reads the
+  settings when it opens (the page may hand over what it read), then follows the server on a timer and keeps what the
+  person is editing. Only the answer of a save carries the DNS hints, so the panel keeps them until the next save. The
+  card of the saved certificate source follows the agent's report and carries the request, upload, replace and delete
+  of the certificate.
 -->
 <script lang="ts">
   import { onDestroy, onMount, tick, untrack } from 'svelte';
@@ -46,6 +47,7 @@
     normalizeFormats,
     pollIntervalMs,
     portsText,
+    proxyModeText,
     requestAgainText,
     requestOpensAt,
     retryUntil,
@@ -292,7 +294,7 @@
     adopt(res.data, true);
     lastActionAt = Date.now();
     if (res.data.mode === 'gateway') savedInGateway = true;
-    else toast.success('HTTPS settings saved.', 'Saved');
+    else toast.success('Gateway settings saved.', 'Saved');
   }
 
   function refused(error: ApiError | undefined, sent: AppTLSInput) {
@@ -412,10 +414,6 @@
     beforeBack = null;
   }
 
-  const modeOptions = [
-    { value: 'gateway' as const, label: 'Gateway', description: 'WAFio receives traffic straight from the internet and handles HTTPS' },
-    { value: 'proxy' as const, label: 'Behind a proxy', description: 'WAFio sits behind a web server, load balancer or CDN' },
-  ];
   const sourceOptions: { value: TLSSource; label: string; description: string }[] = [
     { value: 'acme', label: "Let's Encrypt", description: 'The agent requests a certificate for these host names and renews it.' },
     { value: 'uploaded', label: 'Uploaded certificate', description: 'A certificate you bought or issued with your own CA. Its key can be replaced, never read back.' },
@@ -462,14 +460,14 @@
 
 <section class="tls" aria-labelledby="{uid}-title">
   <header class="tls-head">
-    <h2 id="{uid}-title" tabindex="-1">HTTPS</h2>
+    <h2 id="{uid}-title" tabindex="-1">Gateway</h2>
     <p>Choose how visitors reach this application and which certificate the WAF agent serves for HTTPS.</p>
   </header>
 
   {#if loading && !loaded}
-    <Spinner layout="block" tone="accent" label="Loading the HTTPS settings" />
+    <Spinner layout="block" tone="accent" label="Loading the Gateway settings" />
   {:else if !loaded || loadFailed}
-    <InlineError message="Could not load the HTTPS settings." onretry={() => void refresh()} retrying={loading} />
+    <InlineError message="Could not load the Gateway settings." onretry={() => void refresh()} retrying={loading} />
   {:else}
     {#if notices.length > 0}
       <div class="tls-notices">
@@ -494,40 +492,40 @@
         <Alert tone="error" title="Not saved" message={saveError} actions={routingError ? routingLink : undefined} />
       {/if}
       <fieldset class="tls-fieldset" disabled={readonly}>
-        <ChoiceGroup
-          legend="How traffic reaches WAFio"
-          name="{uid}-mode"
-          options={modeOptions}
-          bind:value={form.mode}
-          onchange={(next) => (form = chooseMode(form, next, stored))}
-          columns={2}
+        <Switch
+          checked={form.mode === 'gateway'}
+          onchange={(on) => (form = chooseMode(form, on ? 'gateway' : 'proxy', stored))}
+          label="Gateway"
+          hint="WAFio receives traffic straight from the internet and handles HTTPS."
           disabled={readonly}
         />
 
-        <section class="tls-block" aria-labelledby="{uid}-addresses">
-          <h3 id="{uid}-addresses">Addresses</h3>
-          <div class="tls-field" onfocusout={() => touch('hosts')}>
-            <Field
-              label="Host names"
-              error={shownErrors.hosts}
-              hint="One per line, up to 100, such as shop.example.com. No wildcards, IP addresses or ports; international names in xn-- form."
-            >
-              {#snippet children(c)}
-                <textarea
-                  {...c}
-                  class="mono"
-                  rows="4"
-                  spellcheck="false"
-                  autocomplete="off"
-                  autocapitalize="off"
-                  placeholder={'shop.example.com\nwww.example.com'}
-                  bind:value={form.hosts}
-                ></textarea>
-              {/snippet}
-            </Field>
-          </div>
+        {#if form.mode !== 'gateway'}
+          <p class="tls-hint">{proxyModeText(agentName)}</p>
+        {:else}
+          <section class="tls-block" aria-labelledby="{uid}-addresses">
+            <h3 id="{uid}-addresses">Addresses</h3>
+            <div class="tls-field" onfocusout={() => touch('hosts')}>
+              <Field
+                label="Host names"
+                error={shownErrors.hosts}
+                hint="One per line, up to 100, such as shop.example.com. No wildcards, IP addresses or ports; international names in xn-- form."
+              >
+                {#snippet children(c)}
+                  <textarea
+                    {...c}
+                    class="mono"
+                    rows="4"
+                    spellcheck="false"
+                    autocomplete="off"
+                    autocapitalize="off"
+                    placeholder={'shop.example.com\nwww.example.com'}
+                    bind:value={form.hosts}
+                  ></textarea>
+                {/snippet}
+              </Field>
+            </div>
 
-          {#if form.mode === 'gateway'}
             <div class="tls-field" onfocusout={() => touch('listen')}>
               <Field label="HTTPS address" optional error={shownErrors.listen} hint="ip:port or [ipv6]:port. Empty means 0.0.0.0:443.">
                 {#snippet children(c)}
@@ -556,74 +554,74 @@
               </div>
             {/if}
             <p class="tls-hint"><strong>Behind Cloudflare.</strong> {behindCloudflareText(form.source, form.redirect)}</p>
-          {/if}
-        </section>
+          </section>
 
-        <section class="tls-block" aria-labelledby="{uid}-certificate">
-          <h3 id="{uid}-certificate" tabindex="-1">Certificate</h3>
-          <ChoiceGroup legend="Certificate source" name="{uid}-source" options={sourceOptions} bind:value={form.source} columns={2} disabled={readonly} error={shownErrors.source} />
+          <section class="tls-block" aria-labelledby="{uid}-certificate">
+            <h3 id="{uid}-certificate" tabindex="-1">Certificate</h3>
+            <ChoiceGroup legend="Certificate source" name="{uid}-source" options={sourceOptions} bind:value={form.source} columns={2} disabled={readonly} error={shownErrors.source} />
 
-          {#if card}
-            <div class="tls-card" role="group" aria-label="Saved certificate">
-              <div class="tls-card-head">
-                <h4>{card.source === 'acme' ? "Let's Encrypt" : 'Uploaded certificate'}</h4>
-                {#if card.inUse && inGateway}<Badge tone="success">In use</Badge>{/if}
+            {#if card}
+              <div class="tls-card" role="group" aria-label="Saved certificate">
+                <div class="tls-card-head">
+                  <h4>{card.source === 'acme' ? "Let's Encrypt" : 'Uploaded certificate'}</h4>
+                  {#if card.inUse && inGateway}<Badge tone="success">In use</Badge>{/if}
+                </div>
+                {#each alerts as alert (alert.text)}
+                  <Alert tone={alert.tone} message={alert.text} />
+                {/each}
+                {#if card.empty}
+                  <EmptyState title="No certificate uploaded" message="Upload the certificate chain and its private key." level={5} compact>
+                    {#snippet action()}
+                      <Button id="{uid}-upload" class="tls-tap" disabled={readonly || busy} onclick={() => (uploadOpen = true)}>Upload certificate</Button>
+                    {/snippet}
+                  </EmptyState>
+                {/if}
+                {#if card.facts}{@render facts(card.facts)}{/if}
+                {#if card.failure || card.lines.length > 0 || card.served}
+                  <div class="tls-card-status" aria-live="polite">
+                    {#if card.failure}
+                      <p>
+                        {card.failure.lead}
+                        {#if card.failure.error}<bdi class="tls-error">{card.failure.error}</bdi>{/if}
+                      </p>
+                      {#if card.failure.next}<p>{card.failure.next}</p>{/if}
+                    {/if}
+                    {#each card.lines as line (line)}<p>{line}</p>{/each}
+                    {#if card.served}
+                      <p class="tls-sub">Served now</p>
+                      {@render facts(card.served)}
+                    {/if}
+                  </div>
+                {/if}
+
+                {#if card.source === 'acme' && inGateway && canRequest}
+                  <div class="tls-card-actions">
+                    <Button variant="secondary" class="tls-tap" loading={requesting} disabled={readonly || busy || requestWaits} onclick={() => void requestCertificate()}>
+                      {card.failure ? 'Try again now' : 'Request a new certificate'}
+                    </Button>
+                  </div>
+                  {#if requestWaits}<p class="tls-hint">{requestAgainText(opensAt)}</p>{/if}
+                  <p class="tls-hint">{REQUEST_TEXT}</p>
+                  {#if requestError}<Alert tone="error" title="Not requested" message={requestError} />{/if}
+                {/if}
+
+                {#if card.source === 'uploaded' && loaded?.certificate}
+                  <div class="tls-card-actions">
+                    <Button id="{uid}-replace" variant="secondary" class="tls-tap" disabled={readonly || busy} onclick={() => (uploadOpen = true)}>Replace certificate</Button>
+                    <Button variant="secondary" class="tls-tap" disabled={readonly || busy || inGateway} onclick={askDelete}>Delete certificate</Button>
+                  </div>
+                  {#if inGateway}<p class="tls-hint">{CERTIFICATE_IN_USE_TEXT}</p>{/if}
+                  <p class="tls-hint">{MOVED_UPLOAD_TEXT}</p>
+                {:else if card.source === 'acme' && loaded?.certificate}
+                  <div class="tls-card-actions">
+                    <p class="tls-hint">An uploaded certificate of this application is still stored with its key.</p>
+                    <Button variant="secondary" class="tls-tap" disabled={readonly || busy} onclick={askDelete}>Delete certificate</Button>
+                  </div>
+                {/if}
               </div>
-              {#each alerts as alert (alert.text)}
-                <Alert tone={alert.tone} message={alert.text} />
-              {/each}
-              {#if card.empty}
-                <EmptyState title="No certificate uploaded" message="Upload the certificate chain and its private key." level={5} compact>
-                  {#snippet action()}
-                    <Button id="{uid}-upload" class="tls-tap" disabled={readonly || busy} onclick={() => (uploadOpen = true)}>Upload certificate</Button>
-                  {/snippet}
-                </EmptyState>
-              {/if}
-              {#if card.facts}{@render facts(card.facts)}{/if}
-              {#if card.failure || card.lines.length > 0 || card.served}
-                <div class="tls-card-status" aria-live="polite">
-                  {#if card.failure}
-                    <p>
-                      {card.failure.lead}
-                      {#if card.failure.error}<bdi class="tls-error">{card.failure.error}</bdi>{/if}
-                    </p>
-                    {#if card.failure.next}<p>{card.failure.next}</p>{/if}
-                  {/if}
-                  {#each card.lines as line (line)}<p>{line}</p>{/each}
-                  {#if card.served}
-                    <p class="tls-sub">Served now</p>
-                    {@render facts(card.served)}
-                  {/if}
-                </div>
-              {/if}
-
-              {#if card.source === 'acme' && inGateway && canRequest}
-                <div class="tls-card-actions">
-                  <Button variant="secondary" class="tls-tap" loading={requesting} disabled={readonly || busy || requestWaits} onclick={() => void requestCertificate()}>
-                    {card.failure ? 'Try again now' : 'Request a new certificate'}
-                  </Button>
-                </div>
-                {#if requestWaits}<p class="tls-hint">{requestAgainText(opensAt)}</p>{/if}
-                <p class="tls-hint">{REQUEST_TEXT}</p>
-                {#if requestError}<Alert tone="error" title="Not requested" message={requestError} />{/if}
-              {/if}
-
-              {#if card.source === 'uploaded' && loaded?.certificate}
-                <div class="tls-card-actions">
-                  <Button id="{uid}-replace" variant="secondary" class="tls-tap" disabled={readonly || busy} onclick={() => (uploadOpen = true)}>Replace certificate</Button>
-                  <Button variant="secondary" class="tls-tap" disabled={readonly || busy || inGateway} onclick={askDelete}>Delete certificate</Button>
-                </div>
-                {#if inGateway}<p class="tls-hint">{CERTIFICATE_IN_USE_TEXT}</p>{/if}
-                <p class="tls-hint">{MOVED_UPLOAD_TEXT}</p>
-              {:else if card.source === 'acme' && loaded?.certificate}
-                <div class="tls-card-actions">
-                  <p class="tls-hint">An uploaded certificate of this application is still stored with its key.</p>
-                  <Button variant="secondary" class="tls-tap" disabled={readonly || busy} onclick={askDelete}>Delete certificate</Button>
-                </div>
-              {/if}
-            </div>
-          {/if}
-        </section>
+            {/if}
+          </section>
+        {/if}
       </fieldset>
     </div>
 

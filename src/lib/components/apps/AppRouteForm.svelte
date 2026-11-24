@@ -139,7 +139,7 @@
     else useCloudflare();
   }
 
-  /** Replaces the list with Cloudflare's addresses and trusts forwarded headers; saved with the form like any edit. */
+  /** Replaces the list with Cloudflare's addresses and loopback and trusts forwarded headers; saved with the form like any edit. */
   function useCloudflare() {
     form.proxy = withCloudflare(form.proxy);
     confirmCloudflareOpen = false;

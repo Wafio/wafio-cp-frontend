@@ -1,4 +1,4 @@
-// What the HTTPS tab shows, rendered on the server without a DOM: the notices, the mode and what each mode shows, the
+// What the Gateway tab shows, rendered on the server without a DOM: the notices, the switch and what each state shows, the
 // refusals that exist before any click, the DNS hint kept from a save. Clicks cannot run here (Bun has no DOM), so what
 // a click decides (the checks of a switch, the texts of the dialogs, where a refusal goes) is tested as functions in
 // apps-tls.test.ts.
@@ -77,48 +77,48 @@ function tag(html: string, pattern: RegExp): string {
   return found![0];
 }
 
+/** The opening tags of the switches, in page order: the Gateway switch first, then the redirect switch. */
+const switches = (html: string): string[] => html.match(/<button[^>]*role="switch"[^>]*>/g) ?? [];
+
 /** A button is disabled when its own opening tag says so and its text follows before it closes. */
 const disabledButton = (label: string) => new RegExp(`<button[^>]*disabled[^>]*>(?:(?!</button>)[\\s\\S])*${label}`);
 
-describe('HTTPS tab, before the settings are read', () => {
+describe('Gateway tab, before the settings are read', () => {
   test('shows that it is loading, and no form yet; the intro is already there', async () => {
     const html = await render(undefined);
-    expect(html).toContain('Loading the HTTPS settings');
+    expect(html).toContain('Loading the Gateway settings');
     expect(html).toContain('Choose how visitors reach this application and which certificate the WAF agent serves for HTTPS.');
     expect(html).not.toContain('Host names');
     expect(html).not.toContain('role="switch"');
   });
 });
 
-describe('HTTPS tab, Behind a proxy', () => {
-  test('offers both modes with a line each, Behind a proxy chosen', async () => {
+describe('Gateway tab, the switch off (Behind a proxy)', () => {
+  test('the switch is off, and one line says where requests arrive and who handles HTTPS', async () => {
     const html = await render(state());
-    expect(html).toContain('How traffic reaches WAFio');
-    expect(html).toContain('WAFio receives traffic straight from the internet and handles HTTPS');
-    expect(html).toContain('WAFio sits behind a web server, load balancer or CDN');
-    expect(tag(html, /<input[^>]*type="radio"[^>]*value="proxy"[^>]*>/)).toContain('checked');
-    expect(tag(html, /<input[^>]*type="radio"[^>]*value="gateway"[^>]*>/)).not.toContain('checked');
+    expect(html).toMatch(/<h2 id="[^"]+-title" tabindex="-1"[^>]*>Gateway<\/h2>/);
+    expect(html).toContain('WAFio receives traffic straight from the internet and handles HTTPS.');
+    expect(switches(html)).toHaveLength(1);
+    expect(switches(html)[0]).toContain('aria-checked="false"');
+    expect(html).toContain('Requests reach edge-1 on the listen address of the Routing tab. A web server or CDN in front of it handles HTTPS.');
+    expect(html).not.toContain('type="radio"');
   });
 
-  test('has no Cloudflare note', async () => {
-    expect(await render(state())).not.toContain('Cloudflare');
+  test('shows no host names, listener, source or certificate, whatever is saved', async () => {
+    const saved = [state(), state({ source: 'uploaded', certificate: certificate() }), state({ source: 'uploaded', certificate: null }), state({ status: report() })];
+    for (const settings of saved) {
+      const html = await render(settings);
+      for (const text of ['Host names', 'Addresses', 'HTTPS address', 'Redirect HTTP to HTTPS', 'Certificate source', 'Saved certificate', 'Delete certificate', 'No certificate uploaded', 'Behind Cloudflare']) {
+        expect(html).not.toContain(text);
+      }
+      expect(html).not.toContain('<textarea');
+    }
   });
 
-  test('shows the host names and the certificate source, and no listener', async () => {
-    const html = await render(state());
-    expect(html).toContain('One per line, up to 100, such as shop.example.com. No wildcards, IP addresses or ports; international names in xn-- form.');
-    expect(html).toContain('shop.example.com</textarea>');
-    expect(html).toContain("The agent requests a certificate for these host names and renews it.");
-    expect(html).toContain('A certificate you bought or issued with your own CA. Its key can be replaced, never read back.');
-    expect(tag(html, /<input[^>]*type="radio"[^>]*value="acme"[^>]*>/)).toContain('checked');
-    expect(html).not.toContain('HTTPS address');
-    expect(html).not.toContain('Redirect HTTP to HTTPS');
-  });
-
-  test('the host names are not sent to a spell checker, an autocomplete or a writing assistant', async () => {
-    const html = await render(state());
-    const field = tag(html, /<textarea[^>]*>/);
-    for (const attribute of ['spellcheck="false"', 'autocomplete="off"', 'autocapitalize="off"']) expect(field).toContain(attribute);
+  test('an app that was never set up is off as well', async () => {
+    const html = await render(state({ hosts: [], source: '' }));
+    expect(switches(html)[0]).toContain('aria-checked="false"');
+    expect(html).toContain('Requests reach edge-1 on the listen address of the Routing tab.');
   });
 
   test('has no notice, and nothing to save yet', async () => {
@@ -128,29 +128,50 @@ describe('HTTPS tab, Behind a proxy', () => {
     expect(html).toMatch(disabledButton('Discard changes'));
     expect(html).not.toContain('Switch to Gateway');
     expect(html).not.toMatch(/<fieldset[^>]*tls-fieldset[^>]*disabled/);
+    expect(tag(html, /<button[^>]*role="switch"[^>]*>/)).not.toContain('disabled');
   });
 
   test('keeps the text of the dialogs out of the page until one opens', async () => {
     const html = await render(state());
     for (const text of ['Subscriber Agreement', 'Outside WAFio', 'stops serving HTTPS']) expect(html).not.toContain(text);
   });
+
+  test('the agent is named, or called the WAF agent', async () => {
+    expect(await render(state(), { agentName: '' })).toContain('Requests reach the WAF agent on the listen address of the Routing tab.');
+  });
 });
 
-describe('HTTPS tab, Gateway', () => {
+describe('Gateway tab, Gateway', () => {
   test('shows the addresses, the redirect and its address', async () => {
     const html = await render(state(GATEWAY));
-    expect(tag(html, /<input[^>]*type="radio"[^>]*value="gateway"[^>]*>/)).toContain('checked');
+    expect(switches(html)[0]).toContain('aria-checked="true"');
+    expect(html).not.toContain('Requests reach edge-1 on the listen address');
     expect(html).toContain('HTTPS address');
     expect(html).toContain('ip:port or [ipv6]:port. Empty means 0.0.0.0:443.');
     expect(html).toContain("Sends HTTP visitors to HTTPS once a certificate is in use (503 before that) and answers Let's Encrypt's HTTP-01 check. Keep it on behind a CDN.");
-    expect(tag(html, /<button[^>]*role="switch"[^>]*>/)).toContain('aria-checked="true"');
+    expect(switches(html)[1]).toContain('aria-checked="true"');
     expect(html).toContain('Redirect address');
     expect(html).toContain('value="0.0.0.0:80"');
   });
 
+  test('shows the host names and the certificate source', async () => {
+    const html = await render(state(GATEWAY));
+    expect(html).toContain('One per line, up to 100, such as shop.example.com. No wildcards, IP addresses or ports; international names in xn-- form.');
+    expect(html).toContain('shop.example.com</textarea>');
+    expect(html).toContain("The agent requests a certificate for these host names and renews it.");
+    expect(html).toContain('A certificate you bought or issued with your own CA. Its key can be replaced, never read back.');
+    expect(tag(html, /<input[^>]*type="radio"[^>]*value="acme"[^>]*>/)).toContain('checked');
+  });
+
+  test('the host names are not sent to a spell checker, an autocomplete or a writing assistant', async () => {
+    const html = await render(state(GATEWAY));
+    const field = tag(html, /<textarea[^>]*>/);
+    for (const attribute of ['spellcheck="false"', 'autocomplete="off"', 'autocapitalize="off"']) expect(field).toContain(attribute);
+  });
+
   test('with the redirect off there is no redirect address', async () => {
     const html = await render(state({ mode: 'gateway', redirect_listen: '' }));
-    expect(tag(html, /<button[^>]*role="switch"[^>]*>/)).toContain('aria-checked="false"');
+    expect(switches(html)[1]).toContain('aria-checked="false"');
     expect(html).not.toContain('Redirect address');
   });
 
@@ -176,7 +197,7 @@ describe('HTTPS tab, Gateway', () => {
   });
 });
 
-describe('HTTPS tab, notices', () => {
+describe('Gateway tab, notices', () => {
   test('no WAF agent: the settings wait for one, and the tab can still be edited', async () => {
     const html = await render(state({ agent_supported: null, agent_host_bound: null }), { assigned: false, agentName: '', agentOnline: undefined });
     expect(html).toContain('No WAF agent serves this application. These settings take effect once one is assigned on the Assignment tab.');
@@ -208,14 +229,14 @@ describe('HTTPS tab, notices', () => {
 
   test('a viewer reads the settings and changes nothing', async () => {
     const html = await render(state(GATEWAY), { canConfigure: false });
-    expect(html).toContain('Read-only: changing HTTPS settings needs member or owner access.');
+    expect(html).toContain('Read-only: changing Gateway settings needs member or owner access.');
     expect(html).toMatch(/<fieldset[^>]*tls-fieldset[^>]*disabled/);
     expect(tag(html, /<button[^>]*role="switch"[^>]*>/)).toContain('disabled');
     for (const label of ['Discard changes', 'Save changes']) expect(html).toMatch(disabledButton(label));
   });
 });
 
-describe('HTTPS tab, the listener of the Routing tab', () => {
+describe('Gateway tab, the listener of the Routing tab', () => {
   const own = (port: number | null, host = '') => ({ ...ROUTING, listenHost: host, listenPort: port });
   const clash = 'The listen address on the Routing tab of this application uses it.';
 
@@ -239,7 +260,7 @@ describe('HTTPS tab, the listener of the Routing tab', () => {
   });
 });
 
-describe('HTTPS tab, the DNS hint of a save', () => {
+describe('Gateway tab, the DNS hint of a save', () => {
   test('is shown with its way back, while the app is in Gateway', async () => {
     const html = await render(state({ ...GATEWAY, warnings: [DNS] }));
     expect(html).toContain("shop.example.com resolves to 203.0.113.7, but edge-1's host reports 198.51.100.2. Visitors and Let's Encrypt go where DNS points; behind a CDN that is expected.");
@@ -335,34 +356,14 @@ const uploaded = (over: Partial<AppTLSState> = {}, status: Partial<AppTLSStatus>
     ...over,
   });
 
-describe('the certificate card, Behind a proxy', () => {
-  test('no source saved: no card', async () => {
-    expect(await render(state({ source: '' }))).not.toContain('Saved certificate');
-  });
-
-  test('Let\'s Encrypt: says the agent orders on the switch, and shows no report, request or In use', async () => {
-    const html = await render(state({ status: report() }));
-    expect(html).toContain('edge-1 orders the first certificate when you switch to Gateway.');
-    for (const text of ['In use', 'Request a new certificate', 'Delete certificate']) expect(html).not.toContain(text);
-  });
-
-  test('uploaded: the facts of the certificate and its buttons, never In use', async () => {
-    const html = await render(state({ source: 'uploaded', certificate: certificate(), status: report({ source: 'uploaded', certificate_id: 'cert-1' }) }));
-    expect(html).toContain('Example CA');
-    expect(html).toContain('ecdsa-p256');
-    expect(html).toContain(`datetime="${certificate().not_after}"`);
-    expect(html).toContain(formatDate(certificate().not_after));
-    expect(html).toContain('(in 80 days)');
-    expect(html).not.toContain('In use');
-    expect(html).not.toMatch(disabledButton('Replace certificate'));
-    expect(html).not.toMatch(disabledButton('Delete certificate'));
-  });
-
-  test('uploaded with nothing uploaded: an empty state with the upload', async () => {
-    const html = await render(state({ source: 'uploaded', certificate: null }));
-    expect(html).toContain('No certificate uploaded');
-    expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Upload certificate/);
-    expect(html).not.toContain('Replace certificate');
+describe('the certificate card, switch off', () => {
+  // What the card says for a saved proxy app once the switch is turned on is tested on certificateCard: a server
+  // render cannot turn the switch on.
+  test('there is none, so nothing to request, upload, replace or delete', async () => {
+    for (const settings of [state({ source: '' }), state({ status: report() }), state({ source: 'uploaded', certificate: certificate() }), state({ source: 'uploaded', certificate: null })]) {
+      const html = await render(settings);
+      for (const text of ['Saved certificate', 'In use', 'Request a new certificate', 'Upload certificate', 'Replace certificate', 'Delete certificate']) expect(html).not.toContain(text);
+    }
   });
 });
 
@@ -564,12 +565,6 @@ describe('the certificate card, delete and replace', () => {
     expect(html).toContain("In use. Switch to Let's Encrypt or Behind a proxy first, or upload a replacement.");
   });
 
-  test('Behind a proxy: Delete is available and nothing says in use', async () => {
-    const html = await render(state({ source: 'uploaded', certificate: certificate() }));
-    expect(html).not.toMatch(disabledButton('Delete certificate'));
-    expect(html).not.toContain('In use. Switch to');
-  });
-
   test('the move advice is on the uploaded card', async () => {
     const html = await render(uploaded());
     expect(html).toContain('After a move to another WAF agent, or the removal of its agent, upload a new certificate with a new key: the old host may keep a copy of this one.');
@@ -583,7 +578,7 @@ describe('the certificate card, delete and replace', () => {
   });
 
   test('a viewer can neither replace nor delete', async () => {
-    const html = await render(uploaded({ mode: 'proxy', redirect_listen: '' }), { canConfigure: false });
+    const html = await render(uploaded(), { canConfigure: false });
     expect(html).toMatch(/<fieldset[^>]*tls-fieldset[^>]*disabled/);
     for (const label of ['Replace certificate', 'Delete certificate']) expect(html).toMatch(disabledButton(label));
   });
@@ -717,14 +712,29 @@ describe('focus after the control the person used has gone', () => {
   });
 
   test('every target exists: the two headings take programmatic focus, the buttons carry the ids', async () => {
-    const empty = await render(state({ source: 'uploaded', certificate: null }));
-    expect(empty).toMatch(/<h2 id="[^"]+-title" tabindex="-1"[^>]*>HTTPS<\/h2>/);
+    const empty = await render(state({ ...GATEWAY, source: 'uploaded', certificate: null }));
+    expect(empty).toMatch(/<h2 id="[^"]+-title" tabindex="-1"[^>]*>Gateway<\/h2>/);
     expect(empty).toMatch(/<h3 id="[^"]+-certificate" tabindex="-1"[^>]*>Certificate<\/h3>/);
     expect(tag(empty, /<button[^>]*id="[^"]+-upload"[^>]*>/)).not.toContain('disabled');
-    const filled = await render(state({ source: 'uploaded', certificate: certificate() }));
+    const filled = await render(state({ ...GATEWAY, source: 'uploaded', certificate: certificate() }));
     expect(tag(filled, /<button[^>]*id="[^"]+-replace"[^>]*>/)).not.toContain('disabled');
     expect(empty).not.toMatch(/id="[^"]+-replace"/);
     expect(filled).not.toMatch(/id="[^"]+-upload"/);
+  });
+});
+
+describe('the Gateway switch', () => {
+  const source = readFileSync(new URL('../src/lib/components/apps/AppTLS.svelte', import.meta.url), 'utf8');
+
+  test('flipping it chooses the mode through chooseMode, so it saves nothing and an off hides no edit', () => {
+    expect(source).toContain("onchange={(on) => (form = chooseMode(form, on ? 'gateway' : 'proxy', stored))}");
+  });
+
+  test('the addresses and the certificate card are on the on side of one branch, the line on the other', () => {
+    const body = source.slice(source.indexOf("{#if form.mode !== 'gateway'}"), source.indexOf('</fieldset>'));
+    expect(body.indexOf('proxyModeText(agentName)')).toBeGreaterThan(-1);
+    expect(body.indexOf('proxyModeText(agentName)')).toBeLessThan(body.indexOf('{:else}'));
+    for (const text of ['aria-labelledby="{uid}-addresses"', 'aria-labelledby="{uid}-certificate"']) expect(body.indexOf(text)).toBeGreaterThan(body.indexOf('{:else}'));
   });
 });
 

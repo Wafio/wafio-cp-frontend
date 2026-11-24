@@ -1,10 +1,10 @@
 <!--
   Application page, the single page of an application. Tabs live in the URL
   (?tab=monitoring|decisions|config|
-  blockwindow|maintenance|https|routing|assignment), so alerts and other pages can
+  blockwindow|maintenance|gateway|routing|assignment), so alerts and other pages can
   deep-link and Back restores the previous tab.
 
-  Unsaved edits in Config (ConfigWafForm), Maintenance, HTTPS and Routing
+  Unsaved edits in Config (ConfigWafForm), Maintenance, Gateway and Routing
   (AppRouteForm) are guarded on tab switch and on navigation away.
 -->
 <script lang="ts">
@@ -74,7 +74,7 @@
   let assignment = $state<AppWAFAssignment | null>(null);
   let agents = $state<FleetAgent[]>([]);
   let route = $state<AgentRoute | null>(null);
-  // The HTTPS tab owns its state once it is open; this is what the first render of the tab starts from. It holds no
+  // The Gateway tab owns its state once it is open; this is what the first render of the tab starts from. It holds no
   // DNS hints: they last until the next save or until the person leaves the tab.
   let tls = $state<AppTLSState | null>(null);
   const certificateBadge = $derived(tls ? expiryBadge(tls, Date.now()) : null);
@@ -195,7 +195,7 @@
   $effect(() => {
     if (tab !== 'config') configDirty = false;
     if (tab !== 'maintenance') maintenanceDirty = false;
-    if (tab !== 'https') tlsDirty = false;
+    if (tab !== 'gateway') tlsDirty = false;
     if (tab !== 'routing') routingDirty = false;
   });
 
@@ -396,7 +396,7 @@
           bind:dirty={maintenanceDirty}
           onchange={setMaintenance}
         />
-      {:else if tab === 'https'}
+      {:else if tab === 'gateway'}
         <AppTLS
           {projectId}
           appId={app.id}
