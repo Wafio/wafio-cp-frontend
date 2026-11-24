@@ -21,7 +21,9 @@
   import DurationInput from './DurationInput.svelte';
   import ByteSizeInput from './ByteSizeInput.svelte';
   import HeaderRulesEditor from './HeaderRulesEditor.svelte';
+  import PartStatus from './PartStatus.svelte';
   import ProtectionModeSelect from './ProtectionModeSelect.svelte';
+  import type { PartLine } from './speed';
   import Select from '#lib/components/ui/Select.svelte';
   import {
     CLOUDFLARE_CONFIRM_TEXT,
@@ -53,6 +55,8 @@
     creating = false,
     disabled = false,
     hiddenHeaderValues = false,
+    prefixLine = null,
+    prefixLocked = false,
     dirty = $bindable(false),
     onsubmit,
     oncancel = undefined,
@@ -74,6 +78,10 @@
     disabled?: boolean;
     /** Viewer read: header values were blanked by the server; show them as hidden. */
     hiddenHeaderValues?: boolean;
+    /** What the agent says about the path prefix (the Routing tab of an assigned application). */
+    prefixLine?: PartLine | null;
+    /** The agent is too old for a path prefix and none is saved: the field cannot be filled in. */
+    prefixLocked?: boolean;
     dirty?: boolean;
     /** Saves the form; resolves to an error message, or nothing on success. */
     onsubmit: (form: RouteForm) => Promise<string | null | void>;
@@ -407,6 +415,19 @@
               </Field>
             {/if}
             <div class="span-full">
+              <Field
+                label="Remove path prefix"
+                id={fid('proxy.stripPathPrefix')}
+                error={shown['proxy.stripPathPrefix']}
+                hint="For an application that lives under a path. With /shop, a visit to /shop/cart reaches the application as /cart; other paths reach it unchanged. WAFio still checks and logs the full path. Links the application writes must include /shop."
+              >
+                {#snippet children(c)}
+                  <input {...c} type="text" class="mono" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="/shop" disabled={prefixLocked} bind:value={form.proxy.stripPathPrefix} />
+                {/snippet}
+              </Field>
+              <PartStatus line={prefixLine} />
+            </div>
+            <div class="span-full">
               <Switch bind:checked={form.proxy.trustForwarded} label="Trust X-Forwarded-For and X-Real-IP" hint="Turn on only when a load balancer or proxy sits in front of the agent. Off, the client IP comes from the TCP connection, so a client cannot spoof its address for IP rules, bans and rate limits." />
             </div>
             <div class="span-full">
@@ -528,6 +549,7 @@
   .segmented label:has(input:focus-visible) { outline: var(--ring-width) solid var(--ring-color); outline-offset: -2px; }
   .segmented input { position: absolute; opacity: 0; pointer-events: none; }
 
+  .route-form :global(.part-status:not(:empty)) { margin-top: var(--sp-2); }
   .route-note { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.5; }
 
   .advanced { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-secondary); }

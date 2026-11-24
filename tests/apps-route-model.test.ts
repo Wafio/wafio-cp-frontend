@@ -4,10 +4,12 @@ import { describe, expect, test } from 'bun:test';
 import type { AgentRoute, App } from '../src/lib/api';
 import {
   PROXY_DEFAULTS,
+  STRIP_PREFIX_MESSAGE,
   TIMEOUT_UNLIMITED,
   agentRouteBodyFrom,
   appCreateBodyFrom,
   appUpdateBodyFrom,
+  checkStripPathPrefix,
   cloneRouteForm,
   emptyRouteForm,
   hasProxyErrors,
@@ -256,6 +258,62 @@ describe('form → wire', () => {
     const form = emptyRouteForm();
     form.proxy.upstreamMs = TIMEOUT_UNLIMITED;
     expect(proxyConfigFrom(form.proxy).timeouts?.upstream_ms).toBe(-1);
+  });
+});
+
+describe('path prefix', () => {
+  const app = (proxy_config: Record<string, unknown>): App => ({ id: 'a', project_id: 'p', name: 'shop', upstream_url: 'http://127.0.0.1:3000', listen_port: 8080, proxy_config } as unknown as App);
+
+  test('is empty by default and read from the saved settings', () => {
+    expect(emptyRouteForm().proxy.stripPathPrefix).toBe('');
+    expect(proxyFormFrom(undefined).stripPathPrefix).toBe('');
+    expect(proxyFormFrom({ strip_path_prefix: '/shop' }).stripPathPrefix).toBe('/shop');
+    expect(routeFormFromApp(app({ strip_path_prefix: '/shop' })).proxy.stripPathPrefix).toBe('/shop');
+  });
+
+  test('is sent only when set, so a save without one leaves the settings as they were before the feature', () => {
+    const form = emptyRouteForm();
+    expect('strip_path_prefix' in proxyConfigFrom(form.proxy)).toBe(false);
+    form.proxy.stripPathPrefix = '  /shop ';
+    expect(proxyConfigFrom(form.proxy).strip_path_prefix).toBe('/shop');
+    // Clearing the field sends no key: the save replaces the whole object.
+    form.proxy.stripPathPrefix = '';
+    expect('strip_path_prefix' in proxyConfigFrom(form.proxy)).toBe(false);
+  });
+
+  test('is not carried twice: it is a key of the form, not an unknown one', () => {
+    expect(Object.keys(proxyFormFrom({ strip_path_prefix: '/shop', future_key: 1 }).extra)).toEqual(['future_key']);
+  });
+
+  test('travels in the body of both writes', () => {
+    const form = emptyRouteForm();
+    form.name = 'shop';
+    form.upstreamAddr = 'http://127.0.0.1:3000';
+    form.proxy.stripPathPrefix = '/shop';
+    expect(agentRouteBodyFrom(form).proxy_config?.strip_path_prefix).toBe('/shop');
+    expect(appUpdateBodyFrom(form).proxy_config?.strip_path_prefix).toBe('/shop');
+  });
+
+  test('a prefix that the server refuses is refused under its field, in the advanced settings', () => {
+    const form = emptyRouteForm();
+    form.name = 'shop';
+    form.upstreamAddr = 'http://127.0.0.1:3000';
+    for (const bad of ['shop', '/', '/shop/', '/a b', '/a?b', '/a%2f', '/../x', '/ö']) {
+      form.proxy.stripPathPrefix = bad;
+      const errors = validateRouteForm(form);
+      expect({ bad, error: errors['proxy.stripPathPrefix'] }).toEqual({ bad, error: STRIP_PREFIX_MESSAGE });
+      expect(hasProxyErrors(errors)).toBe(true);
+      expect(routeErrorList(errors)[0]).toEqual({ field: 'proxy.stripPathPrefix', label: 'Remove path prefix', message: STRIP_PREFIX_MESSAGE });
+    }
+    form.proxy.stripPathPrefix = '/shop/cart';
+    expect(validateRouteForm(form)).toEqual({});
+    form.proxy.stripPathPrefix = '  ';
+    expect(validateRouteForm(form)).toEqual({});
+  });
+
+  test('a prefix of 256 characters is the longest', () => {
+    expect(checkStripPathPrefix(`/${'a'.repeat(255)}`)).toBeNull();
+    expect(checkStripPathPrefix(`/${'a'.repeat(256)}`)).toBe(STRIP_PREFIX_MESSAGE);
   });
 });
 

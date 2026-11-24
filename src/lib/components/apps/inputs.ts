@@ -47,3 +47,28 @@ export function bytesFromInput(text: string): number {
   const bytes = parseByteSize(text.trim());
   return bytes === null ? Number.NaN : bytes;
 }
+
+export type LifetimeUnit = 's' | 'min' | 'h' | 'd';
+
+export const LIFETIME_FACTORS: Record<LifetimeUnit, number> = { s: 1, min: 60, h: 3600, d: 86_400 };
+
+/** Largest unit that shows `seconds` as a whole number; 0 gives '' (not set). */
+export function lifetimeParts(seconds: number): { amount: string; unit: LifetimeUnit } {
+  if (!Number.isFinite(seconds) || seconds <= 0) return { amount: '', unit: 'min' };
+  for (const unit of ['d', 'h', 'min'] as const) {
+    if (seconds % LIFETIME_FACTORS[unit] === 0) return { amount: String(seconds / LIFETIME_FACTORS[unit]), unit };
+  }
+  return { amount: String(seconds), unit: 's' };
+}
+
+/**
+ * Seconds for a typed amount: '' is 0 (not set); anything that is not a non-negative number of whole seconds is
+ * NaN, which the checks report.
+ */
+export function lifetimeFromParts(amount: string, unit: LifetimeUnit): number {
+  const text = amount.trim();
+  if (text === '') return 0;
+  if (!/^\d+(\.\d+)?$/.test(text)) return Number.NaN;
+  const seconds = Number(text) * LIFETIME_FACTORS[unit];
+  return Number.isFinite(seconds) && Math.abs(seconds - Math.round(seconds)) < 1e-9 ? Math.round(seconds) : Number.NaN;
+}

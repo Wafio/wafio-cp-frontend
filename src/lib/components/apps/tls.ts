@@ -18,6 +18,7 @@ import type {
 import { formatBytes, formatDate, formatDateTime } from '../../format';
 import { ipToBytes, isIPv4 } from '../../validation';
 import { quoted, stripFieldPrefix } from './maintenance';
+import { tooOldText } from './speed';
 
 /** The limits of the control plane (domain.TLSMaxHosts, CertChainMaxBytes, CertKeyMaxBytes). */
 export const TLS_LIMITS = { hosts: 100, hostBytes: 253, labelBytes: 63, chainBytes: 64 << 10, keyBytes: 16 << 10 } as const;
@@ -26,7 +27,10 @@ export const DEFAULT_TLS_LISTEN = '0.0.0.0:443';
 
 // ── Settings: the checks of domain.TLSSettings.Normalize ───────────────────
 
-export type TLSField = 'mode' | 'hosts' | 'listen' | 'redirect_listen' | 'source';
+export type TLSField = 'mode' | 'hosts' | 'listen' | 'redirect_listen' | 'source' | 'canonical_host';
+
+/** The text the control plane gives a main host name that is not one of the host names. */
+export const CANONICAL_HOST_MESSAGE = 'Choose one of the host names above.';
 export interface TLSFieldError {
   field: TLSField;
   message: string;
@@ -177,6 +181,10 @@ export function normalizeTLS(input: AppTLSInput): NormalizedTLS {
   if (judgedAll && hosts.length > TLS_LIMITS.hosts) return fail('hosts', `at most ${TLS_LIMITS.hosts} hosts`);
   if (gateway && hosts.length === 0) return fail('hosts', 'at least one host is required when mode is "gateway"');
 
+  // Names that are not ASCII go to the server unjudged: it trims and compares them its own way.
+  const main = lowerAscii(trimAscii(input.canonical_host ?? ''));
+  if (main !== '' && judgedAll && !NON_ASCII.test(main) && !hosts.includes(main)) return fail('canonical_host', CANONICAL_HOST_MESSAGE);
+
   const listen = listenValue(trimAscii(input.listen ?? '') || DEFAULT_TLS_LISTEN);
   if (listen === null) return fail('listen', LISTEN_MESSAGE);
   let redirect = '';
@@ -188,7 +196,7 @@ export function normalizeTLS(input: AppTLSInput): NormalizedTLS {
     if (listenersOverlap(listen, value)) return fail('redirect_listen', 'must not use the port of listen on an address that overlaps it');
     redirect = value;
   }
-  return { settings: { mode: input.mode, hosts, listen, redirect_listen: redirect, source: input.source } };
+  return { settings: { mode: input.mode, hosts, listen, redirect_listen: redirect, source: input.source, ...(main ? { canonical_host: main } : {}) } };
 }
 
 export const OWN_LISTENER = 'The listen address on the Routing tab of this application uses it.';
@@ -363,6 +371,8 @@ export interface TLSForm {
   redirect: boolean;
   redirectListen: string;
   source: TLSSource;
+  /** The main host name: '' for none, else one of the host names. */
+  canonicalHost: string;
 }
 
 export function formFromTLS(settings: AppTLSInput): TLSForm {
@@ -373,6 +383,7 @@ export function formFromTLS(settings: AppTLSInput): TLSForm {
     redirect: settings.redirect_listen !== '',
     redirectListen: settings.redirect_listen,
     source: settings.source,
+    canonicalHost: settings.canonical_host ?? '',
   };
 }
 
@@ -384,6 +395,7 @@ export function inputFromForm(form: TLSForm): AppTLSInput {
     listen: form.listen,
     redirect_listen: form.redirect ? form.redirectListen : '',
     source: form.source,
+    canonical_host: form.canonicalHost,
   };
 }
 
@@ -406,7 +418,7 @@ export function chooseMode(form: TLSForm, mode: TLSMode, stored: AppTLSInput): T
 export function sameTLS(a: AppTLSInput, b: AppTLSInput): boolean {
   const key = (value: AppTLSInput) => {
     const s = normalizeTLS(value).settings ?? value;
-    return JSON.stringify([s.mode, s.hosts, s.listen, s.redirect_listen, s.source]);
+    return JSON.stringify([s.mode, s.hosts, s.listen, s.redirect_listen, s.source, s.canonical_host ?? '']);
   };
   return key(a) === key(b);
 }
@@ -535,7 +547,21 @@ export function behindCloudflareText(source: TLSSource, redirect: boolean): stri
 
 /** The only line of the tab while the switch is off. */
 export const proxyModeText = (agent: string): string =>
-  `Requests reach ${agentMid(agent)} on the listen address of the Routing tab. A web server or CDN in front of it handles HTTPS.`;
+  `Requests reach ${agentMid(agent)} on the listen address of the Routing tab. A web server or CDN in front of it handles HTTPS. Main host name and the HTTP to HTTPS redirect work in Gateway mode only. In Behind a proxy mode the web server in front of WAFio handles them.`;
+
+/** The host names as the main host name list offers them: trimmed, lower-cased, each once, in the order typed. */
+export function hostChoices(hosts: readonly string[], current: string): { value: string; label: string }[] {
+  const names = [...new Set(hosts.map((host) => lowerAscii(trimAscii(host))).filter((host) => host !== ''))];
+  // A main host name that is no longer in the list stays selectable, so the error under the field names what is wrong.
+  if (current !== '' && !names.includes(current)) names.push(current);
+  return [{ value: '', label: 'No redirect' }, ...names.map((host) => ({ value: host, label: host }))];
+}
+
+/** The help under the main host name list; the HTTP to HTTPS redirect adds where its visitors go. */
+export const canonicalHostHint = (redirect: boolean): string =>
+  `Visitors who use another host name of this application are sent to this one, with the same path. Example: www.shop.example.com to shop.example.com.${redirect ? ' HTTP visitors go straight to https://<main host>.' : ''}`;
+
+export const CANONICAL_HOST_NOTE = 'Browsers remember this redirect. If you change it later, returning visitors may still go to the old name for a while.';
 
 export function backToProxyText(o: { agent: string; own: OwnListener; ports: string }): string {
   return `${agentStart(o.agent)} stops serving HTTPS for this application and listens on ${ownAddress(o.own) ?? 'the listen address on the Routing tab'} again, which frees ${o.ports}. Then start the web server in front of it; a load balancer on another machine can be switched first.`;
@@ -634,8 +660,8 @@ export function gatewayChecks(o: {
 
 /** Where the answer of a refused save is shown: under a field, above the form with a link to Routing, or above the form. */
 export type TLSRefusal =
-  | { kind: 'field'; field: 'hosts' | 'listen' | 'redirect_listen' | 'source'; message: string }
-  | { kind: 'routing' | 'unsupported' | 'save'; message: string };
+  | { kind: 'field'; field: 'hosts' | 'listen' | 'redirect_listen' | 'source' | 'canonical_host'; message: string }
+  | { kind: 'routing' | 'unsupported' | 'save' | 'too-old'; message: string };
 
 /**
  * A 400 INVALID_TLS_SETTINGS and the conflicts and size refusals that name a field belong under it, and
@@ -645,7 +671,9 @@ export type TLSRefusal =
 export function classifyTLSRefusal(error: ApiError | undefined, agent: string): TLSRefusal {
   const text = error?.error || 'Could not save the Gateway settings.';
   const field = error?.field;
-  const named = field === 'hosts' || field === 'listen' || field === 'redirect_listen' || field === 'source';
+  const named = field === 'hosts' || field === 'listen' || field === 'redirect_listen' || field === 'source' || field === 'canonical_host';
+  // Only a main host name can meet an agent that is too old for this save.
+  if (error?.code === 'AGENT_TOO_OLD') return { kind: 'too-old', message: tooOldText(error.agent || agent, 'the main host name') };
   if (error?.code === 'INVALID_TLS_SETTINGS' && named) return { kind: 'field', field, message: stripFieldPrefix(text, field) };
   if ((error?.code === 'LISTEN_CONFLICT' || error?.code === 'HOST_CONFLICT' || error?.code === 'TLS_BUNDLE_TOO_LARGE') && named) return { kind: 'field', field, message: text };
   if (error?.code === 'LISTEN_CONFLICT' && field === 'listen_port') return { kind: 'routing', message: text };

@@ -128,10 +128,12 @@ describe('application page URLs', () => {
     expect(readAppTab('?tab=config', { assigned: true })).toBe('config');
     expect(readAppTab('?tab=maintenance', { assigned: false })).toBe('monitoring');
     expect(readAppTab('?tab=maintenance', { assigned: true })).toBe('maintenance');
-    expect(appTabs({ assigned: true }).map((t) => t.id)).toEqual(['monitoring', 'decisions', 'config', 'blockwindow', 'maintenance', 'gateway', 'routing', 'assignment']);
+    expect(appTabs({ assigned: true }).map((t) => t.id)).toEqual(['monitoring', 'decisions', 'config', 'blockwindow', 'maintenance', 'gateway', 'speed', 'routing', 'assignment']);
     expect(appTabs({ assigned: true }).find((t) => t.id === 'maintenance')?.label).toBe('Maintenance');
     // Gateway sits between Maintenance and Routing and is open without an agent.
     expect(appTabs({ assigned: false }).find((t) => t.id === 'gateway')).toMatchObject({ label: 'Gateway', disabled: false });
+    expect(appTabs({ assigned: false }).find((t) => t.id === 'speed')).toMatchObject({ label: 'Speed', disabled: false });
+    expect(readAppTab('?tab=speed', { assigned: false })).toBe('speed');
     expect(readAppTab('?tab=gateway', { assigned: false })).toBe('gateway');
     // The links of expiry mails still say https.
     expect(readAppTab('?tab=https', { assigned: false })).toBe('gateway');
