@@ -425,6 +425,12 @@ describe('cadence and the wait for the agent', () => {
     expect(interval(state({ status: null }), { agent: false, action: NOW })).toBe(POLL_SLOW_MS);
   });
 
+  test('an agent that cannot serve certificates reports on none, so the poll stays slow', () => {
+    expect(interval(state({ status: null, agent_supported: false }), { action: NOW })).toBe(POLL_SLOW_MS);
+    expect(interval(state({ status: status({ state: 'pending' }), agent_supported: false }))).toBe(POLL_SLOW_MS);
+    expect(interval(state({ status: null, agent_supported: null }))).toBe(POLL_FAST_MS);
+  });
+
   test('the 2 minutes count from the later of the request and the last action', () => {
     const requested = NOW - 10 * MINUTE;
     const s = state({ acme: { request_id: 'req-1', requested_at: iso(requested) } });
@@ -1102,6 +1108,13 @@ describe('the card of the saved certificate source', () => {
   describe('Gateway, before the agent reports', () => {
     test('no agent: the notice of an unassigned application', () => {
       expect(asked({}, { assigned: false })?.lines).toEqual(['No WAF agent serves this application. These settings take effect once one is assigned on the Assignment tab.']);
+    });
+    test('an agent that cannot serve certificates: no waiting and no ports to check, the notice says why', () => {
+      const late = { status: null, agent_supported: false, acme: { request_id: 'req-1', requested_at: iso(NOW - 30 * MINUTE) } };
+      expect(asked(late)).toMatchObject({ source: 'acme', lines: [], failure: null, served: null, inUse: false });
+      expect(asked({ ...late, ...uploadedState({}, null) })).toMatchObject({ source: 'uploaded', lines: [], inUse: false });
+      expect(asked({ ...late, status: status({ state: 'failed', error: 'refused' }) })?.failure).toBeNull();
+      expect(asked({ ...late, agent_supported: null })?.lines[0]).toStartWith('No report from');
     });
     test('no report yet: waiting, then after 2 minutes the ports', () => {
       const fresh = { status: null, acme: { request_id: 'req-1', requested_at: iso(NOW - 30 * 1000) } };

@@ -8,7 +8,7 @@
   report and carries the request, upload, replace and delete of the certificate.
 -->
 <script lang="ts">
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { deleteAppCertificate, getAppTLS, putAppTLS, requestAppACME, type ApiError, type AppTLSInput, type AppTLSState, type TLSSource } from '#lib/api.js';
   import { needsConfirmation } from '#lib/confirm-tiers.js';
   import { focusFormError } from '#lib/focus-error.js';
@@ -215,6 +215,8 @@
   const opensAt = $derived(requestOpensAt(loaded?.acme?.requested_at, retryAt, now));
   const requestWaits = $derived(opensAt > now);
   const uploadsInstead = $derived(loaded !== null && uploadsFirst(loaded, input, needed));
+  // An agent that cannot serve certificates takes no request.
+  const canRequest = $derived(assigned && loaded?.agent_supported !== false);
 
   $effect(() => {
     dirty = isDirty;
@@ -339,6 +341,7 @@
     lastActionAt = Date.now();
     toast.success('The certificate was uploaded.', 'Uploaded');
     await refresh();
+    await refocus('replace', 'certificate');
   }
 
   function askDelete() {
@@ -362,6 +365,7 @@
     lastActionAt = Date.now();
     toast.success('The private key was deleted.', 'Deleted');
     await refresh();
+    await refocus('upload', 'certificate');
   }
 
   function discard() {
@@ -371,6 +375,25 @@
     touched = {};
     serverError = null;
     saveError = '';
+    void refocus('title');
+  }
+
+  /**
+   * The control the person used can be gone or disabled once the page has changed (the first upload fills the empty
+   * state, a delete removes its own button, a discard leaves nothing to discard). Focus then goes to the first of
+   * these that exists, so the next Tab goes on from here and not from the top of the page.
+   */
+  async function refocus(...ids: string[]) {
+    await tick();
+    const active = document.activeElement;
+    if (active && active !== document.body && !active.matches(':disabled')) return;
+    for (const id of ids) {
+      const target = document.getElementById(`${uid}-${id}`);
+      if (target && !target.matches(':disabled')) {
+        target.focus();
+        return;
+      }
+    }
   }
 
   /** The DNS hint's way out: the form with the other mode, confirmed like any switch. What was typed stays. */
@@ -439,7 +462,7 @@
 
 <section class="tls" aria-labelledby="{uid}-title">
   <header class="tls-head">
-    <h2 id="{uid}-title">HTTPS</h2>
+    <h2 id="{uid}-title" tabindex="-1">HTTPS</h2>
     <p>Choose how visitors reach this application and which certificate the WAF agent serves for HTTPS.</p>
   </header>
 
@@ -537,7 +560,7 @@
         </section>
 
         <section class="tls-block" aria-labelledby="{uid}-certificate">
-          <h3 id="{uid}-certificate">Certificate</h3>
+          <h3 id="{uid}-certificate" tabindex="-1">Certificate</h3>
           <ChoiceGroup legend="Certificate source" name="{uid}-source" options={sourceOptions} bind:value={form.source} columns={2} disabled={readonly} error={shownErrors.source} />
 
           {#if card}
@@ -552,7 +575,7 @@
               {#if card.empty}
                 <EmptyState title="No certificate uploaded" message="Upload the certificate chain and its private key." level={5} compact>
                   {#snippet action()}
-                    <Button class="tls-tap" disabled={readonly || busy} onclick={() => (uploadOpen = true)}>Upload certificate</Button>
+                    <Button id="{uid}-upload" class="tls-tap" disabled={readonly || busy} onclick={() => (uploadOpen = true)}>Upload certificate</Button>
                   {/snippet}
                 </EmptyState>
               {/if}
@@ -574,7 +597,7 @@
                 </div>
               {/if}
 
-              {#if card.source === 'acme' && inGateway && assigned}
+              {#if card.source === 'acme' && inGateway && canRequest}
                 <div class="tls-card-actions">
                   <Button variant="secondary" class="tls-tap" loading={requesting} disabled={readonly || busy || requestWaits} onclick={() => void requestCertificate()}>
                     {card.failure ? 'Try again now' : 'Request a new certificate'}
@@ -587,7 +610,7 @@
 
               {#if card.source === 'uploaded' && loaded?.certificate}
                 <div class="tls-card-actions">
-                  <Button variant="secondary" class="tls-tap" disabled={readonly || busy} onclick={() => (uploadOpen = true)}>Replace certificate</Button>
+                  <Button id="{uid}-replace" variant="secondary" class="tls-tap" disabled={readonly || busy} onclick={() => (uploadOpen = true)}>Replace certificate</Button>
                   <Button variant="secondary" class="tls-tap" disabled={readonly || busy || inGateway} onclick={askDelete}>Delete certificate</Button>
                 </div>
                 {#if inGateway}<p class="tls-hint">{CERTIFICATE_IN_USE_TEXT}</p>{/if}
@@ -625,6 +648,12 @@
   onclose={cancelConfirm}
 >
   {#if confirm}
+    <!-- First, so that the agreement is in view before the long lists. -->
+    {#if confirm === 'proxy' && loaded}
+      <p class="tls-switch">{backToProxyText({ agent: agentName, own, ports: portsText(loaded.listen, loaded.redirect_listen) })}</p>
+    {:else if input.source === 'acme' || input.source === 'uploaded'}
+      <p class="tls-switch">{confirm === 'source' ? sourceChangeText(input.source, { agent: agentName, hasLeaf }) : sourceSwitchText(input.source, { agent: agentName, redirect: redirectOn })}</p>
+    {/if}
     {#if confirm === 'gateway'}
       <ul class="tls-checks" aria-label="Checks before the switch">
         {#each checks as check (check.id)}
@@ -641,11 +670,6 @@
       <ol class="tls-steps">
         {#each gatewaySteps({ agent: agentName, ports, source: input.source }) as step (step)}<li>{step}</li>{/each}
       </ol>
-    {/if}
-    {#if confirm === 'proxy' && loaded}
-      <p>{backToProxyText({ agent: agentName, own, ports: portsText(loaded.listen, loaded.redirect_listen) })}</p>
-    {:else if input.source === 'acme' || input.source === 'uploaded'}
-      <p>{confirm === 'source' ? sourceChangeText(input.source, { agent: agentName, hasLeaf }) : sourceSwitchText(input.source, { agent: agentName, redirect: redirectOn })}</p>
     {/if}
     {#if saveError}
       <Alert tone="error" title="Not saved" message={saveError} actions={routingError ? routingLink : undefined} />
@@ -706,6 +730,7 @@
   .tls-card-actions { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
   .tls-hint { font-size: var(--fs-sm); color: var(--text-muted); max-width: 70ch; }
 
+  .tls-switch { margin: 0 0 var(--sp-3); }
   .tls-checks { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0 0 var(--sp-3); padding: 0; list-style: none; font-size: var(--fs-sm); }
   .tls-checks li { display: flex; align-items: flex-start; gap: var(--sp-2); }
   .tls-checks li > :global(.badge) { flex: none; }

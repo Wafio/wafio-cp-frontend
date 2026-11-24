@@ -533,6 +533,13 @@ describe('the certificate card, request', () => {
     expect(html).not.toContain('You can request again at');
   });
 
+  test('an agent that cannot serve certificates: no button, no waiting, and no ports to check', async () => {
+    const html = await render(acme({ status: null, agent_supported: false }));
+    expect(html).toContain('edge-1 no longer serves certificates');
+    expect(requestButton(html)).toBe('');
+    for (const text of ['Waiting for edge-1', 'No report from edge-1', 'Starts a request now']) expect(html).not.toContain(text);
+  });
+
   test('5 minutes after the last request: disabled, with the time', async () => {
     const html = await render(acme({ acme: { request_id: 'req-1', requested_at: iso(NOW - MINUTE) } }));
     expect(requestButton(html)).toContain('disabled');
@@ -689,5 +696,47 @@ describe('Assignment tab, certificate notes', () => {
       expect(html).not.toContain(upload);
       expect(html).not.toContain(acme);
     }
+  });
+});
+
+describe('focus after the control the person used has gone', () => {
+  const source = readFileSync(new URL('../src/lib/components/apps/AppTLS.svelte', import.meta.url), 'utf8');
+  const fn = (name: string) => new RegExp(`(?:async )?function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n  \\}\\n`).exec(source)?.[0] ?? '';
+
+  test('an upload, a delete and a discard each end by focusing what took the place of their control', () => {
+    expect(fn('uploaded')).toMatch(/await refresh\(\);\s*await refocus\('replace', 'certificate'\);/);
+    expect(fn('deleteCertificate')).toMatch(/await refresh\(\);\s*await refocus\('upload', 'certificate'\);/);
+    expect(fn('discard')).toContain("void refocus('title');");
+  });
+
+  test('focus is only moved when it was lost, and never to a disabled control', () => {
+    const body = fn('refocus');
+    expect(body).toContain('await tick();');
+    expect(body).toContain("active !== document.body && !active.matches(':disabled')");
+    expect(body).toContain("!target.matches(':disabled')");
+  });
+
+  test('every target exists: the two headings take programmatic focus, the buttons carry the ids', async () => {
+    const empty = await render(state({ source: 'uploaded', certificate: null }));
+    expect(empty).toMatch(/<h2 id="[^"]+-title" tabindex="-1"[^>]*>HTTPS<\/h2>/);
+    expect(empty).toMatch(/<h3 id="[^"]+-certificate" tabindex="-1"[^>]*>Certificate<\/h3>/);
+    expect(tag(empty, /<button[^>]*id="[^"]+-upload"[^>]*>/)).not.toContain('disabled');
+    const filled = await render(state({ source: 'uploaded', certificate: certificate() }));
+    expect(tag(filled, /<button[^>]*id="[^"]+-replace"[^>]*>/)).not.toContain('disabled');
+    expect(empty).not.toMatch(/id="[^"]+-replace"/);
+    expect(filled).not.toMatch(/id="[^"]+-upload"/);
+  });
+});
+
+describe('the agreement of a switch is in view first', () => {
+  const source = readFileSync(new URL('../src/lib/components/apps/AppTLS.svelte', import.meta.url), 'utf8');
+
+  test('the text of the switch comes before the checks and the steps in the dialog', () => {
+    const body = source.slice(source.indexOf('onclose={cancelConfirm}'), source.indexOf('open={deleteOpen}'));
+    const text = body.indexOf('sourceSwitchText(');
+    expect(text).toBeGreaterThan(-1);
+    expect(text).toBeLessThan(body.indexOf('class="tls-checks"'));
+    expect(text).toBeLessThan(body.indexOf('gatewaySteps('));
+    expect(body.indexOf('backToProxyText(')).toBeLessThan(body.indexOf('class="tls-checks"'));
   });
 });

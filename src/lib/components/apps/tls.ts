@@ -332,9 +332,9 @@ export function waitingForAgent(state: AppTLSState, hasAgent: boolean): boolean 
   return !status || status.state === 'pending' || status.state === 'missing';
 }
 
-/** 10 s while waiting for the agent and for 2 minutes after an action of this tab, else 60 s. */
+/** 10 s while waiting for the agent and for 2 minutes after an action of this tab, else 60 s; an agent that cannot serve certificates reports on none. */
 export function pollIntervalMs(state: AppTLSState, hasAgent: boolean, lastActionAt: number | null, now: number): number {
-  if (state.mode !== 'gateway' || !hasAgent) return POLL_SLOW_MS;
+  if (state.mode !== 'gateway' || !hasAgent || state.agent_supported === false) return POLL_SLOW_MS;
   const afterAction = lastActionAt !== null && now - lastActionAt < NO_REPORT_AFTER_MS;
   return afterAction || waitingForAgent(state, hasAgent) ? POLL_FAST_MS : POLL_SLOW_MS;
 }
@@ -870,6 +870,8 @@ export function certificateCard(state: AppTLSState, o: { assigned: boolean; agen
     card.lines.push(noticeText('unassigned', o.agent));
     return card;
   }
+  // The notice above the form says why; waiting for a report or a request would never end.
+  if (state.agent_supported === false) return card;
   const redirect = state.redirect_listen !== '';
   const status = state.status;
   if (!status) {
