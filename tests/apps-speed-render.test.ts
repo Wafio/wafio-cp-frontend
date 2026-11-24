@@ -56,6 +56,14 @@ describe('Speed tab, before the settings are read', () => {
     expect(html).not.toContain('Compression');
   });
 
+  test('the moment between opening the tab and the first read shows the wait, never an error', async () => {
+    const html = await render(null);
+    expect(html).toContain('Loading speed settings.');
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain('Could not load');
+    expect(html).not.toContain('Try again');
+  });
+
   test('a failed read says what failed, offers Try again and shows no part', async () => {
     const html = await render(null, { failed: { error: 'Unable to reach the server. Please retry.' } });
     expect(html).toContain('Could not load the speed settings. Unable to reach the server. Please retry.');
@@ -349,7 +357,7 @@ describe('the status line on the Gateway and Routing tabs', () => {
     warnings: [],
     ...over,
   });
-  const gateway = (state: AppTLSState, feedState: AppDelivery | null = delivery(), over: Partial<DeliveryFeed> = {}) =>
+  const gateway = (state: AppTLSState, feedState: AppDelivery | null = delivery(), over: Partial<DeliveryFeed> = {}, canConfigure = true) =>
     renderComponent(AppTLS, {
       projectId: 'p1',
       appId: 'a1',
@@ -357,7 +365,7 @@ describe('the status line on the Gateway and Routing tabs', () => {
       assigned: true,
       agentName: 'edge-1',
       agentOnline: true,
-      canConfigure: true,
+      canConfigure,
       routing: { listenHost: '', listenPort: 8080, proxy: { trustForwarded: false, trustedProxies: '' } },
       dirty: false,
       initial: state,
@@ -369,7 +377,8 @@ describe('the status line on the Gateway and Routing tabs', () => {
     const html = await gateway(tls({ canonical_host: 'shop.example.com' }));
     expect(html).toContain('Main host name');
     expect(html).toContain('Visitors who use another host name of this application are sent to this one, with the same path. Example: www.shop.example.com to shop.example.com.');
-    expect(html).toContain('HTTP visitors go straight to https://&lt;main host>.');
+    expect(html).toContain('HTTP visitors go straight to https://shop.example.com.');
+    expect(html).not.toContain('main host>');
     expect(html).toContain('Browsers remember this redirect. If you change it later, returning visitors may still go to the old name for a while.');
     expect(html.indexOf('Main host name')).toBeGreaterThan(html.indexOf('Host names'));
     expect(html.indexOf('Main host name')).toBeLessThan(html.indexOf('HTTPS address'));
@@ -380,10 +389,32 @@ describe('the status line on the Gateway and Routing tabs', () => {
     expect(await gateway(tls({ redirect_listen: '' }))).not.toContain('HTTP visitors go straight to');
   });
 
+  test('with No redirect chosen for the main host name, the help names no host to go to', async () => {
+    expect(await gateway(tls({ canonical_host: '' }))).not.toContain('HTTP visitors go straight to');
+  });
+
   test('Behind a proxy shows no such field and says who handles the redirect', async () => {
     const html = await gateway(tls({ mode: 'proxy' }));
     expect(html).not.toContain('Main host name</label>');
     expect(html).toContain('Main host name and the HTTP to HTTPS redirect work in Gateway mode only. In Behind a proxy mode the web server in front of WAFio handles them.');
+  });
+
+  test('Behind a proxy shows a main host name that is still saved, with a way to clear it', async () => {
+    const html = await gateway(tls({ mode: 'proxy', canonical_host: 'shop.example.com' }));
+    expect(html).toContain('Main host name shop.example.com is saved but not used in this mode.');
+    expect(html).toContain('Clear main host name');
+    expect(html).not.toContain('Main host name</label>');
+  });
+
+  test('Behind a proxy with no main host name saved shows no such line, and a viewer gets the line without the button', async () => {
+    expect(await gateway(tls({ mode: 'proxy' }))).not.toContain('is saved but not used in this mode');
+    const html = await gateway(tls({ mode: 'proxy', canonical_host: 'shop.example.com' }), delivery(), {}, false);
+    expect(html).toContain('is saved but not used in this mode');
+    expect(html).not.toContain('Clear main host name');
+  });
+
+  test('Gateway mode shows the field, not the line about a saved one that is not used', async () => {
+    expect(await gateway(tls({ canonical_host: 'shop.example.com' }))).not.toContain('is saved but not used in this mode');
   });
 
   test('says in use once the agent applied the saved main host name, and nothing while none is saved', async () => {
@@ -441,7 +472,7 @@ describe('the status line on the Gateway and Routing tabs', () => {
     const html = await routing('');
     expect(html).toContain('Remove path prefix');
     expect(html).toContain('placeholder="/shop"');
-    expect(html).toContain('For an application that lives under a path. With /shop, a visit to /shop/cart reaches the application as /cart; other paths reach it unchanged. WAFio still checks and logs the full path. Links the application writes must include /shop.');
+    expect(html).toContain('For an application that lives under a path. With /shop, a visit to /shop/cart reaches the application as /cart, and any other path, such as /admin, gets Not found. WAFio still checks and logs the full path. Links the application writes must include /shop.');
     expect(html.indexOf('Remove path prefix')).toBeGreaterThan(html.indexOf('Host header sent upstream'));
     expect(html.indexOf('Remove path prefix')).toBeLessThan(html.indexOf('Trust X-Forwarded-For'));
   });
@@ -451,6 +482,24 @@ describe('the status line on the Gateway and Routing tabs', () => {
     const details = /<details[^>]*class="advanced[^"]*"[^>]*>/.exec(html);
     expect(details).not.toBeNull();
     expect(details![0]).not.toContain('open');
+  });
+
+  const openDetails = (html: string) => /<details[^>]*class="advanced[^"]*"[^>]*>/.exec(html)![0];
+
+  test('Routing names the path prefix in the summary of the folded settings, so it can be found', async () => {
+    const html = await routing('');
+    expect(part(html, 'Proxy settings', 'Timeouts</h4>')).toContain('Host header, path prefix, forwarded headers');
+  });
+
+  test('Routing opens the proxy settings when a prefix is saved, so its line and its field are in view', async () => {
+    expect(openDetails(await routing('/shop', { prefixLine: line }))).toMatch(/\sopen(=|\s|>)/);
+  });
+
+  test('Routing opens the proxy settings when the agent refused or is too old for the prefix, even with none saved', async () => {
+    const refused = { tone: 'warning' as const, text: 'edge-1 did not apply this: the settings failed its own checks. Upgrade the agent.' };
+    expect(openDetails(await routing('', { prefixLine: refused, prefixLocked: true }))).toMatch(/\sopen(=|\s|>)/);
+    // A line that is only news (waiting, in use) leaves them folded.
+    expect(openDetails(await routing('', { prefixLine: { tone: 'info' as const, text: 'Saved. Waiting for edge-1 to apply it.' } }))).not.toMatch(/\sopen(=|\s|>)/);
   });
 
   test('Routing shows the saved prefix, and the line of the agent under it', async () => {

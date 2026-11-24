@@ -100,7 +100,13 @@
   let submitted = $state(false);
   let saving = $state(false);
   let submitError = $state('');
-  let advancedOpen = $state(false);
+  // The path prefix sits in the folded proxy settings: a saved one, or one its agent could not take (the line can
+  // arrive after the first read), opens them. Once open they stay as the person leaves them.
+  let advancedOpen = $state(untrack(() => initial.proxy.stripPathPrefix !== '' || prefixLine?.tone === 'warning'));
+  const prefixWarns = $derived(prefixLine?.tone === 'warning');
+  $effect(() => {
+    if (prefixWarns) advancedOpen = true;
+  });
   let confirmLowerOpen = $state(false);
   let confirmCloudflareOpen = $state(false);
   /** Field errors from a 400 INVALID_PROXY_CONFIG; cleared when the field changes. */
@@ -337,7 +343,7 @@
     <details class="advanced" bind:open={advancedOpen}>
       <summary>
         Proxy settings
-        <span class="advanced-summary">Timeouts, size limits, Host header, forwarded headers, header rules, path encoding</span>
+        <span class="advanced-summary">Timeouts, size limits, Host header, path prefix, forwarded headers, header rules, path encoding</span>
       </summary>
       <div class="advanced-body">
         <section class="advanced-group" aria-labelledby={`${uid}-timeouts`}>
@@ -419,7 +425,7 @@
                 label="Remove path prefix"
                 id={fid('proxy.stripPathPrefix')}
                 error={shown['proxy.stripPathPrefix']}
-                hint="For an application that lives under a path. With /shop, a visit to /shop/cart reaches the application as /cart; other paths reach it unchanged. WAFio still checks and logs the full path. Links the application writes must include /shop."
+                hint="For an application that lives under a path. With /shop, a visit to /shop/cart reaches the application as /cart, and any other path, such as /admin, gets Not found. WAFio still checks and logs the full path. Links the application writes must include /shop."
               >
                 {#snippet children(c)}
                   <input {...c} type="text" class="mono" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="/shop" disabled={prefixLocked} bind:value={form.proxy.stripPathPrefix} />

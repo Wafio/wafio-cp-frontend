@@ -557,9 +557,16 @@ export function hostChoices(hosts: readonly string[], current: string): { value:
   return [{ value: '', label: 'No redirect' }, ...names.map((host) => ({ value: host, label: host }))];
 }
 
-/** The help under the main host name list; the HTTP to HTTPS redirect adds where its visitors go. */
-export const canonicalHostHint = (redirect: boolean): string =>
-  `Visitors who use another host name of this application are sent to this one, with the same path. Example: www.shop.example.com to shop.example.com.${redirect ? ' HTTP visitors go straight to https://<main host>.' : ''}`;
+/** The help under the main host name list; with the HTTP to HTTPS redirect on and a main host chosen, it adds where HTTP visitors go. */
+export const canonicalHostHint = (redirect: boolean, main: string): string =>
+  `Visitors who use another host name of this application are sent to this one, with the same path. Example: www.shop.example.com to shop.example.com.${redirect && main !== '' ? ` HTTP visitors go straight to https://${main}.` : ''}`;
+
+/** Behind a proxy the agent ignores a saved main host name, yet an agent too old for it cannot take the application while it is stored. */
+export const unusedMainHostText = (host: string): string =>
+  `Main host name ${host} is saved but not used in this mode. An agent that is too old for it cannot take this application until you clear it.`;
+
+/** The saved settings with only the main host name cleared: the body of that save, so nothing else changes with it. */
+export const withoutMainHost = (saved: AppTLSInput): AppTLSInput => ({ ...inputFromForm(formFromTLS(saved)), canonical_host: '' });
 
 export const CANONICAL_HOST_NOTE = 'Browsers remember this redirect. If you change it later, returning visitors may still go to the old name for a while.';
 

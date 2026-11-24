@@ -68,10 +68,12 @@ import {
   tlsNotices,
   tlsProblem,
   trustText,
+  unusedMainHostText,
   uploadSourceText,
   uploadsFirst,
   waitingSince,
   withoutDnsHints,
+  withoutMainHost,
   type CertificateForm,
   type CheckState,
   type TLSCheck,
@@ -1520,9 +1522,27 @@ describe('main host name', () => {
 
   test('the help says what visitors get, and with the HTTP redirect on where HTTP visitors go', () => {
     const base = 'Visitors who use another host name of this application are sent to this one, with the same path. Example: www.shop.example.com to shop.example.com.';
-    expect(canonicalHostHint(false)).toBe(base);
-    expect(canonicalHostHint(true)).toBe(`${base} HTTP visitors go straight to https://<main host>.`);
+    expect(canonicalHostHint(false, '')).toBe(base);
+    expect(canonicalHostHint(false, 'shop.example.com')).toBe(base);
+    // With no main host chosen there is no hop to promise, redirect on or not.
+    expect(canonicalHostHint(true, '')).toBe(base);
+    expect(canonicalHostHint(true, 'shop.example.com')).toBe(`${base} HTTP visitors go straight to https://shop.example.com.`);
     expect(CANONICAL_HOST_NOTE).toBe('Browsers remember this redirect. If you change it later, returning visitors may still go to the old name for a while.');
+  });
+
+  test('a main host name saved in Gateway is named behind a proxy, with why it still matters', () => {
+    expect(unusedMainHostText('shop.example.com')).toBe(
+      'Main host name shop.example.com is saved but not used in this mode. An agent that is too old for it cannot take this application until you clear it.',
+    );
+  });
+
+  test('clearing it sends the saved settings with only the main host name emptied, and none of what the server only reports', () => {
+    const saved = state({ mode: 'proxy', hosts: ['shop.example.com', 'www.shop.example.com'], listen: '0.0.0.0:443', redirect_listen: '0.0.0.0:80', source: 'acme', canonical_host: 'shop.example.com' });
+    const body = withoutMainHost(saved);
+    expect(body).toEqual({ mode: 'proxy', hosts: ['shop.example.com', 'www.shop.example.com'], listen: '0.0.0.0:443', redirect_listen: '0.0.0.0:80', source: 'acme', canonical_host: '' });
+    expect(saved.canonical_host).toBe('shop.example.com');
+    // A proxy application with no host names keeps none: the server accepts that in this mode.
+    expect(withoutMainHost(state({ mode: 'proxy', hosts: [], source: '', canonical_host: 'x.example.com' })).hosts).toEqual([]);
   });
 
   test('a refusal of it is shown under it, and an agent that is too old for it is said as that', () => {

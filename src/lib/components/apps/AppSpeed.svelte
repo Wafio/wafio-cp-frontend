@@ -261,7 +261,8 @@
     <p>{SPEED_INTRO}</p>
   </header>
 
-  {#if feed.loading && !delivery}
+  <!-- Before the first read has started the feed is neither loading nor failed: that is still the wait. -->
+  {#if !delivery && !feed.failed}
     <Spinner layout="block" tone="accent" label={LOADING_TEXT} />
   {:else if !delivery}
     <InlineError message={loadErrorText(feed.failed?.error ?? 'Try again in a moment.')} onretry={() => void feed.refresh()} retryLabel="Try again" retrying={feed.loading} />

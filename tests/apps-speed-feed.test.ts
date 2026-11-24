@@ -45,6 +45,16 @@ async function settle() {
 }
 
 describe('createDeliveryFeed', () => {
+  test('between opening the tab and the first answer it has neither a state nor a failure', async () => {
+    answers(delivery());
+    const { feed } = start();
+    // The first read waits for the poller's timer, so right after the tab opens nothing has been read.
+    expect(feed.state).toBeNull();
+    expect(feed.failed).toBeNull();
+    await settle();
+    expect(feed.state).not.toBeNull();
+  });
+
   test('reads the settings when a tab that needs them is open, and not before', async () => {
     const urls = answers(delivery());
     const { feed, ctl } = start({ active: false });

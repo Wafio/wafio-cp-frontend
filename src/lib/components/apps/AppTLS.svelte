@@ -65,7 +65,9 @@
     switchDisabled,
     tlsNotices,
     tlsProblem,
+    unusedMainHostText,
     uploadsFirst,
+    withoutMainHost,
     type CertificateFacts,
     type CheckState,
     type TLSConfirm,
@@ -243,6 +245,9 @@
       : null,
   );
 
+  // A main host name saved in Gateway stays stored when the application goes back behind a proxy, where the form shows no field for it.
+  const unusedMainHost = $derived(loaded && loaded.mode !== 'gateway' ? savedMainHost : '');
+
   $effect(() => {
     dirty = isDirty;
   });
@@ -324,6 +329,27 @@
       // The bar goes away with the save, and the button that opened the dialog with it.
       void refocus('title');
     }
+  }
+
+  /** Saves the stored settings with no main host name, the way out when this mode shows no field for it. */
+  async function clearMainHost() {
+    if (!canConfigure || busy || !loaded) return;
+    busy = true;
+    saveError = '';
+    routingError = false;
+    const my = epoch.next();
+    const res = await putAppTLS(projectId, appId, withoutMainHost(loaded));
+    busy = false;
+    if (!epoch.isCurrent(my) || res.error?.kind === 'aborted') return;
+    if (res.error || !res.data) {
+      saveError = classifyTLSRefusal(res.error, agentName).message;
+      void focusFormError(root);
+      return;
+    }
+    adopt(res.data, true);
+    lastActionAt = Date.now();
+    delivery?.acted();
+    toast.success('Main host name cleared.', 'Saved');
   }
 
   function refused(error: ApiError | undefined, sent: AppTLSInput) {
@@ -533,6 +559,14 @@
 
         {#if form.mode !== 'gateway'}
           <p class="tls-hint">{proxyModeText(agentName)}</p>
+          {#if unusedMainHost !== ''}
+            <div class="tls-unused">
+              <p class="tls-hint">{unusedMainHostText(unusedMainHost)}</p>
+              {#if canConfigure}
+                <Button variant="secondary" size="sm" class="tls-tap" disabled={busy} onclick={() => void clearMainHost()}>Clear main host name</Button>
+              {/if}
+            </div>
+          {/if}
         {:else}
           <section class="tls-block" aria-labelledby="{uid}-addresses">
             <h3 id="{uid}-addresses">Addresses</h3>
@@ -558,7 +592,7 @@
             </div>
 
             <div class="tls-field" onfocusout={() => touch('canonical_host')}>
-              <Field label="Main host name" error={shownErrors.canonical_host} hint={canonicalHostHint(form.redirect)}>
+              <Field label="Main host name" error={shownErrors.canonical_host} hint={canonicalHostHint(form.redirect, form.canonicalHost)}>
                 {#snippet children(c)}
                   <Select {...c} options={hostOptions} bind:value={form.canonicalHost} disabled={readonly || mainHostLocked} />
                 {/snippet}
@@ -756,6 +790,7 @@
   .tls-block h3 { margin: 0; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text-primary); }
   .tls-field { min-width: 0; }
   .tls-field .tls-hint { margin-top: var(--sp-2); }
+  .tls-unused { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); }
   .tls-field :global(.part-status:not(:empty)) { margin-top: var(--sp-2); }
   .tls-form textarea, .tls-form input.mono { font-family: var(--font-mono); font-size: var(--fs-sm); }
   .tls-form textarea { resize: vertical; line-height: 1.5; }
