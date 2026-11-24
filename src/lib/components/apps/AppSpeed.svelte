@@ -1,6 +1,7 @@
 <!--
   AppSpeed: the Speed tab. Parts that make an application faster for visitors and work in both modes: compression,
-  files from a folder and the cache (CacheSection). Each part has its heading, a sentence for visitors, a switch, its
+  files from a folder and the cache (CacheSection), with the session cookie names that compression and the cache share
+  (SignedInCookies) beside Compression. Each part has its heading, a sentence for visitors, a switch, its
   main fields, its limits folded under "Advanced limits", one status line and its own Save. The defaults are filled
   in, so switching on and saving is enough. A switch saves nothing by itself. The settings and what the agent
   reported come from the page's feed; this panel keeps what the person is typing when a read arrives, and says in
@@ -17,7 +18,9 @@
   import CacheSection from './CacheSection.svelte';
   import LifetimeInput from './LifetimeInput.svelte';
   import PartStatus from './PartStatus.svelte';
+  import SignedInCookies from './SignedInCookies.svelte';
   import type { DeliveryFeed } from './delivery-feed.svelte.js';
+  import { keptSegment } from './kept-names';
   import { mergeEdits } from './tls';
   import {
     COMPRESSION_FIXED,
@@ -31,6 +34,7 @@
     compressionForm,
     compressionInput,
     compressionNumbers,
+    keptFolderText,
     loadErrorText,
     normalizeCompression,
     normalizeStaticFiles,
@@ -125,8 +129,9 @@
   const filesDirty = $derived(!sameStaticFiles(files, storedFiles));
 
   let cacheDirty = $state(false);
+  let cookiesDirty = $state(false);
   $effect(() => {
-    dirty = compressionDirty || filesDirty || cacheDirty;
+    dirty = compressionDirty || filesDirty || cacheDirty || cookiesDirty;
   });
 
   const fieldValue = (field: CompressionField | StaticFilesField) =>
@@ -157,6 +162,8 @@
   const numbers = $derived(storedCompression.enabled ? compressionNumbers(delivery?.compression_stats ?? null) : []);
   const noNumbers = $derived(storedCompression.enabled && numbers.length === 0 && compressionLine?.tone === 'success');
   const whoseHost = $derived(agentName ? `${agentName}'s host` : "the WAF agent's host");
+  // The agent refuses a folder whose path passes a name it never serves (the control plane does not), so the person hears it before saving.
+  const keptName = $derived(keptSegment(files.root.trim()));
 
   // ── Saving ──────────────────────────────────────────────────────────────
   function touch(field: CompressionField | StaticFilesField) {
@@ -322,6 +329,8 @@
       </div>
     </section>
 
+    <SignedInCookies {projectId} {appId} {feed} {canConfigure} bind:dirty={cookiesDirty} />
+
     <section class="sp-part" aria-labelledby="{uid}-files" bind:this={filesEl}>
       <h3 id="{uid}-files">Files from a folder</h3>
       <p class="sp-lead">Images, styles, scripts and other files come straight from a folder on the server, without waiting for your application.</p>
@@ -339,6 +348,9 @@
             {/snippet}
           </Field>
         </div>
+        {#if keptName}
+          <Alert compact tone="warning" message={keptFolderText(keptName)} />
+        {/if}
         <ChoiceGroup legend="When a file is not in the folder" name="{uid}-missing" options={missingOptions} bind:value={files.missing} columns={2} disabled={readonly || filesOld} error={missingError} />
         <p class="sp-fixed">{FILES_FIXED}</p>
         <details class="sp-advanced" bind:open={filesAdvanced}>

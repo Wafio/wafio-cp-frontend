@@ -4,9 +4,10 @@
  * never stricter), the form models, what the agent reported in words, and how often to ask. Pure functions; the
  * panel is AppSpeed.svelte.
  */
-import type { ApiError, AppCompression, AppCompressionStats, AppDelivery, AppEdgeFeatureState, AppStaticFiles, EdgePart, StaticMissing } from '../../api';
+import type { ApiError, AppCompression, AppCompressionStats, AppDelivery, AppDeliveryAgent, AppEdgeFeatureState, AppStaticFiles, EdgePart, StaticMissing } from '../../api';
 import { formatBytes, formatNumber } from '../../format';
 import { bytesFromInput, bytesToInput } from './inputs';
+import { keptSegment } from './kept-names';
 import { stripFieldPrefix } from './maintenance';
 
 /** The limits of the control plane (domain delivery settings). */
@@ -165,10 +166,15 @@ export const UNASSIGNED_TEXT = 'No WAF agent serves this application yet. Saved 
 export const offlineText = (agent: string): string => `${agent} is offline. Saved settings apply when it reconnects.`;
 export const SPEED_INTRO = 'Make this application faster for visitors. Each part can be turned on alone and works in both modes. WAFio checks every request before any of them answers it.';
 
-export const COMPRESSION_FIXED = 'Pages for signed-in visitors are sent uncompressed, so their secrets cannot be guessed from the size.';
+export const COMPRESSION_FIXED =
+  'Pages for signed-in visitors are sent uncompressed, so their secrets cannot be guessed from the size. A visitor counts as signed in when the request carries an Authorization header or a common session cookie. If your application names its session cookie differently, add the name under Signed-in visitors below.';
+/** Under the folder, while its path passes a name the agent never serves. */
+export const keptFolderText = (name: string): string =>
+  `The WAF agent will not use this folder: its path has a part named ${name}, and names like that are never served. Choose a folder whose path has no such part.`;
+
 export const COMPRESSION_LIMITS_FIXED = 'Answers over 8 MiB, and answers your application streams without a length, are not compressed.';
 export const FILES_FIXED =
-  'Never served from the folder: folder listings, hidden files (names that start with a dot, except .well-known), PHP files, and symbolic links. Visitors can resume large downloads.';
+  'Never served from the folder: folder listings, hidden files (names that start with a dot, except .well-known), PHP files, symbolic links, and any path with a part named like a system file or folder, such as profile, network, group, hosts, security, private, credentials or systemd. Those requests go to your application, or get Not found if you chose that. Visitors can resume large downloads.';
 
 /** How a part is named in a sentence about the agent. */
 export const PART_LABEL: Record<EdgePart, string> = {
@@ -180,7 +186,23 @@ export const PART_LABEL: Record<EdgePart, string> = {
 
 const agentName = (agent: string): string => agent || 'The WAF agent';
 
-export const tooOldText = (agent: string, part: string): string => `${agentName(agent)} is too old for ${part}. Upgrade it to use this.`;
+/**
+ * Which WAF agent has the parts of the Speed tab. Every release up to v2.1.1 lacks them all; the release that brings
+ * them replaces this phrase with its own number ('v2.2.0 or newer').
+ */
+export const AGENT_WITH_PARTS = 'newer than v2.1.1';
+
+/**
+ * The agent said Hello without the part. One that already has another part is a build from between the releases, so
+ * the release number would mislead: it is told to take a newer build. `features` is what the agent said, when known.
+ */
+export function tooOldText(agent: string, part: string, features?: AppDeliveryAgent['features']): string {
+  const between = features !== undefined && Object.values(features).includes(true);
+  return `${agentName(agent)} is too old for ${part}. Upgrade it to ${between ? 'a newer build of the WAF agent' : `a WAF agent ${AGENT_WITH_PARTS}`} to use this.`;
+}
+
+/** The agent is online and has not confirmed the latest configuration after its time; the likeliest cause is a refusal of the whole configuration. */
+export const noAnswerText = (agent: string): string => `${agent} is online but has not confirmed the latest configuration. It may have refused it; its log says why.`;
 
 /** "compression, files from a folder and the cache". */
 function listParts(parts: readonly string[]): string {
@@ -258,8 +280,11 @@ export function refusalReason(state: Pick<AppEdgeFeatureState, 'code' | 'detail'
       return `${where} is a file, not a folder`;
     case 'root_unreadable':
       return `it cannot read ${where}. It runs as the user wafio, and its service hides /home, /root and /run/user`;
-    case 'root_forbidden':
-      return `${where} holds system or WAFio files`;
+    case 'root_forbidden': {
+      // A folder under /etc or the like holds system files; a path that only passes a folder named like one is refused for the name.
+      const name = staticRootForbidden(where) ? null : keptSegment(where);
+      return name === null ? `${where} holds system or WAFio files` : `${where} has a part named ${name}, a name the agent never serves from a folder`;
+    }
     case 'cache_dir_unusable':
       return 'its cache folder /var/cache/wafio-waf was not usable at start; its log says why. Fix or reinstall, then restart it';
     case 'disk_too_small': {
@@ -306,7 +331,7 @@ export function partLine(o: PartInput): PartLine | null {
   if (!d) return null;
   const agent = d.agent;
   if (!agent) return o.inUse && !o.quiet?.includes('unassigned') ? { tone: 'info', text: UNASSIGNED_TEXT } : null;
-  if (agent.features[o.part] === false) return { tone: 'warning', text: tooOldText(agent.name, o.label ?? PART_LABEL[o.part]) };
+  if (agent.features[o.part] === false) return { tone: 'warning', text: tooOldText(agent.name, o.label ?? PART_LABEL[o.part], agent.features) };
   const state = reported(d, o.part);
   // A cache folder that cannot be used stops the cache for every application, also while its switch is off.
   const noFolder = o.part === 'cache' && state?.state === 'refused' && state.code === 'cache_dir_unusable';
@@ -322,7 +347,7 @@ export function partLine(o: PartInput): PartLine | null {
   if (state?.state === 'applied') return { tone: 'success', text: `In use on ${agent.name}.` };
   if (state) return { tone: 'info', text: `${agent.name} sent a report this dashboard does not know${state.detail ? `: ${state.detail}` : ''}.` };
   return answerOverdue(o.waitingSince, o.now)
-    ? { tone: 'warning', text: `No answer from ${agent.name} yet. Check that it is online.` }
+    ? { tone: 'warning', text: noAnswerText(agent.name) }
     : { tone: 'info', text: `Saved. Waiting for ${agent.name} to apply it.` };
 }
 

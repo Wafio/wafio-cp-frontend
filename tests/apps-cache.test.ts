@@ -31,6 +31,8 @@ import {
   removalBlockedText,
   ruleFieldOf,
   sameCache,
+  sameCookieNames,
+  withCookieNames,
   type CacheInput,
 } from '../src/lib/components/apps/cache';
 import { NO_ANSWER_AFTER_MS, partLine, pollIntervalMs, refusalReason, waitingForAgent } from '../src/lib/components/apps/speed';
@@ -270,11 +272,12 @@ describe('a refused save', () => {
   });
 
   test('a limit under Advanced limits opens the fold, the other fields do not', () => {
-    for (const field of ['disk_bytes', 'memory_bytes', 'max_object_bytes', 'session_cookies'] as const) {
+    for (const field of ['disk_bytes', 'memory_bytes', 'max_object_bytes'] as const) {
       expect(inAdvanced(field)).toBe(true);
       expect(classifyCacheRefusal(refused({ code: 'INVALID_DELIVERY_SETTINGS', field, error: 'No.' }))).toMatchObject({ kind: 'field', field, advanced: true });
     }
-    for (const field of ['default_ttl_s', 'stale_if_error_s', 'rules', 'rules[0].prefix'] as const) expect(inAdvanced(field)).toBe(false);
+    // The cookie names have their own place on the tab, not a fold of the cache.
+    for (const field of ['default_ttl_s', 'stale_if_error_s', 'session_cookies', 'rules', 'rules[0].prefix'] as const) expect(inAdvanced(field)).toBe(false);
   });
 
   test('a field of another part is not put under a field of the cache', () => {
@@ -284,7 +287,7 @@ describe('a refused save', () => {
   test('an agent that is too old is said as that, and one that cannot run the part is said above the buttons', () => {
     expect(classifyCacheRefusal(refused({ status: 409, code: 'AGENT_TOO_OLD', agent: 'edge-1', feature: 'cache' }))).toEqual({
       kind: 'too-old',
-      message: 'edge-1 is too old for the cache. Upgrade it to use this.',
+      message: 'edge-1 is too old for the cache. Upgrade it to a WAF agent newer than v2.1.1 to use this.',
     });
     expect(classifyCacheRefusal(refused({ status: 409, code: 'FEATURE_UNSUPPORTED', agent: 'edge-1', parts: ['compression', 'cache'] }))).toEqual({
       kind: 'save',
@@ -296,6 +299,40 @@ describe('a refused save', () => {
     expect(classifyCacheRefusal(refused({ status: 413, code: 'BUNDLE_TOO_LARGE', error: 'The configuration is too large.' }))).toEqual({ kind: 'save', message: 'The configuration is too large.' });
     expect(classifyCacheRefusal(refused({ kind: 'network', error: '' }))).toEqual({ kind: 'save', message: 'Could not save the cache settings.' });
     expect(classifyCacheRefusal(undefined)).toEqual({ kind: 'save', message: 'Could not save the cache settings.' });
+  });
+});
+
+describe('the session cookie names', () => {
+  test('are saved with the cache settings and nothing else changes, also while the cache is off', () => {
+    const off = stored({ enabled: false, disk_bytes: 64 << 20, max_object_bytes: 1 << 20, rules: [keepRule('/blog/'), { prefix: '/x', action: 'bypass', ttl_s: 0, signed_in: false }] });
+    const got = withCookieNames(off, 'shop_session\ncart_id');
+    expect(got.settings).toEqual({ ...off, session_cookies: ['shop_session', 'cart_id'] });
+    expect(got.settings?.enabled).toBe(false);
+  });
+
+  test('are trimmed, without repeats in any case and without empty lines, as the server stores them', () => {
+    expect(withCookieNames(stored(), '  shop_session \n\nSHOP_SESSION\n\u0085cart_id').settings?.session_cookies).toEqual(['shop_session', 'cart_id']);
+    expect(withCookieNames(stored(), '').settings?.session_cookies).toEqual([]);
+  });
+
+  test('refuse a name with a separator and more than 20 names, with the sentence of the server', () => {
+    expect(withCookieNames(stored(), 'a b').error).toEqual({ field: 'session_cookies', message: COOKIES_MESSAGE });
+    expect(withCookieNames(stored(), 'a;b').error?.message).toBe(COOKIES_MESSAGE);
+    expect(withCookieNames(stored(), 'a=b').error?.message).toBe(COOKIES_MESSAGE);
+    expect(withCookieNames(stored(), 'n'.repeat(65)).error?.message).toBe(COOKIES_MESSAGE);
+    expect(withCookieNames(stored(), Array.from({ length: 21 }, (_, i) => `c${i}`).join('\n')).error?.message).toBe(COOKIES_MESSAGE);
+    expect(withCookieNames(stored(), Array.from({ length: 20 }, (_, i) => `c${i}`).join('\n')).error).toBeUndefined();
+  });
+
+  test('count as changed only when the stored list would differ', () => {
+    const named = stored({ session_cookies: ['shop_session', 'cart_id'] });
+    expect(sameCookieNames(named, 'shop_session\ncart_id')).toBe(true);
+    expect(sameCookieNames(named, ' shop_session\n\ncart_id \nCART_ID')).toBe(true);
+    expect(sameCookieNames(named, 'shop_session')).toBe(false);
+    expect(sameCookieNames(named, 'cart_id\nshop_session')).toBe(false);
+    expect(sameCookieNames(stored(), '')).toBe(true);
+    // Names that cannot be read are a change the save will refuse.
+    expect(sameCookieNames(stored(), 'a b')).toBe(false);
   });
 });
 
@@ -311,7 +348,10 @@ describe('removals', () => {
     const on = delivery({ cache: stored() });
     expect(removalBlockedText(on)).toBeNull();
     expect(removalBlockedText({ ...on, agent: null })).toBe(NO_AGENT_TEXT);
-    expect(removalBlockedText({ ...on, agent: agent({}, { cache: false }) })).toBe('edge-1 is too old for the cache. Upgrade it to use this.');
+    expect(removalBlockedText({ ...on, agent: agent({}, { cache: false }) })).toBe('edge-1 is too old for the cache. Upgrade it to a newer build of the WAF agent to use this.');
+    expect(removalBlockedText({ ...on, agent: agent({}, { redirects: false, compression: false, static_files: false, cache: false }) })).toBe(
+      'edge-1 is too old for the cache. Upgrade it to a WAF agent newer than v2.1.1 to use this.',
+    );
     expect(removalBlockedText({ ...on, agent: agent({}, { cache: null }) })).toBeNull();
   });
 
@@ -364,14 +404,15 @@ describe('removals', () => {
     expect(pollIntervalMs(finished, null, NOW)).toBe(60_000);
   });
 
-  test('a removal that waited 2 minutes says no answer, as a warning with the wording of the settings line, and is no longer polled for', () => {
+  test('a removal that waited 2 minutes says an online agent has not confirmed it, as a warning, and is no longer polled for', () => {
     const at = (age: number) => row({ created_at: new Date(NOW - age).toISOString() });
     expect(purgeView(at(NO_ANSWER_AFTER_MS - 1), online, NOW).state).toBe('Removing. edge-1 confirms within a few seconds.');
-    expect(purgeView(at(NO_ANSWER_AFTER_MS), online, NOW)).toMatchObject({ state: 'No answer from edge-1 yet. Check that it is online.', tone: 'warning' });
+    expect(purgeView(at(NO_ANSWER_AFTER_MS), online, NOW)).toMatchObject({ state: 'edge-1 is online but has not confirmed the removal. Its log may say why.', tone: 'warning' });
     expect(purgeView(at(3 * 24 * 60 * MINUTE), online, NOW).state).not.toContain('few seconds');
-    expect(purgeView(at(NO_ANSWER_AFTER_MS), online, NOW).state).toBe(partLine({ delivery: delivery({ cache: stored() }), part: 'cache', inUse: true, now: NOW, waitingSince: NOW - NO_ANSWER_AFTER_MS })?.text);
-    // The agent that answered the row is named; with none known, the wording stays a sentence.
-    expect(purgeView({ ...at(NO_ANSWER_AFTER_MS), agent: 'edge-2' }, online, NOW).state).toBe('No answer from edge-2 yet. Check that it is online.');
+    expect(purgeView(at(NO_ANSWER_AFTER_MS), online, NOW).state).not.toContain('Check that it is online');
+    // The agent that answered the row is named; with none serving the application, the agent may well be off, so that hint stays.
+    expect(purgeView({ ...at(NO_ANSWER_AFTER_MS), agent: 'edge-2' }, online, NOW).state).toBe('edge-2 is online but has not confirmed the removal. Its log may say why.');
+    expect(purgeView({ ...at(NO_ANSWER_AFTER_MS), agent: 'edge-2' }, null, NOW).state).toBe('No answer from edge-2 yet. Check that it is online.');
     expect(purgeView(at(NO_ANSWER_AFTER_MS), null, NOW).state).toBe('No answer from the WAF agent yet. Check that it is online.');
     const stale = delivery({ cache: stored(), status: status({ cache: feature('cache') }), purges: [at(NO_ANSWER_AFTER_MS)] });
     expect(waitingForAgent(stale, NOW)).toBe(false);
@@ -479,7 +520,9 @@ describe('what the agent says about the cache', () => {
     const d = delivery({ cache: stored(), status: status({ cache: refused({ code: 'cache_dir_unusable' }) }) });
     expect(partLine({ delivery: d, part: 'cache', inUse: true, now: NOW, waitingSince: NOW - MINUTE })?.text).not.toContain('too old');
     const old = { ...d, agent: agent({}, { cache: false }) };
-    expect(partLine({ delivery: old, part: 'cache', inUse: true, now: NOW, waitingSince: NOW - MINUTE })?.text).toBe('edge-1 is too old for the cache. Upgrade it to use this.');
+    expect(partLine({ delivery: old, part: 'cache', inUse: true, now: NOW, waitingSince: NOW - MINUTE })?.text).toBe(
+      'edge-1 is too old for the cache. Upgrade it to a newer build of the WAF agent to use this.',
+    );
   });
 
   test('the cache folder refusal of the folder does not show for a part that is not the cache', () => {
