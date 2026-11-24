@@ -7,7 +7,7 @@ import type { TabItem } from '../ui/types';
 import { parseTimeRange, type TimeRangeKey } from '../ui/time-range';
 import type { ReadonlyURLSearchParams } from '$app/state';
 
-export type AppTab = 'monitoring' | 'decisions' | 'config' | 'blockwindow' | 'maintenance' | 'routing' | 'assignment';
+export type AppTab = 'monitoring' | 'decisions' | 'config' | 'blockwindow' | 'maintenance' | 'gateway' | 'routing' | 'assignment';
 
 export const APP_TAB_PARAM = 'tab';
 export const DEFAULT_APP_TAB: AppTab = 'monitoring';
@@ -18,13 +18,14 @@ const TAB_LABELS: Record<AppTab, string> = {
   config: 'Config',
   blockwindow: 'Block window',
   maintenance: 'Maintenance',
+  gateway: 'Gateway',
   routing: 'Routing',
   assignment: 'Assignment',
 };
 
-export const APP_TAB_ORDER: readonly AppTab[] = ['monitoring', 'decisions', 'config', 'blockwindow', 'maintenance', 'routing', 'assignment'];
+export const APP_TAB_ORDER: readonly AppTab[] = ['monitoring', 'decisions', 'config', 'blockwindow', 'maintenance', 'gateway', 'routing', 'assignment'];
 
-/** Old tab ids (the former /waf/:agentId/:appId and /apps/:appId pages). */
+/** Old tab ids (the former /waf/:agentId/:appId and /apps/:appId pages, and the links of mails that said https). */
 const TAB_ALIASES: Record<string, AppTab> = {
   overview: 'monitoring',
   monitor: 'monitoring',
@@ -33,6 +34,7 @@ const TAB_ALIASES: Record<string, AppTab> = {
   'block-window': 'blockwindow',
   block_window: 'blockwindow',
   events: 'decisions',
+  https: 'gateway',
 };
 
 export function isAppTab(value: unknown): value is AppTab {
@@ -52,7 +54,8 @@ export function normalizeAppTab(value: string | null | undefined): AppTab | null
  * assigned WAF agent, so they are disabled (with the reason as tooltip) while
  * the application is unassigned. `maintenance` keeps the Maintenance tab open
  * without an agent: maintenance mode is on (it must stay reachable to turn it
- * off before an agent is assigned again), or was on during this visit.
+ * off before an agent is assigned again), or was on during this visit. Gateway
+ * is never disabled: the settings are stored with the application.
  */
 export function appTabs(opts: { assigned: boolean; maintenance?: boolean }): TabItem[] {
   return APP_TAB_ORDER.map((id) => {

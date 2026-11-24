@@ -1,10 +1,10 @@
 <!--
   Application page, the single page of an application. Tabs live in the URL
   (?tab=monitoring|decisions|config|
-  blockwindow|maintenance|routing|assignment), so alerts and other pages can
+  blockwindow|maintenance|gateway|routing|assignment), so alerts and other pages can
   deep-link and Back restores the previous tab.
 
-  Unsaved edits in Config (ConfigWafForm), Maintenance and Routing
+  Unsaved edits in Config (ConfigWafForm), Maintenance, Gateway and Routing
   (AppRouteForm) are guarded on tab switch and on navigation away.
 -->
 <script lang="ts">
@@ -15,6 +15,7 @@
   import {
     deleteApp,
     getApp,
+    getAppTLS,
     getAppWAFAgent,
     listAgentRoutes,
     listFleetAgents,
@@ -23,6 +24,7 @@
     type AgentRoute,
     type ApiError,
     type App,
+    type AppTLSState,
     type AppWAFAssignment,
     type FleetAgent,
   } from '#lib/api.js';
@@ -40,6 +42,7 @@
   import AppConfigPanel from '#lib/components/apps/AppConfigPanel.svelte';
   import AppMaintenance from '#lib/components/apps/AppMaintenance.svelte';
   import AppRouteForm from '#lib/components/apps/AppRouteForm.svelte';
+  import AppTLS from '#lib/components/apps/AppTLS.svelte';
   import DecisionFeed from '#lib/components/apps/DecisionFeed.svelte';
   import {
     appHref,
@@ -51,6 +54,7 @@
     writeAppRange,
   } from '#lib/components/apps/app-page.js';
   import { APP_STATE_TEXT, appState, routeSummary } from '#lib/components/apps/inventory.js';
+  import { expiryBadge, routingNote, withoutDnsHints } from '#lib/components/apps/tls.js';
   import { usePageDetail } from '#lib/page-meta.svelte.js';
   import {
     agentRouteBodyFrom,
@@ -70,6 +74,10 @@
   let assignment = $state<AppWAFAssignment | null>(null);
   let agents = $state<FleetAgent[]>([]);
   let route = $state<AgentRoute | null>(null);
+  // The Gateway tab owns its state once it is open; this is what the first render of the tab starts from. It holds no
+  // DNS hints: they last until the next save or until the person leaves the tab.
+  let tls = $state<AppTLSState | null>(null);
+  const certificateBadge = $derived(tls ? expiryBadge(tls, Date.now()) : null);
   let loading = $state(true);
   let loadError = $state<ApiError | null>(null);
   let bindingError = $state('');
@@ -92,10 +100,11 @@
     const project = projectId;
     const id = appId;
     if (!opts.silent) loading = true;
-    const [appRes, bindRes, agentsRes] = await Promise.all([
+    const [appRes, bindRes, agentsRes, tlsRes] = await Promise.all([
       getApp(project, id),
       getAppWAFAgent(project, id),
       listFleetAgents({ projectId: project, kind: 'waf' }),
+      getAppTLS(project, id),
     ]);
     if (my !== epoch) return;
     if (appRes.error || !appRes.data) {
@@ -109,6 +118,7 @@
     app = appRes.data.app;
     assignment = binding;
     route = nextRoute;
+    tls = tlsRes.data ?? null;
     agents = agentsRes.data?.agents ?? [];
     // 404 WAF_AGENT_NOT_ASSIGNED is the unassigned state, not a failure.
     bindingError = bindRes.error && bindRes.error.code !== 'WAF_AGENT_NOT_ASSIGNED' ? bindRes.error.error || 'Could not load the assignment.' : '';
@@ -122,6 +132,7 @@
       app = null;
       assignment = null;
       route = null;
+      tls = null;
       agents = [];
       loadError = null;
       bindingError = '';
@@ -134,6 +145,7 @@
 
   const assigned = $derived(Boolean(assignment));
   const agent = $derived(assignment ? agents.find((a) => a.id === assignment?.agent_id) : undefined);
+  const gatewayRoutingNote = $derived(routingNote(tls, agent?.name ?? '', assigned));
   const stateKey = $derived(app ? appState(app, assignment) : 'draft');
   const stateText = $derived(APP_STATE_TEXT[stateKey]);
   const summary = $derived(
@@ -158,6 +170,7 @@
   // ── Unsaved changes ──────────────────────────────────────────────
   let configDirty = $state(false);
   let maintenanceDirty = $state(false);
+  let tlsDirty = $state(false);
   let routingDirty = $state(false);
   let discardPrompt = $state<{ resolve: (ok: boolean) => void } | null>(null);
 
@@ -174,7 +187,7 @@
     prompt?.resolve(ok);
   }
 
-  const unsaved = createDirtyTracker(() => configDirty || maintenanceDirty || routingDirty, { confirm: () => askDiscard() });
+  const unsaved = createDirtyTracker(() => configDirty || maintenanceDirty || tlsDirty || routingDirty, { confirm: () => askDiscard() });
   unsaved.guardNavigation();
 
   // A panel that is no longer shown cannot hold unsaved edits (Back/Forward
@@ -182,6 +195,7 @@
   $effect(() => {
     if (tab !== 'config') configDirty = false;
     if (tab !== 'maintenance') maintenanceDirty = false;
+    if (tab !== 'gateway') tlsDirty = false;
     if (tab !== 'routing') routingDirty = false;
   });
 
@@ -199,6 +213,7 @@
     // Agreed to discard: the navigation below must not ask again.
     configDirty = false;
     maintenanceDirty = false;
+    tlsDirty = false;
     routingDirty = false;
     await navigate(appTabSearch(page.url.searchParams, target));
   }
@@ -276,6 +291,7 @@
     deleteOpen = false;
     configDirty = false;
     maintenanceDirty = false;
+    tlsDirty = false;
     routingDirty = false;
     toast.success('Its routing, configuration history and custom rules were removed.', `${current.name} deleted`);
     await goto(`${base}/projects/${projectId}/apps`);
@@ -309,6 +325,9 @@
           <Badge tone={stateText.tone} title={stateText.hint}>{stateText.label}</Badge>
           {#if app.maintenance_enabled}
             <Badge tone="warning" title="Maintenance mode is on: visitors see the maintenance page.">Maintenance</Badge>
+          {/if}
+          {#if certificateBadge}
+            <Badge tone={certificateBadge.tone} title={certificateBadge.title}>{certificateBadge.label}</Badge>
           {/if}
           {#if assignment}
             <span class="app-agent">
@@ -377,6 +396,21 @@
           bind:dirty={maintenanceDirty}
           onchange={setMaintenance}
         />
+      {:else if tab === 'gateway'}
+        <AppTLS
+          {projectId}
+          appId={app.id}
+          appName={app.name}
+          assigned={Boolean(assignment)}
+          agentName={agent?.name ?? ''}
+          agentOnline={agent?.is_online}
+          canConfigure={ctx.canConfigure}
+          routing={routeInitial}
+          routingHref={appHref(base, projectId, app.id, 'routing')}
+          initial={tls ?? undefined}
+          bind:dirty={tlsDirty}
+          onchange={(next) => (tls = withoutDnsHints(next))}
+        />
       {:else if tab === 'routing'}
         <section class="routing" aria-labelledby="routing-title">
           <header>
@@ -391,6 +425,9 @@
           </header>
           {#if !ctx.canConfigure}
             <Alert tone="info" message="Read-only: changing the routing needs member or owner access." />
+          {/if}
+          {#if gatewayRoutingNote}
+            <Alert tone={gatewayRoutingNote.tone} message={gatewayRoutingNote.text} />
           {/if}
           {#if proxyWarnings.length}
             <Alert tone="warning" title="Review the client-IP trust settings">
@@ -420,6 +457,7 @@
           {assignment}
           canConfigure={ctx.canConfigure}
           maintenance={Boolean(app.maintenance_enabled)}
+          {tls}
           onchanged={() => load({ silent: true })}
         />
       {/if}

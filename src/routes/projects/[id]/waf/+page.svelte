@@ -36,6 +36,7 @@
     type StatusKind,
   } from '#lib/components/ui/index.js';
   import { agentDeleteError, isAgentOnlineRefusal, validateAgentName, wafAgentInstall } from '#lib/components/apps/inventory.js';
+  import { REMOVED_AGENT_TEXT } from '#lib/components/apps/tls.js';
 
   const ctx = getProjectContext();
   const projectId = $derived(page.params.id ?? '');
@@ -331,7 +332,10 @@
   onconfirm={() => void remove(false)}
   onclose={() => (removing = null)}
 >
-  <p class="confirm-text">Removes the agent from this project; it no longer appears in the agent list. Its decision history stays available until it ages out under data retention (30 days). The applications it serves become unassigned and are no longer proxied or inspected until you assign them to another agent; their configuration and history are kept. A running agent must be stopped on its host first.</p>
+  <div class="confirm-text">
+    <p>Removes the agent from this project; it no longer appears in the agent list. Its decision history stays available until it ages out under data retention (30 days). The applications it serves become unassigned and are no longer proxied or inspected until you assign them to another agent; their configuration and history are kept. A running agent must be stopped on its host first.</p>
+    <p>{REMOVED_AGENT_TEXT}</p>
+  </div>
 </ConfirmModal>
 
 <ConfirmModal
@@ -347,6 +351,7 @@
     <p>{forcing?.message}</p>
     {#if forcing?.hint}<p class="hint">{forcing.hint}</p>{/if}
     <p>Deleting it anyway stops protection for its applications now; a running agent may register again when it reconnects.</p>
+    <p>{REMOVED_AGENT_TEXT}</p>
   </div>
 </ConfirmModal>
 

@@ -24,15 +24,19 @@
   import ProtectionModeSelect from './ProtectionModeSelect.svelte';
   import Select from '#lib/components/ui/Select.svelte';
   import {
+    CLOUDFLARE_CONFIRM_TEXT,
     DEFAULT_FCGI_INDEX,
     PROXY_DEFAULTS,
     PROXY_LIMITS,
     cloneRouteForm,
+    cloudflareHint,
     hasProxyErrors,
     listenLabel,
     proxyErrorField,
+    replacesTrust,
     routeErrorList,
     validateRouteForm,
+    withCloudflare,
     type HostHeaderMode,
     type RouteErrors,
     type RouteField,
@@ -90,6 +94,7 @@
   let submitError = $state('');
   let advancedOpen = $state(false);
   let confirmLowerOpen = $state(false);
+  let confirmCloudflareOpen = $state(false);
   /** Field errors from a 400 INVALID_PROXY_CONFIG; cleared when the field changes. */
   let serverErrors = $state<RouteErrors>({});
   let serverErrorsFor = '';
@@ -127,6 +132,17 @@
     if (form.upstreamType === type) return;
     form.upstreamType = type;
     if (type === 'fcgi' && !form.fcgiIndex) form.fcgiIndex = DEFAULT_FCGI_INDEX;
+  }
+
+  function askCloudflare() {
+    if (replacesTrust(form.proxy)) confirmCloudflareOpen = true;
+    else useCloudflare();
+  }
+
+  /** Replaces the list with Cloudflare's addresses and loopback and trusts forwarded headers; saved with the form like any edit. */
+  function useCloudflare() {
+    form.proxy = withCloudflare(form.proxy);
+    confirmCloudflareOpen = false;
   }
 
   function parseWhole(text: string): number | null {
@@ -415,6 +431,10 @@
                   ></textarea>
                 {/snippet}
               </Field>
+              <div class="cloudflare">
+                <Button variant="secondary" onclick={askCloudflare}>Use Cloudflare's addresses</Button>
+                <p class="route-note">{cloudflareHint()}</p>
+              </div>
             </div>
             <div class="span-full" data-field="proxy.reqHeaders" id={fid('proxy.reqHeaders')}>
               <HeaderRulesEditor bind:rules={form.proxy.reqHeaders} legend="Request headers" hint="Changes applied to requests before they reach the upstream." error={shown['proxy.reqHeaders']} hiddenValues={hiddenHeaderValues} />
@@ -458,6 +478,17 @@
   <p class="confirm-text">In Monitor mode every request is forwarded to the application. Attacks are logged but not blocked until you switch back to Block.</p>
 </ConfirmModal>
 
+<ConfirmModal
+  open={confirmCloudflareOpen}
+  tone="warning"
+  title="Replace the trusted proxies?"
+  confirmLabel="Replace with Cloudflare's addresses"
+  onconfirm={useCloudflare}
+  onclose={() => (confirmCloudflareOpen = false)}
+>
+  <p class="confirm-text">{CLOUDFLARE_CONFIRM_TEXT}</p>
+</ConfirmModal>
+
 <style>
   .route-form { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; width: 100%; max-width: 60rem; container-type: inline-size; }
   .route-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-5); }
@@ -484,6 +515,7 @@
     resize: vertical;
   }
   .proxies:disabled { background: var(--bg-tertiary); color: var(--text-muted); }
+  .cloudflare { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); margin-top: var(--sp-3); }
   .route-error-list { margin: var(--sp-1) 0 0; padding-left: var(--sp-5); font-size: var(--fs-sm); }
   .route-error-list a { color: inherit; text-decoration: underline; }
 
@@ -523,6 +555,7 @@
 
   @media (max-width: 760px) {
     .route-grid { grid-template-columns: minmax(0, 1fr); }
+    .cloudflare :global(.btn) { min-height: 44px; }
     .route-actions { flex-direction: column-reverse; align-items: stretch; }
     .route-dirty { margin-right: 0; text-align: center; }
   }

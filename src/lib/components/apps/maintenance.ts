@@ -120,7 +120,7 @@ export function localInputBounds(now: number): { min: string; max: string } {
 // ── Checks (the texts of the server, domain.Maintenance.Normalize) ─────────
 
 /** An entry as the server shows it: cut to 64 bytes, in Go quoting. */
-function quoted(value: string): string {
+export function quoted(value: string): string {
   let text = value;
   if (utf8Bytes(text) > 64) {
     let cut = '';
