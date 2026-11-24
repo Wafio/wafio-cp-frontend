@@ -213,6 +213,15 @@
     void focusEditor();
   }
 
+  // Choosing Custom HTML with nothing written starts from the standard page, so there is something to edit.
+  let lastPage: string | undefined;
+  $effect(() => {
+    const page = form.page;
+    const changed = lastPage !== undefined && page !== lastPage;
+    lastPage = page;
+    if (changed && page === 'custom' && !readonly) untrack(() => { if (!form.customHtml.trim()) form.customHtml = loaded?.stock_html ?? ''; });
+  });
+
   function addMyIp() {
     const lines = parseLines(form.ips);
     form.ips = [...lines, clientIp].join('\n');
