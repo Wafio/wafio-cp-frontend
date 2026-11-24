@@ -55,6 +55,10 @@ describe('Trusted proxies, Cloudflare preset', () => {
 
   test('cannot be used on a read-only form', async () => {
     const html = await renderComponent(AppRouteForm, props({ disabled: true }));
-    expect(html).toMatch(/<fieldset[^>]*route-fieldset[^>]*disabled[^>]*>[\s\S]*Use Cloudflare's addresses/);
+    const open = html.search(/<fieldset[^>]*route-fieldset[^>]*disabled/);
+    expect(open).toBeGreaterThan(-1);
+    // Between that fieldset and the button every nested fieldset is closed again, so the button is still inside it.
+    const before = html.slice(open, html.indexOf("Use Cloudflare's addresses"));
+    expect(before.match(/<fieldset[\s>]/g)?.length).toBe((before.match(/<\/fieldset>/g)?.length ?? 0) + 1);
   });
 });

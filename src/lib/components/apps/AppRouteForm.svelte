@@ -24,15 +24,16 @@
   import ProtectionModeSelect from './ProtectionModeSelect.svelte';
   import Select from '#lib/components/ui/Select.svelte';
   import {
+    CLOUDFLARE_CONFIRM_TEXT,
     DEFAULT_FCGI_INDEX,
     PROXY_DEFAULTS,
     PROXY_LIMITS,
     cloneRouteForm,
     cloudflareHint,
     hasProxyErrors,
-    holdsOtherProxies,
     listenLabel,
     proxyErrorField,
+    replacesTrust,
     routeErrorList,
     validateRouteForm,
     withCloudflare,
@@ -134,7 +135,7 @@
   }
 
   function askCloudflare() {
-    if (holdsOtherProxies(form.proxy.trustedProxies)) confirmCloudflareOpen = true;
+    if (replacesTrust(form.proxy)) confirmCloudflareOpen = true;
     else useCloudflare();
   }
 
@@ -485,7 +486,7 @@
   onconfirm={useCloudflare}
   onclose={() => (confirmCloudflareOpen = false)}
 >
-  <p class="confirm-text">The entries now in the list are replaced with Cloudflare's addresses, and forwarded headers are trusted from them. Nothing is saved until you save the routing.</p>
+  <p class="confirm-text">{CLOUDFLARE_CONFIRM_TEXT}</p>
 </ConfirmModal>
 
 <style>

@@ -163,6 +163,12 @@ describe('HTTPS tab, Gateway', () => {
     expect(await render(state({ ...GATEWAY, source: '' }))).not.toContain('TLS-ALPN-01');
   });
 
+  test('with the redirect off the Let\'s Encrypt note asks for it, since HTTP-01 is answered there', async () => {
+    const html = await render(state({ mode: 'gateway', redirect_listen: '' }));
+    expect(html).toContain('<strong>Behind Cloudflare.</strong> Set SSL/TLS to Full. The first request usually fails, since Cloudflare does not pass the TLS-ALPN-01 check. Turn on Redirect HTTP to HTTPS, which answers HTTP-01; the agent then tries HTTP-01 10 minutes later');
+    expect(html).not.toContain('check; the agent tries HTTP-01');
+  });
+
   test('says nothing of a save before one is made', async () => {
     const html = await render(state(GATEWAY));
     expect(html).not.toContain('applies it within about a minute');

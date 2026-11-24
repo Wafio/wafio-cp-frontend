@@ -963,11 +963,16 @@ describe('the texts of the dialogs', () => {
     expect(gatewaySteps({ agent: '', ports: 'port 443', source: 'uploaded' })[1]).toContain("on the WAF agent's host");
   });
 
-  test('the Cloudflare note: Full always, the failing first request only for Let\'s Encrypt', () => {
-    expect(behindCloudflareText('uploaded')).toBe('Set SSL/TLS to Full.');
-    expect(behindCloudflareText('')).toBe('Set SSL/TLS to Full.');
-    expect(behindCloudflareText('acme')).toBe(
+  test('the Cloudflare note: Full always, the failing first request only for Let\'s Encrypt, the HTTP-01 retry only with the redirect on', () => {
+    for (const redirect of [true, false]) {
+      expect(behindCloudflareText('uploaded', redirect)).toBe('Set SSL/TLS to Full.');
+      expect(behindCloudflareText('', redirect)).toBe('Set SSL/TLS to Full.');
+    }
+    expect(behindCloudflareText('acme', true)).toBe(
       'Set SSL/TLS to Full. The first request usually fails, since Cloudflare does not pass the TLS-ALPN-01 check; the agent tries HTTP-01 10 minutes later, or at once with Try again now after 5 minutes.',
+    );
+    expect(behindCloudflareText('acme', false)).toBe(
+      'Set SSL/TLS to Full. The first request usually fails, since Cloudflare does not pass the TLS-ALPN-01 check. Turn on Redirect HTTP to HTTPS, which answers HTTP-01; the agent then tries HTTP-01 10 minutes later, or at once with Try again now after 5 minutes.',
     );
   });
 

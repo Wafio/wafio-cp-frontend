@@ -529,7 +529,7 @@
                 </Field>
               </div>
             {/if}
-            <p class="tls-hint"><strong>Behind Cloudflare.</strong> {behindCloudflareText(form.source)}</p>
+            <p class="tls-hint"><strong>Behind Cloudflare.</strong> {behindCloudflareText(form.source, form.redirect)}</p>
           {/if}
         </section>
 

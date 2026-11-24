@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import type { AgentRoute, App } from '../src/lib/api';
 import { formatDate } from '../src/lib/format';
 import {
+  CLOUDFLARE_CONFIRM_TEXT,
   CLOUDFLARE_RANGES,
   CLOUDFLARE_RANGES_DATE,
   agentRouteBodyFrom,
@@ -13,11 +14,11 @@ import {
   cloudflareHint,
   defaultProxyForm,
   emptyRouteForm,
-  holdsOtherProxies,
   isTrustedProxyEntry,
   proxyConfigFrom,
   proxyErrorField,
   proxyFormFrom,
+  replacesTrust,
   trustedProxyList,
   validateRouteForm,
   validateTrustedProxies,
@@ -150,22 +151,38 @@ describe('Cloudflare preset', () => {
     expect(out.reject_invalid_path_encoding).toBe(false);
   });
 
-  test('asks first only when the list holds an entry that is not Cloudflare\'s', () => {
-    expect(holdsOtherProxies('')).toBe(false);
-    expect(holdsOtherProxies(' \n\n')).toBe(false);
-    expect(holdsOtherProxies(CLOUDFLARE_RANGES.join('\n'))).toBe(false);
-    expect(holdsOtherProxies(CLOUDFLARE_RANGES.slice(0, 3).join(', '))).toBe(false);
-    expect(holdsOtherProxies('10.0.0.5')).toBe(true);
-    expect(holdsOtherProxies(`${CLOUDFLARE_RANGES[0]}\n10.0.0.5`)).toBe(true);
-    // An entry that is not an address is still the person's own text.
-    expect(holdsOtherProxies('proxy.local')).toBe(true);
+  test('asks first when it would replace entries that are not Cloudflare\'s, or the default trust of an empty list', () => {
+    const ask = (trustedProxies: string, trustForwarded: boolean) => replacesTrust({ trustForwarded, trustedProxies });
+    // Nothing is trusted now: forwarded headers off and no list.
+    expect(ask('', false)).toBe(false);
+    expect(ask(' \n\n', false)).toBe(false);
+    // Forwarded headers on and no list trusts this host and the private ranges.
+    expect(ask('', true)).toBe(true);
+    expect(ask(' \n\n', true)).toBe(true);
+    for (const on of [true, false]) {
+      expect(ask(CLOUDFLARE_RANGES.join('\n'), on)).toBe(false);
+      expect(ask(CLOUDFLARE_RANGES.slice(0, 3).join(', '), on)).toBe(false);
+      expect(ask('10.0.0.5', on)).toBe(true);
+      expect(ask(`${CLOUDFLARE_RANGES[0]}\n127.0.0.1`, on)).toBe(true);
+      // An entry that is not an address is still the person's own text.
+      expect(ask('proxy.local', on)).toBe(true);
+    }
   });
 
-  test('the hint carries the date of the copy and the advice to accept only your zone', () => {
+  test('the hint carries the date of the copy, what a shared range means, a Tunnel, and the server in front', () => {
     const hint = cloudflareHint();
     expect(hint.startsWith(`Cloudflare's addresses on ${formatDate(CLOUDFLARE_RANGES_DATE)}. `)).toBe(true);
     expect(hint).toContain("Every Cloudflare customer's traffic comes from them, so another Cloudflare account may be able to set the client address WAFio sees.");
-    expect(hint).toContain("To accept only your zone, use Authenticated Origin Pulls with your zone's own certificate, or a Cloudflare Tunnel.");
+    expect(hint).toContain('To accept only your zone, use a Cloudflare Tunnel and trust the address cloudflared connects from instead of this list.');
+    expect(hint).toContain('If a web server or load balancer of yours sits between Cloudflare and the agent, add its address to the list too (127.0.0.1 for one on this host).');
+    // The agent never asks a client for a certificate, so that setting would limit nobody.
+    expect(hint).not.toContain('Authenticated Origin Pulls');
+  });
+
+  test('the dialog says what is replaced, and that the server in front must be added', () => {
+    expect(CLOUDFLARE_CONFIRM_TEXT).toContain('They replace the entries now in the list or, when the list is empty, this host and the private networks that are trusted by default.');
+    expect(CLOUDFLARE_CONFIRM_TEXT).toContain('add its address to the list too (127.0.0.1 for one on this host). Without that address every visitor looks like that server.');
+    expect(CLOUDFLARE_CONFIRM_TEXT.endsWith('Nothing is saved until you save the routing.')).toBe(true);
   });
 });
 

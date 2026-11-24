@@ -527,12 +527,13 @@ export function gatewaySteps(o: { agent: string; ports: string; source: TLSSourc
   ];
 }
 
-/** The note under the Gateway addresses; only a Let's Encrypt request has a first try that Cloudflare breaks. */
-export function behindCloudflareText(source: TLSSource): string {
+/** The note under the Gateway addresses. Only a Let's Encrypt request has a first try that Cloudflare breaks, and its retry over HTTP-01 needs the redirect listener. */
+export function behindCloudflareText(source: TLSSource, redirect: boolean): string {
   const full = 'Set SSL/TLS to Full.';
-  return source === 'acme'
-    ? `${full} The first request usually fails, since Cloudflare does not pass the TLS-ALPN-01 check; the agent tries HTTP-01 10 minutes later, or at once with Try again now after 5 minutes.`
-    : full;
+  if (source !== 'acme') return full;
+  const first = `${full} The first request usually fails, since Cloudflare does not pass the TLS-ALPN-01 check`;
+  const retry = 'tries HTTP-01 10 minutes later, or at once with Try again now after 5 minutes.';
+  return redirect ? `${first}; the agent ${retry}` : `${first}. Turn on Redirect HTTP to HTTPS, which answers HTTP-01; the agent then ${retry}`;
 }
 
 export function backToProxyText(o: { agent: string; own: OwnListener; ports: string }): string {
