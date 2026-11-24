@@ -543,7 +543,7 @@ export function backToProxyText(o: { agent: string; own: OwnListener; ports: str
 
 /** Who may set the client address through forwarded headers: the Routing list, or by default loopback and the private ranges. */
 export function trustText(list: readonly string[]): string {
-  return `Forwarded headers are trusted from ${list.length > 0 ? list.join(', ') : 'loopback and the private ranges'}. In Gateway mode a load balancer or NAT that hides client addresses, a machine on your network or a container could set any client address. With nothing in front, turn this off on the Routing tab; behind a CDN, keep only its addresses.`;
+  return `Forwarded headers are trusted from ${list.length > 0 ? list.join(', ') : 'loopback and the private ranges'}. In Gateway mode a load balancer or NAT that hides client addresses, a machine on your network or a container could set any client address. With nothing in front, turn this off on the Routing tab; behind a CDN, keep only its addresses. Loopback is not needed in Gateway mode: no web server on this host stands in front of the agent.`;
 }
 
 export function savedInGatewayText(agent: string): string {

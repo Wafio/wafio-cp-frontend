@@ -294,7 +294,11 @@
     adopt(res.data, true);
     lastActionAt = Date.now();
     if (res.data.mode === 'gateway') savedInGateway = true;
-    else toast.success('Gateway settings saved.', 'Saved');
+    else {
+      toast.success('Gateway settings saved.', 'Saved');
+      // The bar goes away with the save, and the button that opened the dialog with it.
+      void refocus('title');
+    }
   }
 
   function refused(error: ApiError | undefined, sent: AppTLSInput) {
@@ -398,7 +402,7 @@
     }
   }
 
-  /** The DNS hint's way out: the form with the other mode, confirmed like any switch. What was typed stays. */
+  /** The DNS hint's way out: the form with the other mode, confirmed like any switch. Typed edits come back only if the dialog is cancelled. */
   function backToProxy() {
     if (!loaded) return;
     beforeBack = form;
@@ -625,11 +629,13 @@
       </fieldset>
     </div>
 
-    <div class="tls-actions">
-      <span class="tls-dirty" role="status">{footerNote}</span>
-      <Button variant="secondary" class="tls-tap" disabled={!isDirty || busy || readonly} onclick={discard}>Discard changes</Button>
-      <Button class="tls-tap" loading={saving} disabled={!isDirty || primaryLocked} onclick={uploadsInstead ? () => (uploadOpen = true) : requestSave}>{primaryLabel}</Button>
-    </div>
+    {#if isDirty || form.mode === 'gateway'}
+      <div class="tls-actions">
+        <span class="tls-dirty" role="status">{footerNote}</span>
+        <Button variant="secondary" class="tls-tap" disabled={!isDirty || busy || readonly} onclick={discard}>Discard changes</Button>
+        <Button class="tls-tap" loading={saving} disabled={!isDirty || primaryLocked} onclick={uploadsInstead ? () => (uploadOpen = true) : requestSave}>{primaryLabel}</Button>
+      </div>
+    {/if}
   {/if}
 </section>
 

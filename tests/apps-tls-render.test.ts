@@ -121,11 +121,11 @@ describe('Gateway tab, the switch off (Behind a proxy)', () => {
     expect(html).toContain('Requests reach edge-1 on the listen address of the Routing tab.');
   });
 
-  test('has no notice, and nothing to save yet', async () => {
+  test('has no notice, and no Save bar while there is nothing to save', async () => {
     const html = await render(state());
     expect(html).not.toContain('tls-notices');
-    expect(html).toMatch(disabledButton('Save changes'));
-    expect(html).toMatch(disabledButton('Discard changes'));
+    expect(html).not.toContain('tls-actions');
+    for (const label of ['Save changes', 'Discard changes']) expect(html).not.toContain(label);
     expect(html).not.toContain('Switch to Gateway');
     expect(html).not.toMatch(/<fieldset[^>]*tls-fieldset[^>]*disabled/);
     expect(tag(html, /<button[^>]*role="switch"[^>]*>/)).not.toContain('disabled');
@@ -188,6 +188,12 @@ describe('Gateway tab, Gateway', () => {
     const html = await render(state({ mode: 'gateway', redirect_listen: '' }));
     expect(html).toContain('<strong>Behind Cloudflare.</strong> Set SSL/TLS to Full. The first request usually fails, since Cloudflare does not pass the TLS-ALPN-01 check. Turn on Redirect HTTP to HTTPS, which answers HTTP-01; the agent then tries HTTP-01 10 minutes later');
     expect(html).not.toContain('check; the agent tries HTTP-01');
+  });
+
+  test('keeps the Save bar, with both buttons off, until something is edited', async () => {
+    const html = await render(state(GATEWAY));
+    expect(html).toContain('tls-actions');
+    for (const label of ['Save changes', 'Discard changes']) expect(html).toMatch(disabledButton(label));
   });
 
   test('says nothing of a save before one is made', async () => {
@@ -725,6 +731,23 @@ describe('focus after the control the person used has gone', () => {
 
 describe('the Gateway switch', () => {
   const source = readFileSync(new URL('../src/lib/components/apps/AppTLS.svelte', import.meta.url), 'utf8');
+
+  test('the Save bar is there when the form is edited or the switch is on, and not for an untouched app that is off', () => {
+    expect(source).toContain("{#if isDirty || form.mode === 'gateway'}\n      <div class=\"tls-actions\">");
+  });
+
+  test('a save Behind a proxy removes the bar with the button that opened its dialog, so focus goes to the title', () => {
+    const body = /async function save\(\) \{[\s\S]*?\n  \}\n/.exec(source)?.[0] ?? '';
+    expect(body).toMatch(/else \{\s*toast\.success\('Gateway settings saved\.', 'Saved'\);[^}]*void refocus\('title'\);\s*\}/);
+  });
+
+  test('Delete certificate follows the saved mode, so a stored key can be deleted by turning the switch on without saving', () => {
+    expect(source).toContain("const inGateway = $derived(loaded?.mode === 'gateway');");
+    const deletes = source.match(/<Button[^>]*onclick=\{askDelete\}>Delete certificate<\/Button>/g) ?? [];
+    expect(deletes).toHaveLength(2);
+    expect(deletes[0]).toContain('disabled={readonly || busy || inGateway}');
+    for (const button of deletes) expect(button).not.toContain('form.mode');
+  });
 
   test('flipping it chooses the mode through chooseMode, so it saves nothing and an off hides no edit', () => {
     expect(source).toContain("onchange={(on) => (form = chooseMode(form, on ? 'gateway' : 'proxy', stored))}");

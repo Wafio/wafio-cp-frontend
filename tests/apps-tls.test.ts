@@ -876,6 +876,7 @@ describe('the checks of a switch to Gateway', () => {
     expect(trust).toEqual({ id: 'trust', state: 'passed', text: trustText(list) });
     expect(trust?.text.startsWith('Forwarded headers are trusted from 127.0.0.1, 10.0.0.0/8. In Gateway mode')).toBe(true);
     expect(trust?.text).toContain('turn this off on the Routing tab; behind a CDN, keep only its addresses.');
+    expect(trust?.text).toContain('Loopback is not needed in Gateway mode: no web server on this host stands in front of the agent.');
     expect(trust?.text).not.toContain('private ranges');
   });
 
