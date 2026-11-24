@@ -748,6 +748,13 @@ export async function sendCertificate(
   }
 }
 
+/** Empties what the dialog holds, the chain too: a closed dialog keeps nothing of what was typed. */
+export function clearCertificateForm(form: CertificateForm): void {
+  form.chain = '';
+  form.key = '';
+  form.keyFile = null;
+}
+
 // ── The certificate card ───────────────────────────────────────────────────
 
 /** A certificate as the card shows it: the uploaded one, or the leaf the agent reports. */
@@ -888,9 +895,10 @@ export function certificateCard(state: AppTLSState, o: { assigned: boolean; agen
     }
     return card;
   }
-  if (current.state === 'active') {
+  if (current.state === 'active' && current.leaf_sha256 === state.certificate?.leaf_sha256) {
     card.inUse = true;
-  } else if (current.state === 'missing') {
+  } else if (current.state === 'missing' || current.state === 'active') {
+    // An active report with another leaf is the previous certificate still served.
     if (state.agent_host_bound === false) card.lines.push(notHostBoundText(o.agent));
     else if (hasLeaf(current)) card.lines.push(`${agentStart(o.agent)} serves the previous certificate until it receives this one, within about a minute.`);
     else card.lines.push(nothingServedText(redirect));
@@ -965,6 +973,10 @@ export const REQUEST_TEXT =
   "Starts a request now, unless Let's Encrypt set a wait after its rate limit. One request every 5 minutes. By requesting, you accept the Let's Encrypt Subscriber Agreement.";
 
 export const requestAgainText = (opensAt: number): string => `You can request again at ${formatDateTime(opensAt)}.`;
+
+/** The text of the confirm that deletes the uploaded certificates of an application. */
+export const deleteCertificateText = (app: string): string =>
+  `Deletes the private key of every certificate uploaded for ${app}. A copy an agent already received is not recalled.`;
 
 /** What an upload over a source that is not the uploaded one does, in the text of the dialog. */
 export function uploadSourceText(o: { gateway: boolean; agent: string }): string {

@@ -22,9 +22,11 @@ import {
   chooseMode,
   chosenFileText,
   classifyTLSRefusal,
+  clearCertificateForm,
   confirmFor,
   createEpoch,
   currentStatus,
+  deleteCertificateText,
   dnsWarningText,
   expiryBadge,
   expiryOf,
@@ -573,6 +575,15 @@ describe('sendCertificate', () => {
     expect(outcome.ok ? '' : outcome.message).toStartWith('This file is not PEM text. Convert it first (.pfx: openssl pkcs12 -in file.pfx -nodes -nocerts for the key, -nokeys for the chain).');
     expect(bodies).toEqual([]);
     expectDropped(f);
+  });
+
+  test('closing the dialog empties the chain, the key and the key file', () => {
+    const typed = form({ key: 'KEYTEXT' });
+    clearCertificateForm(typed);
+    expect(typed).toEqual({ chain: '', key: '', keyFile: null });
+    const chosen = form({ key: '', keyFile: new File(['KEYFROMFILE'], 'server.key') });
+    clearCertificateForm(chosen);
+    expect(chosen).toEqual({ chain: '', key: '', keyFile: null });
   });
 
   test('a key file over 16 KiB is not read and not sent, one of 16 KiB is', async () => {
@@ -1166,6 +1177,14 @@ describe('the card of the saved certificate source', () => {
     test('active: the leaf is the certificate\'s, in use', () => {
       expect(report({ state: 'active' })).toMatchObject({ inUse: true, lines: [], failure: null, facts: { issuer: 'Example CA' } });
     });
+    test('active with a leaf that is not the certificate\'s: not in use, the previous certificate is served', () => {
+      const other = report({ state: 'active', leaf_sha256: 'c'.repeat(64) });
+      expect(other).toMatchObject({ inUse: false, failure: null });
+      expect(other?.lines).toEqual(['edge-1 serves the previous certificate until it receives this one, within about a minute.']);
+      const none = report({ state: 'active', leaf_sha256: '' });
+      expect(none?.inUse).toBe(false);
+      expect(none?.lines[0]).toStartWith(NOTHING);
+    });
     test('missing while the agent has no host credential: not host-bound', () => {
       expect(report({ state: 'missing', leaf_sha256: '' }, { agent_host_bound: false })?.lines[0]).toStartWith('edge-1 needs a credential bound to its host to receive an uploaded key.');
       expect(report({ state: 'missing' }, { agent_host_bound: false })?.lines).toHaveLength(1);
@@ -1279,6 +1298,17 @@ describe('the request and the upload', () => {
     expect(uploadsFirst(none, { source: 'acme' }, null)).toBe(false);
     expect(uploadsFirst({ source: 'acme', certificate: certificate() }, { source: 'uploaded' }, null)).toBe(false);
     expect(uploadsFirst({ source: 'uploaded', certificate: null }, { source: 'uploaded' }, null)).toBe(false);
+  });
+
+  test('the delete confirm names the application and says an agent\'s copy is not recalled', () => {
+    expect(deleteCertificateText('Shop')).toBe('Deletes the private key of every certificate uploaded for Shop. A copy an agent already received is not recalled.');
+  });
+
+  test('the upload dialog empties the whole form when it closes, and the delete confirm uses the text of tls.ts', () => {
+    const dir = '../src/lib/components/apps/';
+    const upload = readFileSync(new URL(`${dir}CertificateUpload.svelte`, import.meta.url), 'utf8');
+    expect(upload).toMatch(/function close\(\) \{\s*clearCertificateForm\(form\);/);
+    expect(readFileSync(new URL(`${dir}AppTLS.svelte`, import.meta.url), 'utf8')).toContain('{deleteCertificateText(name)}');
   });
 
   test('a chosen key file is listed by name and size, and only that', () => {

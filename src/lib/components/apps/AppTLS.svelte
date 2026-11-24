@@ -31,6 +31,7 @@
     classifyTLSRefusal,
     confirmFor,
     createEpoch,
+    deleteCertificateText,
     dnsWarningText,
     expiryPhrase,
     formFromTLS,
@@ -655,7 +656,7 @@
   onconfirm={() => void deleteCertificate()}
   onclose={() => (deleteOpen = false)}
 >
-  <p>Deletes the private key of every certificate uploaded for {name}. A copy an agent already received is not recalled.</p>
+  <p>{deleteCertificateText(name)}</p>
   {#if deleteError}<Alert tone="error" title="Not deleted" message={deleteError} />{/if}
 </ConfirmModal>
 

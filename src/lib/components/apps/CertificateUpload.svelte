@@ -1,13 +1,14 @@
 <!--
   CertificateUpload: the dialog that uploads a certificate chain and its private key. The key lives in this component
-  only until a send ends: sendCertificate drops it and its file however the request ends, and closing the dialog drops
-  both. It never reaches storage, a URL, a toast or a log. Strings cannot be wiped, so this is best effort.
+  only until a send ends: sendCertificate drops it and its file however the request ends, and closing the dialog
+  empties the chain as well. It never reaches storage, a URL, a toast or a log. Strings cannot be wiped, so this is
+  best effort.
 -->
 <script lang="ts">
   import { uploadAppCertificate } from '#lib/api.js';
   import { focusFormError, submitScope } from '#lib/focus-error.js';
   import { Alert, Button, Field, Modal } from '#lib/components/ui/index.js';
-  import { chosenFileText, readPemFile, sendCertificate, uploadSourceText, type CertificateForm, type CertificatePlace, type CertificateRefusal } from './tls';
+  import { chosenFileText, clearCertificateForm, readPemFile, sendCertificate, uploadSourceText, type CertificateForm, type CertificatePlace, type CertificateRefusal } from './tls';
 
   let {
     open = false,
@@ -55,13 +56,8 @@
   const hasInput = $derived(form.chain !== '' || form.key !== '' || form.keyFile !== null);
   const ready = $derived(form.chain.trim() !== '' && (form.key.trim() !== '' || form.keyFile !== null));
 
-  function dropKey() {
-    form.key = '';
-    form.keyFile = null;
-  }
-
   function close() {
-    dropKey();
+    clearCertificateForm(form);
     errors = { chain: '', key: '', form: '' };
     keyCleared = false;
     onclose();
@@ -119,7 +115,6 @@
   title={replacing ? `Replace the certificate of ${appName || 'this application'}` : `Upload a certificate for ${appName || 'this application'}`}
   dirty={hasInput}
   dismissible={!sending}
-  ondiscard={dropKey}
   onclose={close}
 >
   <form id="{uid}-form" class="upload" onsubmit={submit}>
