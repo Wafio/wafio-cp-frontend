@@ -1,11 +1,12 @@
 <!--
   Application page, the single page of an application. Tabs live in the URL
   (?tab=monitoring|decisions|config|
-  blockwindow|maintenance|gateway|routing|assignment), so alerts and other pages can
+  blockwindow|maintenance|gateway|speed|routing|assignment), so alerts and other pages can
   deep-link and Back restores the previous tab.
 
-  Unsaved edits in Config (ConfigWafForm), Maintenance, Gateway and Routing
-  (AppRouteForm) are guarded on tab switch and on navigation away.
+  Unsaved edits in Config (ConfigWafForm), Maintenance, Gateway, Speed and Routing
+  (AppRouteForm) are guarded on tab switch and on navigation away. One feed reads
+  the delivery settings and the agent's report for Speed, Gateway and Routing.
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
@@ -42,6 +43,7 @@
   import AppConfigPanel from '#lib/components/apps/AppConfigPanel.svelte';
   import AppMaintenance from '#lib/components/apps/AppMaintenance.svelte';
   import AppRouteForm from '#lib/components/apps/AppRouteForm.svelte';
+  import AppSpeed from '#lib/components/apps/AppSpeed.svelte';
   import AppTLS from '#lib/components/apps/AppTLS.svelte';
   import DecisionFeed from '#lib/components/apps/DecisionFeed.svelte';
   import {
@@ -53,7 +55,9 @@
     readAppTab,
     writeAppRange,
   } from '#lib/components/apps/app-page.js';
+  import { createDeliveryFeed } from '#lib/components/apps/delivery-feed.svelte.js';
   import { APP_STATE_TEXT, appState, routeSummary } from '#lib/components/apps/inventory.js';
+  import { partLine, tooOld } from '#lib/components/apps/speed.js';
   import { expiryBadge, routingNote, withoutDnsHints } from '#lib/components/apps/tls.js';
   import { usePageDetail } from '#lib/page-meta.svelte.js';
   import {
@@ -167,10 +171,18 @@
     tabValue = tab;
   });
 
+  // ── Delivery settings (Speed, and the status lines of Gateway and Routing) ──
+  const delivery = createDeliveryFeed({
+    projectId: () => projectId,
+    appId: () => appId,
+    active: () => app !== null && (tab === 'speed' || tab === 'gateway' || tab === 'routing'),
+  });
+
   // ── Unsaved changes ──────────────────────────────────────────────
   let configDirty = $state(false);
   let maintenanceDirty = $state(false);
   let tlsDirty = $state(false);
+  let speedDirty = $state(false);
   let routingDirty = $state(false);
   let discardPrompt = $state<{ resolve: (ok: boolean) => void } | null>(null);
 
@@ -187,7 +199,7 @@
     prompt?.resolve(ok);
   }
 
-  const unsaved = createDirtyTracker(() => configDirty || maintenanceDirty || tlsDirty || routingDirty, { confirm: () => askDiscard() });
+  const unsaved = createDirtyTracker(() => configDirty || maintenanceDirty || tlsDirty || speedDirty || routingDirty, { confirm: () => askDiscard() });
   unsaved.guardNavigation();
 
   // A panel that is no longer shown cannot hold unsaved edits (Back/Forward
@@ -196,6 +208,7 @@
     if (tab !== 'config') configDirty = false;
     if (tab !== 'maintenance') maintenanceDirty = false;
     if (tab !== 'gateway') tlsDirty = false;
+    if (tab !== 'speed') speedDirty = false;
     if (tab !== 'routing') routingDirty = false;
   });
 
@@ -214,6 +227,7 @@
     configDirty = false;
     maintenanceDirty = false;
     tlsDirty = false;
+    speedDirty = false;
     routingDirty = false;
     await navigate(appTabSearch(page.url.searchParams, target));
   }
@@ -241,6 +255,12 @@
   const proxyWarnings = $derived(app?.proxy_warnings?.length ? app.proxy_warnings : (route?.proxy_warnings ?? []));
   const routingRedacted = $derived(hasRedactedSecrets(app, route));
   const routeInitial: RouteForm = $derived(app ? routeFormFromApp(app, route) : emptyRouteForm());
+  // The path prefix is part of the redirects the agent reports on. An agent that is too old for it takes none, but a saved one can be cleared.
+  const savedPrefix = $derived(routeInitial.proxy.stripPathPrefix);
+  const prefixLine = $derived(
+    partLine({ delivery: delivery.state, part: 'redirects', label: 'the path prefix', inUse: savedPrefix !== '', now: delivery.now, waitingSince: delivery.waitingSince, quiet: ['unassigned'] }),
+  );
+  const prefixLocked = $derived(tooOld(delivery.state, 'redirects') && savedPrefix === '');
 
   async function saveRouting(form: RouteForm): Promise<string | null> {
     const current = app;
@@ -249,16 +269,23 @@
     // Redacted header values arrive blank; saving them would erase the real ones.
     if (hasRedactedSecrets(current, route)) return 'Header values are hidden at your access level, so the routing cannot be saved. Reload the page.';
     const my = epoch;
+    const hadPrefix = savedPrefix !== '';
+    const failed = (error: ApiError) => {
+      // An agent that is too old for the path prefix has told the control plane so: read the flags again.
+      if (error.code === 'AGENT_TOO_OLD') void delivery.refresh();
+      return appWriteErrorMessage(error, 'Could not save the routing.');
+    };
     if (assignment) {
       // The protection mode is part of the assignment (Assignment tab); an
       // empty mode leaves it unchanged.
       const { mode: _mode, ...body } = agentRouteBodyFrom(form);
       const res = await updateAgentRoute(projectId, assignment.agent_id, current.id, body);
-      if (res.error) return appWriteErrorMessage(res.error, 'Could not save the routing.');
+      if (res.error) return failed(res.error);
     } else {
       const res = await updateApp(projectId, current.id, appUpdateBodyFrom(form));
-      if (res.error) return appWriteErrorMessage(res.error, 'Could not save the routing.');
+      if (res.error) return failed(res.error);
     }
+    if (hadPrefix || form.proxy.stripPathPrefix.trim() !== '') delivery.acted();
     if (my !== epoch) return null;
     routingDirty = false;
     toast.success(assignment ? 'The agent applies it with its next configuration bundle.' : 'Assign a WAF agent to serve the application.', 'Routing saved');
@@ -292,6 +319,7 @@
     configDirty = false;
     maintenanceDirty = false;
     tlsDirty = false;
+    speedDirty = false;
     routingDirty = false;
     toast.success('Its routing, configuration history and custom rules were removed.', `${current.name} deleted`);
     await goto(`${base}/projects/${projectId}/apps`);
@@ -408,9 +436,12 @@
           routing={routeInitial}
           routingHref={appHref(base, projectId, app.id, 'routing')}
           initial={tls ?? undefined}
+          {delivery}
           bind:dirty={tlsDirty}
           onchange={(next) => (tls = withoutDnsHints(next))}
         />
+      {:else if tab === 'speed'}
+        <AppSpeed projectId={projectId} appId={app.id} feed={delivery} canConfigure={ctx.canConfigure} bind:dirty={speedDirty} />
       {:else if tab === 'routing'}
         <section class="routing" aria-labelledby="routing-title">
           <header>
@@ -442,6 +473,8 @@
             showMode={false}
             modeHint={assignment ? 'The protection mode is part of the assignment: change it on the Assignment tab.' : undefined}
             requireRouting={assigned}
+            prefixLine={prefixLine}
+            prefixLocked={prefixLocked}
             disabled={!ctx.canConfigure || routingRedacted}
             hiddenHeaderValues={routingRedacted && Boolean(app.proxy_header_values_set || route?.proxy_header_values_set)}
             bind:dirty={routingDirty}
@@ -458,7 +491,10 @@
           canConfigure={ctx.canConfigure}
           maintenance={Boolean(app.maintenance_enabled)}
           {tls}
-          onchanged={() => load({ silent: true })}
+          onchanged={() => {
+            void delivery.refresh();
+            return load({ silent: true });
+          }}
         />
       {/if}
     </div>

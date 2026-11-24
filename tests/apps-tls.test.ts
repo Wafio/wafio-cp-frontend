@@ -4,6 +4,8 @@ import { formatDate, formatDateTime } from '../src/lib/format';
 import type { ApiError, ApiResult, AppTLSCertificate, AppTLSCertificateInput, AppTLSInput, AppTLSState, AppTLSStatus } from '../src/lib/api';
 import {
   ACME_REQUEST_GAP_MS,
+  CANONICAL_HOST_MESSAGE,
+  CANONICAL_HOST_NOTE,
   CERTIFICATE_IN_USE_TEXT,
   MOVED_UPLOAD_TEXT,
   NO_REPORT_AFTER_MS,
@@ -17,6 +19,7 @@ import {
   assignmentNote,
   backToProxyText,
   behindCloudflareText,
+  canonicalHostHint,
   canonicalListen,
   certificateAlerts,
   certificateCard,
@@ -38,6 +41,7 @@ import {
   formFromTLS,
   gatewayChecks,
   gatewaySteps,
+  hostChoices,
   inputFromForm,
   listenersOverlap,
   mergeEdits,
@@ -64,10 +68,12 @@ import {
   tlsNotices,
   tlsProblem,
   trustText,
+  unusedMainHostText,
   uploadSourceText,
   uploadsFirst,
   waitingSince,
   withoutDnsHints,
+  withoutMainHost,
   type CertificateForm,
   type CheckState,
   type TLSCheck,
@@ -989,8 +995,9 @@ describe('the texts of the dialogs', () => {
   });
 
   test('with the switch off the tab says where requests arrive and who handles HTTPS, and names the agent', () => {
-    expect(proxyModeText('edge-1')).toBe('Requests reach edge-1 on the listen address of the Routing tab. A web server or CDN in front of it handles HTTPS.');
-    expect(proxyModeText('')).toBe('Requests reach the WAF agent on the listen address of the Routing tab. A web server or CDN in front of it handles HTTPS.');
+    const mainHost = ' Main host name and the HTTP to HTTPS redirect work in Gateway mode only. In Behind a proxy mode the web server in front of WAFio handles them.';
+    expect(proxyModeText('edge-1')).toBe(`Requests reach edge-1 on the listen address of the Routing tab. A web server or CDN in front of it handles HTTPS.${mainHost}`);
+    expect(proxyModeText('')).toBe(`Requests reach the WAF agent on the listen address of the Routing tab. A web server or CDN in front of it handles HTTPS.${mainHost}`);
   });
 
   test('switching back names the listen address of the Routing tab and the ports it frees', () => {
@@ -1454,5 +1461,99 @@ describe('the TLS files hold no storage, log or markup', () => {
   test.each(['tls.ts', 'AppTLS.svelte', 'CertificateUpload.svelte'])('%s', (file) => {
     const source = readFileSync(new URL(`../src/lib/components/apps/${file}`, import.meta.url), 'utf8');
     for (const word of ['{@html', 'localStorage', 'sessionStorage', 'console.']) expect(source).not.toContain(word);
+  });
+});
+
+describe('main host name', () => {
+  const two = ['shop.example.com', 'www.shop.example.com'];
+
+  test('is part of the form and of what is sent, empty when none is saved', () => {
+    expect(formFromTLS(input({ hosts: two })).canonicalHost).toBe('');
+    expect(formFromTLS(input({ hosts: two, canonical_host: 'shop.example.com' })).canonicalHost).toBe('shop.example.com');
+    expect(inputFromForm(formFromTLS(input({ hosts: two }))).canonical_host).toBe('');
+    expect(inputFromForm({ ...formFromTLS(input({ hosts: two })), canonicalHost: 'www.shop.example.com' }).canonical_host).toBe('www.shop.example.com');
+  });
+
+  test('is trimmed and lower-cased like the host names, and kept in the stored form only when set', () => {
+    expect(normalizeTLS(input({ hosts: two, canonical_host: ' WWW.Shop.Example.com ' })).settings?.canonical_host).toBe('www.shop.example.com');
+    expect('canonical_host' in (normalizeTLS(input({ hosts: two, canonical_host: '  ' })).settings ?? {})).toBe(false);
+    expect('canonical_host' in (normalizeTLS(input({ hosts: two })).settings ?? {})).toBe(false);
+  });
+
+  test('must be one of the host names, and the host names are judged first', () => {
+    expect(normalizeTLS(input({ hosts: two, canonical_host: 'other.example.com' })).error).toEqual({ field: 'canonical_host', message: CANONICAL_HOST_MESSAGE });
+    expect(normalizeTLS(input({ hosts: ['bad_host'], canonical_host: 'other.example.com' })).error?.field).toBe('hosts');
+    // Before the listen address: the person fixes the host names first.
+    expect(normalizeTLS(input({ hosts: two, listen: 'nope', canonical_host: 'other.example.com' })).error?.field).toBe('canonical_host');
+    expect(tlsProblem(input({ hosts: two, canonical_host: 'other.example.com' }), { host: '', port: null })).toEqual({ field: 'canonical_host', message: CANONICAL_HOST_MESSAGE });
+  });
+
+  test('is kept as a draft in Behind a proxy mode, where it is still one of the host names', () => {
+    expect(normalizeTLS(input({ mode: 'proxy', source: '', hosts: two, canonical_host: 'shop.example.com' })).settings?.canonical_host).toBe('shop.example.com');
+    expect(normalizeTLS(input({ mode: 'proxy', source: '', hosts: [], canonical_host: 'shop.example.com' })).error?.field).toBe('canonical_host');
+  });
+
+  test('is not judged when a name is not ASCII: the server decides', () => {
+    expect(normalizeTLS(input({ hosts: ['İ.example.com'], canonical_host: 'İ.example.com' })).error).toBeUndefined();
+    expect(normalizeTLS(input({ hosts: two, canonical_host: 'İ.example.com' })).error).toBeUndefined();
+  });
+
+  test('a change of it is a change of the settings, and Behind a proxy puts the saved one back', () => {
+    const saved = input({ hosts: two, canonical_host: 'shop.example.com' });
+    expect(sameTLS(saved, { ...saved, canonical_host: 'www.shop.example.com' })).toBe(false);
+    expect(sameTLS(saved, { ...saved, canonical_host: ' SHOP.example.com ' })).toBe(true);
+    expect(sameTLS(input({ hosts: two }), input({ hosts: two, canonical_host: '' }))).toBe(true);
+    const typed = { ...formFromTLS(saved), mode: 'gateway' as const, canonicalHost: 'www.shop.example.com' };
+    expect(chooseMode(typed, 'proxy', saved).canonicalHost).toBe('shop.example.com');
+  });
+
+  test('is chosen from the host names as typed: trimmed, lower-cased, once, with No redirect first', () => {
+    expect(hostChoices([' Shop.Example.com', '', 'www.shop.example.com', 'shop.example.com'], '')).toEqual([
+      { value: '', label: 'No redirect' },
+      { value: 'shop.example.com', label: 'shop.example.com' },
+      { value: 'www.shop.example.com', label: 'www.shop.example.com' },
+    ]);
+    expect(hostChoices([], '')).toEqual([{ value: '', label: 'No redirect' }]);
+  });
+
+  test('a main host name that is no longer a host name stays in the list, so the error can name what is wrong', () => {
+    expect(hostChoices(['a.example.com'], 'gone.example.com').map((o) => o.value)).toEqual(['', 'a.example.com', 'gone.example.com']);
+  });
+
+  test('the help says what visitors get, and with the HTTP redirect on where HTTP visitors go', () => {
+    const base = 'Visitors who use another host name of this application are sent to this one, with the same path. Example: www.shop.example.com to shop.example.com.';
+    expect(canonicalHostHint(false, '')).toBe(base);
+    expect(canonicalHostHint(false, 'shop.example.com')).toBe(base);
+    // With no main host chosen there is no hop to promise, redirect on or not.
+    expect(canonicalHostHint(true, '')).toBe(base);
+    expect(canonicalHostHint(true, 'shop.example.com')).toBe(`${base} HTTP visitors go straight to https://shop.example.com.`);
+    expect(CANONICAL_HOST_NOTE).toBe('Browsers remember this redirect. If you change it later, returning visitors may still go to the old name for a while.');
+  });
+
+  test('a main host name saved in Gateway is named behind a proxy, with why it still matters', () => {
+    expect(unusedMainHostText('shop.example.com')).toBe(
+      'Main host name shop.example.com is saved but not used in this mode. An agent that is too old for it cannot take this application until you clear it.',
+    );
+  });
+
+  test('clearing it sends the saved settings with only the main host name emptied, and none of what the server only reports', () => {
+    const saved = state({ mode: 'proxy', hosts: ['shop.example.com', 'www.shop.example.com'], listen: '0.0.0.0:443', redirect_listen: '0.0.0.0:80', source: 'acme', canonical_host: 'shop.example.com' });
+    const body = withoutMainHost(saved);
+    expect(body).toEqual({ mode: 'proxy', hosts: ['shop.example.com', 'www.shop.example.com'], listen: '0.0.0.0:443', redirect_listen: '0.0.0.0:80', source: 'acme', canonical_host: '' });
+    expect(saved.canonical_host).toBe('shop.example.com');
+    // A proxy application with no host names keeps none: the server accepts that in this mode.
+    expect(withoutMainHost(state({ mode: 'proxy', hosts: [], source: '', canonical_host: 'x.example.com' })).hosts).toEqual([]);
+  });
+
+  test('a refusal of it is shown under it, and an agent that is too old for it is said as that', () => {
+    expect(classifyTLSRefusal({ error: 'canonical_host: Choose one of the host names above.', code: 'INVALID_TLS_SETTINGS', field: 'canonical_host' }, 'edge-1')).toEqual({
+      kind: 'field',
+      field: 'canonical_host',
+      message: CANONICAL_HOST_MESSAGE,
+    });
+    expect(classifyTLSRefusal({ error: 'x', code: 'AGENT_TOO_OLD', agent: 'edge-1', feature: 'redirects' }, 'edge-1')).toEqual({
+      kind: 'too-old',
+      message: 'edge-1 is too old for the main host name. Upgrade it to use this.',
+    });
   });
 });

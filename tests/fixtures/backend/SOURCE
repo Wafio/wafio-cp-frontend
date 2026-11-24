@@ -4,4 +4,4 @@
 # and copy the files here. scripts/ci-local.sh compares both sets when wafio-cp-backend sits next to this repo.
 repo: Wafio/wafio-cp-backend
 path: test/frontend-fixtures/
-files: correlation.json defaults.json maintenance.json tls-checks.json
+files: correlation.json defaults.json delivery-checks.json maintenance.json tls-checks.json trace-keep-names.json

@@ -39,6 +39,79 @@
       }
     },
     {
+      "name": "a main host name is one of the hosts",
+      "in": {
+        "mode": "gateway",
+        "hosts": [
+          "shop.example.com",
+          "www.shop.example.com"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": "acme",
+        "canonical_host": "shop.example.com"
+      },
+      "result": {
+        "mode": "gateway",
+        "hosts": [
+          "shop.example.com",
+          "www.shop.example.com"
+        ],
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "",
+        "source": "acme",
+        "canonical_host": "shop.example.com"
+      }
+    },
+    {
+      "name": "a main host name is trimmed and lower-cased like the hosts",
+      "in": {
+        "mode": "gateway",
+        "hosts": [
+          "shop.example.com",
+          "www.shop.example.com"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": "acme",
+        "canonical_host": " WWW.Shop.Example.com "
+      },
+      "result": {
+        "mode": "gateway",
+        "hosts": [
+          "shop.example.com",
+          "www.shop.example.com"
+        ],
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "",
+        "source": "acme",
+        "canonical_host": "www.shop.example.com"
+      }
+    },
+    {
+      "name": "a proxy application keeps its main host name as a draft",
+      "in": {
+        "mode": "proxy",
+        "hosts": [
+          "shop.example.com"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": "",
+        "canonical_host": "shop.example.com"
+      },
+      "result": {
+        "mode": "proxy",
+        "hosts": [
+          "shop.example.com"
+        ],
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "",
+        "source": "",
+        "canonical_host": "shop.example.com"
+      }
+    },
+    {
       "name": "names are trimmed, lower-cased and kept once",
       "in": {
         "mode": "gateway",
@@ -575,6 +648,49 @@
       },
       "field": "hosts",
       "message": "at most 100 hosts"
+    },
+    {
+      "name": "a main host name that is not one of the hosts",
+      "in": {
+        "mode": "gateway",
+        "hosts": [
+          "a.example.com"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": "uploaded",
+        "canonical_host": "b.example.com"
+      },
+      "field": "canonical_host",
+      "message": "Choose one of the host names above."
+    },
+    {
+      "name": "a main host name that is a prefix of a host",
+      "in": {
+        "mode": "gateway",
+        "hosts": [
+          "a.example.com"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": "uploaded",
+        "canonical_host": "a.example.co"
+      },
+      "field": "canonical_host",
+      "message": "Choose one of the host names above."
+    },
+    {
+      "name": "a main host name while the hosts are empty",
+      "in": {
+        "mode": "proxy",
+        "hosts": null,
+        "listen": "",
+        "redirect_listen": "",
+        "source": "",
+        "canonical_host": "a.example.com"
+      },
+      "field": "canonical_host",
+      "message": "Choose one of the host names above."
     },
     {
       "name": "wildcard",

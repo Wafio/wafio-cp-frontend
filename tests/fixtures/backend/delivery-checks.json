@@ -1,0 +1,2460 @@
+{
+  "compression": [
+    {
+      "name": "empty is the default",
+      "in": {
+        "enabled": false,
+        "min_bytes": null
+      },
+      "result": {
+        "enabled": false,
+        "min_bytes": 1024
+      }
+    },
+    {
+      "name": "on with the default",
+      "in": {
+        "enabled": true,
+        "min_bytes": null
+      },
+      "result": {
+        "enabled": true,
+        "min_bytes": 1024
+      }
+    },
+    {
+      "name": "an explicit zero is kept",
+      "in": {
+        "enabled": true,
+        "min_bytes": 0
+      },
+      "result": {
+        "enabled": true,
+        "min_bytes": 0
+      }
+    },
+    {
+      "name": "the largest size",
+      "in": {
+        "enabled": false,
+        "min_bytes": 1048576
+      },
+      "result": {
+        "enabled": false,
+        "min_bytes": 1048576
+      }
+    },
+    {
+      "name": "over the largest size",
+      "in": {
+        "enabled": false,
+        "min_bytes": 1048577
+      },
+      "field": "min_bytes",
+      "message": "Enter a size from 0 bytes to 1 MiB."
+    },
+    {
+      "name": "negative",
+      "in": {
+        "enabled": false,
+        "min_bytes": -1
+      },
+      "field": "min_bytes",
+      "message": "Enter a size from 0 bytes to 1 MiB."
+    },
+    {
+      "name": "checked while off",
+      "in": {
+        "enabled": false,
+        "min_bytes": -5
+      },
+      "field": "min_bytes",
+      "message": "Enter a size from 0 bytes to 1 MiB."
+    }
+  ],
+  "static_files": [
+    {
+      "name": "empty is off with the defaults",
+      "in": {
+        "enabled": false,
+        "root": "",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "result": {
+        "enabled": false,
+        "root": "",
+        "missing": "app",
+        "max_age_s": 0
+      }
+    },
+    {
+      "name": "a folder",
+      "in": {
+        "enabled": true,
+        "root": "/var/www/shop/public",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "result": {
+        "enabled": true,
+        "root": "/var/www/shop/public",
+        "missing": "app",
+        "max_age_s": 0
+      }
+    },
+    {
+      "name": "spaces and trailing slashes are removed",
+      "in": {
+        "enabled": true,
+        "root": " /var/www/shop/public// ",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "result": {
+        "enabled": true,
+        "root": "/var/www/shop/public",
+        "missing": "app",
+        "max_age_s": 0
+      }
+    },
+    {
+      "name": "a folder is kept while off",
+      "in": {
+        "enabled": false,
+        "root": "/srv/site",
+        "missing": "not_found",
+        "max_age_s": 60
+      },
+      "result": {
+        "enabled": false,
+        "root": "/srv/site",
+        "missing": "not_found",
+        "max_age_s": 60
+      }
+    },
+    {
+      "name": "a deploy link folder",
+      "in": {
+        "enabled": true,
+        "root": "/srv/app/current/public",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "result": {
+        "enabled": true,
+        "root": "/srv/app/current/public",
+        "missing": "app",
+        "max_age_s": 0
+      }
+    },
+    {
+      "name": "under /home is the agent's to refuse",
+      "in": {
+        "enabled": true,
+        "root": "/home/deploy/site",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "result": {
+        "enabled": true,
+        "root": "/home/deploy/site",
+        "missing": "app",
+        "max_age_s": 0
+      }
+    },
+    {
+      "name": "a name that only starts like a forbidden one",
+      "in": {
+        "enabled": true,
+        "root": "/var/lib/wafio-waf-agent-x",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "result": {
+        "enabled": true,
+        "root": "/var/lib/wafio-waf-agent-x",
+        "missing": "app",
+        "max_age_s": 0
+      }
+    },
+    {
+      "name": "365 days",
+      "in": {
+        "enabled": false,
+        "root": "",
+        "missing": "",
+        "max_age_s": 31536000
+      },
+      "result": {
+        "enabled": false,
+        "root": "",
+        "missing": "app",
+        "max_age_s": 31536000
+      }
+    },
+    {
+      "name": "on without a folder",
+      "in": {
+        "enabled": true,
+        "root": "",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "Enter a full path that starts with /, such as /var/www/shop/public, without . or .. parts."
+    },
+    {
+      "name": "a relative folder",
+      "in": {
+        "enabled": false,
+        "root": "var/www",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "Enter a full path that starts with /, such as /var/www/shop/public, without . or .. parts."
+    },
+    {
+      "name": "a dot segment",
+      "in": {
+        "enabled": false,
+        "root": "/var/./www",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "Enter a full path that starts with /, such as /var/www/shop/public, without . or .. parts."
+    },
+    {
+      "name": "a dot dot segment",
+      "in": {
+        "enabled": false,
+        "root": "/var/www/../etc",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "Enter a full path that starts with /, such as /var/www/shop/public, without . or .. parts."
+    },
+    {
+      "name": "an empty segment",
+      "in": {
+        "enabled": false,
+        "root": "/var//www",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "Enter a full path that starts with /, such as /var/www/shop/public, without . or .. parts."
+    },
+    {
+      "name": "only slashes",
+      "in": {
+        "enabled": false,
+        "root": "//",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "Enter a full path that starts with /, such as /var/www/shop/public, without . or .. parts."
+    },
+    {
+      "name": "a control character",
+      "in": {
+        "enabled": false,
+        "root": "/var/www\n/x",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "Enter a full path that starts with /, such as /var/www/shop/public, without . or .. parts."
+    },
+    {
+      "name": "a NUL byte",
+      "in": {
+        "enabled": false,
+        "root": "/var/www\u0000",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "Enter a full path that starts with /, such as /var/www/shop/public, without . or .. parts."
+    },
+    {
+      "name": "invalid UTF-8",
+      "in": {
+        "enabled": false,
+        "root": "/var/www/\ufffd",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "Enter a full path that starts with /, such as /var/www/shop/public, without . or .. parts."
+    },
+    {
+      "name": "1025 bytes",
+      "in": {
+        "enabled": false,
+        "root": "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "Enter a full path that starts with /, such as /var/www/shop/public, without . or .. parts."
+    },
+    {
+      "name": "missing is one of two values",
+      "in": {
+        "enabled": false,
+        "root": "",
+        "missing": "both",
+        "max_age_s": 0
+      },
+      "field": "missing",
+      "message": "Choose \"Ask the application\" or \"Answer Not found\"."
+    },
+    {
+      "name": "a negative browser cache time",
+      "in": {
+        "enabled": false,
+        "root": "",
+        "missing": "",
+        "max_age_s": -1
+      },
+      "field": "max_age_s",
+      "message": "Enter a time from 0 seconds to 365 days."
+    },
+    {
+      "name": "over 365 days",
+      "in": {
+        "enabled": false,
+        "root": "",
+        "missing": "",
+        "max_age_s": 31536001
+      },
+      "field": "max_age_s",
+      "message": "Enter a time from 0 seconds to 365 days."
+    }
+  ],
+  "cache": [
+    {
+      "name": "on with the defaults",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": null
+      },
+      "result": {
+        "enabled": true,
+        "default_ttl_s": 3600,
+        "stale_if_error_s": 600,
+        "disk_bytes": 1073741824,
+        "memory_bytes": 33554432,
+        "max_object_bytes": 8388608,
+        "session_cookies": [],
+        "rules": []
+      }
+    },
+    {
+      "name": "zero turns the default lifetime off",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": 0,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": null
+      },
+      "result": {
+        "enabled": true,
+        "default_ttl_s": 0,
+        "stale_if_error_s": 600,
+        "disk_bytes": 1073741824,
+        "memory_bytes": 33554432,
+        "max_object_bytes": 8388608,
+        "session_cookies": [],
+        "rules": []
+      }
+    },
+    {
+      "name": "zero sends the error while down",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": 0,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": null
+      },
+      "result": {
+        "enabled": true,
+        "default_ttl_s": 3600,
+        "stale_if_error_s": 0,
+        "disk_bytes": 1073741824,
+        "memory_bytes": 33554432,
+        "max_object_bytes": 8388608,
+        "session_cookies": [],
+        "rules": []
+      }
+    },
+    {
+      "name": "memory zero keeps copies on disk only",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": 0,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": null
+      },
+      "result": {
+        "enabled": true,
+        "default_ttl_s": 3600,
+        "stale_if_error_s": 600,
+        "disk_bytes": 1073741824,
+        "memory_bytes": 0,
+        "max_object_bytes": 8388608,
+        "session_cookies": [],
+        "rules": []
+      }
+    },
+    {
+      "name": "the largest values",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": 31536000,
+        "stale_if_error_s": 86400,
+        "disk_bytes": 1099511627776,
+        "memory_bytes": 4294967296,
+        "max_object_bytes": 67108864,
+        "session_cookies": null,
+        "rules": null
+      },
+      "result": {
+        "enabled": true,
+        "default_ttl_s": 31536000,
+        "stale_if_error_s": 86400,
+        "disk_bytes": 1099511627776,
+        "memory_bytes": 4294967296,
+        "max_object_bytes": 67108864,
+        "session_cookies": [],
+        "rules": []
+      }
+    },
+    {
+      "name": "the smallest disk with an object that fits",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": 16777216,
+        "memory_bytes": null,
+        "max_object_bytes": 16777216,
+        "session_cookies": null,
+        "rules": null
+      },
+      "result": {
+        "enabled": true,
+        "default_ttl_s": 3600,
+        "stale_if_error_s": 600,
+        "disk_bytes": 16777216,
+        "memory_bytes": 33554432,
+        "max_object_bytes": 16777216,
+        "session_cookies": [],
+        "rules": []
+      }
+    },
+    {
+      "name": "default lifetime over 365 days",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": 31536001,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": null
+      },
+      "field": "default_ttl_s",
+      "message": "Enter a time from 0 seconds to 365 days."
+    },
+    {
+      "name": "default lifetime negative",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": -1,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": null
+      },
+      "field": "default_ttl_s",
+      "message": "Enter a time from 0 seconds to 365 days."
+    },
+    {
+      "name": "stale time over a day",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": 86401,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": null
+      },
+      "field": "stale_if_error_s",
+      "message": "Enter a time from 0 seconds to 1 day."
+    },
+    {
+      "name": "disk below 16 MiB",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": 16777215,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": null
+      },
+      "field": "disk_bytes",
+      "message": "Enter a size from 16 MiB to 1 TiB."
+    },
+    {
+      "name": "disk zero is not the default",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": 0,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": null
+      },
+      "field": "disk_bytes",
+      "message": "Enter a size from 16 MiB to 1 TiB."
+    },
+    {
+      "name": "disk over 1 TiB",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": 1099511627777,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": null
+      },
+      "field": "disk_bytes",
+      "message": "Enter a size from 16 MiB to 1 TiB."
+    },
+    {
+      "name": "memory over 4 GiB",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": 4294967297,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": null
+      },
+      "field": "memory_bytes",
+      "message": "Enter a size from 0 bytes to 4 GiB."
+    },
+    {
+      "name": "object below 1 KiB",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": 1023,
+        "session_cookies": null,
+        "rules": null
+      },
+      "field": "max_object_bytes",
+      "message": "Enter a size from 1 KiB to 64 MiB, no more than the disk space."
+    },
+    {
+      "name": "object over 64 MiB",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": 1073741824,
+        "memory_bytes": null,
+        "max_object_bytes": 67108865,
+        "session_cookies": null,
+        "rules": null
+      },
+      "field": "max_object_bytes",
+      "message": "Enter a size from 1 KiB to 64 MiB, no more than the disk space."
+    },
+    {
+      "name": "object larger than the disk",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": 16777216,
+        "memory_bytes": null,
+        "max_object_bytes": 16777217,
+        "session_cookies": null,
+        "rules": null
+      },
+      "field": "max_object_bytes",
+      "message": "Enter a size from 1 KiB to 64 MiB, no more than the disk space."
+    },
+    {
+      "name": "checked while off",
+      "in": {
+        "enabled": false,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": 1,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": null
+      },
+      "field": "disk_bytes",
+      "message": "Enter a size from 16 MiB to 1 TiB."
+    },
+    {
+      "name": "twenty cookie names",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": [
+          "caa",
+          "cba",
+          "cca",
+          "cda",
+          "cea",
+          "cfa",
+          "cga",
+          "cha",
+          "cia",
+          "cja",
+          "cka",
+          "cla",
+          "cma",
+          "cna",
+          "coa",
+          "cpa",
+          "cqa",
+          "cra",
+          "csa",
+          "cta"
+        ],
+        "rules": null
+      },
+      "result": {
+        "enabled": true,
+        "default_ttl_s": 3600,
+        "stale_if_error_s": 600,
+        "disk_bytes": 1073741824,
+        "memory_bytes": 33554432,
+        "max_object_bytes": 8388608,
+        "session_cookies": [
+          "caa",
+          "cba",
+          "cca",
+          "cda",
+          "cea",
+          "cfa",
+          "cga",
+          "cha",
+          "cia",
+          "cja",
+          "cka",
+          "cla",
+          "cma",
+          "cna",
+          "coa",
+          "cpa",
+          "cqa",
+          "cra",
+          "csa",
+          "cta"
+        ],
+        "rules": []
+      }
+    },
+    {
+      "name": "twenty-one cookie names",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": [
+          "caa",
+          "cba",
+          "cca",
+          "cda",
+          "cea",
+          "cfa",
+          "cga",
+          "cha",
+          "cia",
+          "cja",
+          "cka",
+          "cla",
+          "cma",
+          "cna",
+          "coa",
+          "cpa",
+          "cqa",
+          "cra",
+          "csa",
+          "cta",
+          "cua"
+        ],
+        "rules": null
+      },
+      "field": "session_cookies",
+      "message": "Use up to 20 cookie names of up to 64 characters, without spaces, commas, semicolons or =."
+    },
+    {
+      "name": "a name of 64 characters",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "rules": null
+      },
+      "result": {
+        "enabled": true,
+        "default_ttl_s": 3600,
+        "stale_if_error_s": 600,
+        "disk_bytes": 1073741824,
+        "memory_bytes": 33554432,
+        "max_object_bytes": 8388608,
+        "session_cookies": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "rules": []
+      }
+    },
+    {
+      "name": "a name of 65 characters",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "rules": null
+      },
+      "field": "session_cookies",
+      "message": "Use up to 20 cookie names of up to 64 characters, without spaces, commas, semicolons or =."
+    },
+    {
+      "name": "a name with a space",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": [
+          "my cookie"
+        ],
+        "rules": null
+      },
+      "field": "session_cookies",
+      "message": "Use up to 20 cookie names of up to 64 characters, without spaces, commas, semicolons or =."
+    },
+    {
+      "name": "a name with a comma",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": [
+          "a,b"
+        ],
+        "rules": null
+      },
+      "field": "session_cookies",
+      "message": "Use up to 20 cookie names of up to 64 characters, without spaces, commas, semicolons or =."
+    },
+    {
+      "name": "a name with a semicolon",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": [
+          "a;b"
+        ],
+        "rules": null
+      },
+      "field": "session_cookies",
+      "message": "Use up to 20 cookie names of up to 64 characters, without spaces, commas, semicolons or =."
+    },
+    {
+      "name": "a name with an equals sign",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": [
+          "a=b"
+        ],
+        "rules": null
+      },
+      "field": "session_cookies",
+      "message": "Use up to 20 cookie names of up to 64 characters, without spaces, commas, semicolons or =."
+    },
+    {
+      "name": "a name with a non-ASCII character",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": [
+          "séssion"
+        ],
+        "rules": null
+      },
+      "field": "session_cookies",
+      "message": "Use up to 20 cookie names of up to 64 characters, without spaces, commas, semicolons or =."
+    },
+    {
+      "name": "a name with a control character",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": [
+          "a\tb"
+        ],
+        "rules": null
+      },
+      "field": "session_cookies",
+      "message": "Use up to 20 cookie names of up to 64 characters, without spaces, commas, semicolons or =."
+    },
+    {
+      "name": "a cookie name with a dot, dash and underscore",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": [
+          ".AspNetCore.Session",
+          "wp-postpass_x",
+          "my_id"
+        ],
+        "rules": null
+      },
+      "result": {
+        "enabled": true,
+        "default_ttl_s": 3600,
+        "stale_if_error_s": 600,
+        "disk_bytes": 1073741824,
+        "memory_bytes": 33554432,
+        "max_object_bytes": 8388608,
+        "session_cookies": [
+          ".AspNetCore.Session",
+          "wp-postpass_x",
+          "my_id"
+        ],
+        "rules": []
+      }
+    },
+    {
+      "name": "fifty rules",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "/paa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pba",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pca",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pda",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pea",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pfa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pga",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pha",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pia",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pja",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pka",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pla",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pma",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pna",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/poa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/ppa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pqa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pra",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/psa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pta",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pua",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pva",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pwa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pxa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pya",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pza",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pab",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pbb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pcb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pdb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/peb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pfb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pgb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/phb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pib",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pjb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pkb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/plb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pmb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pnb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pob",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/ppb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pqb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/prb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/psb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/ptb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pub",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pvb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pwb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pxb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          }
+        ]
+      },
+      "result": {
+        "enabled": true,
+        "default_ttl_s": 3600,
+        "stale_if_error_s": 600,
+        "disk_bytes": 1073741824,
+        "memory_bytes": 33554432,
+        "max_object_bytes": 8388608,
+        "session_cookies": [],
+        "rules": [
+          {
+            "prefix": "/paa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pba",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pca",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pda",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pea",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pfa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pga",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pha",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pia",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pja",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pka",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pla",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pma",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pna",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/poa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/ppa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pqa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pra",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/psa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pta",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pua",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pva",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pwa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pxa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pya",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pza",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pab",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pbb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pcb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pdb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/peb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pfb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pgb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/phb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pib",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pjb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pkb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/plb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pmb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pnb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pob",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/ppb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pqb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/prb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/psb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/ptb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pub",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pvb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pwb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pxb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "fifty-one rules",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "/paa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pba",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pca",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pda",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pea",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pfa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pga",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pha",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pia",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pja",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pka",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pla",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pma",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pna",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/poa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/ppa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pqa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pra",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/psa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pta",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pua",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pva",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pwa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pxa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pya",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pza",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pab",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pbb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pcb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pdb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/peb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pfb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pgb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/phb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pib",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pjb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pkb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/plb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pmb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pnb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pob",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/ppb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pqb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/prb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/psb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/ptb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pub",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pvb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pwb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pxb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/pyb",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          }
+        ]
+      },
+      "field": "rules",
+      "message": "Up to 50 rules."
+    },
+    {
+      "name": "a keep rule",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "/blog/",
+            "action": "cache",
+            "ttl_s": 600,
+            "signed_in": false
+          }
+        ]
+      },
+      "result": {
+        "enabled": true,
+        "default_ttl_s": 3600,
+        "stale_if_error_s": 600,
+        "disk_bytes": 1073741824,
+        "memory_bytes": 33554432,
+        "max_object_bytes": 8388608,
+        "session_cookies": [],
+        "rules": [
+          {
+            "prefix": "/blog/",
+            "action": "cache",
+            "ttl_s": 600,
+            "signed_in": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "a keep rule for 365 days",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "/",
+            "action": "cache",
+            "ttl_s": 31536000,
+            "signed_in": false
+          }
+        ]
+      },
+      "result": {
+        "enabled": true,
+        "default_ttl_s": 3600,
+        "stale_if_error_s": 600,
+        "disk_bytes": 1073741824,
+        "memory_bytes": 33554432,
+        "max_object_bytes": 8388608,
+        "session_cookies": [],
+        "rules": [
+          {
+            "prefix": "/",
+            "action": "cache",
+            "ttl_s": 31536000,
+            "signed_in": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "a rule for the signed-in",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "/docs",
+            "action": "cache",
+            "ttl_s": 60,
+            "signed_in": true
+          }
+        ]
+      },
+      "result": {
+        "enabled": true,
+        "default_ttl_s": 3600,
+        "stale_if_error_s": 600,
+        "disk_bytes": 1073741824,
+        "memory_bytes": 33554432,
+        "max_object_bytes": 8388608,
+        "session_cookies": [],
+        "rules": [
+          {
+            "prefix": "/docs",
+            "action": "cache",
+            "ttl_s": 60,
+            "signed_in": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "a rule without a slash",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "blog",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          }
+        ]
+      },
+      "field": "rules[0].prefix",
+      "message": "Enter a path that starts with /."
+    },
+    {
+      "name": "a rule with an empty path",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          }
+        ]
+      },
+      "field": "rules[0].prefix",
+      "message": "Enter a path that starts with /."
+    },
+    {
+      "name": "a rule with a query",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "/a?b=1",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          }
+        ]
+      },
+      "field": "rules[0].prefix",
+      "message": "Use a path of up to 256 characters without spaces, ? or #."
+    },
+    {
+      "name": "a rule with a fragment",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "/a#b",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          }
+        ]
+      },
+      "field": "rules[0].prefix",
+      "message": "Use a path of up to 256 characters without spaces, ? or #."
+    },
+    {
+      "name": "a rule with a space",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "/a b",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          }
+        ]
+      },
+      "field": "rules[0].prefix",
+      "message": "Use a path of up to 256 characters without spaces, ? or #."
+    },
+    {
+      "name": "a rule path of 257 bytes",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          }
+        ]
+      },
+      "field": "rules[0].prefix",
+      "message": "Use a path of up to 256 characters without spaces, ? or #."
+    },
+    {
+      "name": "two rules for one path",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "/a",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/b",
+            "action": "bypass",
+            "ttl_s": 0,
+            "signed_in": false
+          },
+          {
+            "prefix": "/a",
+            "action": "cache",
+            "ttl_s": 5,
+            "signed_in": false
+          }
+        ]
+      },
+      "field": "rules[2].prefix",
+      "message": "Each path can have one rule."
+    },
+    {
+      "name": "a keep rule without a lifetime",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "/a",
+            "action": "cache",
+            "ttl_s": 0,
+            "signed_in": false
+          }
+        ]
+      },
+      "field": "rules[0].ttl_s",
+      "message": "Enter a time from 1 second to 365 days."
+    },
+    {
+      "name": "a keep rule over 365 days",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "/a",
+            "action": "cache",
+            "ttl_s": 31536001,
+            "signed_in": false
+          }
+        ]
+      },
+      "field": "rules[0].ttl_s",
+      "message": "Enter a time from 1 second to 365 days."
+    },
+    {
+      "name": "a rule with another action",
+      "in": {
+        "enabled": true,
+        "default_ttl_s": null,
+        "stale_if_error_s": null,
+        "disk_bytes": null,
+        "memory_bytes": null,
+        "max_object_bytes": null,
+        "session_cookies": null,
+        "rules": [
+          {
+            "prefix": "/a",
+            "action": "keep",
+            "ttl_s": 5,
+            "signed_in": false
+          }
+        ]
+      },
+      "field": "rules[0].action",
+      "message": "Choose \"Keep for a time\" or \"Never keep\"."
+    }
+  ],
+  "strip_path_prefix": [
+    {
+      "name": "strip_path_prefix (empty)",
+      "in": ""
+    },
+    {
+      "name": "strip_path_prefix /shop",
+      "in": "/shop"
+    },
+    {
+      "name": "strip_path_prefix /shop/cart",
+      "in": "/shop/cart"
+    },
+    {
+      "name": "strip_path_prefix /a.b",
+      "in": "/a.b"
+    },
+    {
+      "name": "strip_path_prefix /aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...",
+      "in": "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "strip_path_prefix /",
+      "in": "/",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix shop",
+      "in": "shop",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix /shop/",
+      "in": "/shop/",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix //shop",
+      "in": "//shop",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix /shop//cart",
+      "in": "/shop//cart",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix /.",
+      "in": "/.",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix /..",
+      "in": "/..",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix /shop/../admin",
+      "in": "/shop/../admin",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix /shop cart",
+      "in": "/shop cart",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix /shop?x",
+      "in": "/shop?x",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix /shop#x",
+      "in": "/shop#x",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix /shop%2fx",
+      "in": "/shop%2fx",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix /shop\\x",
+      "in": "/shop\\x",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix /shöp",
+      "in": "/shöp",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    },
+    {
+      "name": "strip_path_prefix /aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...",
+      "in": "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "message": "Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters."
+    }
+  ],
+  "canonical_host": [
+    {
+      "name": "main host (empty)",
+      "host": "",
+      "hosts": [
+        "shop.example.com",
+        "www.shop.example.com"
+      ]
+    },
+    {
+      "name": "main host shop.example.com",
+      "host": "shop.example.com",
+      "hosts": [
+        "shop.example.com",
+        "www.shop.example.com"
+      ]
+    },
+    {
+      "name": "main host www.shop.example.com",
+      "host": "www.shop.example.com",
+      "hosts": [
+        "shop.example.com",
+        "www.shop.example.com"
+      ]
+    },
+    {
+      "name": "main host other.example.com",
+      "host": "other.example.com",
+      "hosts": [
+        "shop.example.com",
+        "www.shop.example.com"
+      ],
+      "message": "Choose one of the host names above."
+    },
+    {
+      "name": "main host shop.example",
+      "host": "shop.example",
+      "hosts": [
+        "shop.example.com",
+        "www.shop.example.com"
+      ],
+      "message": "Choose one of the host names above."
+    }
+  ],
+  "purge": [
+    {
+      "name": "app (empty)",
+      "scope": "app",
+      "url": ""
+    },
+    {
+      "name": "url /products/42",
+      "scope": "url",
+      "url": "/products/42",
+      "result": "/products/42"
+    },
+    {
+      "name": "url /p?b=2\u0026a=1",
+      "scope": "url",
+      "url": "/p?b=2\u0026a=1",
+      "result": "/p?b=2\u0026a=1"
+    },
+    {
+      "name": "url HTTPS://Shop.Example.COM:443/Products/42...",
+      "scope": "url",
+      "url": "HTTPS://Shop.Example.COM:443/Products/42?Q=1",
+      "result": "https://shop.example.com/Products/42?Q=1"
+    },
+    {
+      "name": "url http://shop.example.com:8080/x",
+      "scope": "url",
+      "url": "http://shop.example.com:8080/x",
+      "result": "http://shop.example.com:8080/x"
+    },
+    {
+      "name": "url https://shop.example.com",
+      "scope": "url",
+      "url": "https://shop.example.com",
+      "result": "https://shop.example.com/"
+    },
+    {
+      "name": "prefix /blog/",
+      "scope": "prefix",
+      "url": "/blog/",
+      "result": "/blog/"
+    },
+    {
+      "name": "prefix https://shop.example.com/blog",
+      "scope": "prefix",
+      "url": "https://shop.example.com/blog",
+      "result": "https://shop.example.com/blog"
+    },
+    {
+      "name": "url (empty)",
+      "scope": "url",
+      "url": "",
+      "message": "Enter an address that starts with http://, https:// or /.",
+      "field": "url"
+    },
+    {
+      "name": "url products/42",
+      "scope": "url",
+      "url": "products/42",
+      "message": "Enter an address that starts with http://, https:// or /.",
+      "field": "url"
+    },
+    {
+      "name": "url ftp://shop.example.com/x",
+      "scope": "url",
+      "url": "ftp://shop.example.com/x",
+      "message": "Enter an address that starts with http://, https:// or /.",
+      "field": "url"
+    },
+    {
+      "name": "url https://user@shop.example.com/x",
+      "scope": "url",
+      "url": "https://user@shop.example.com/x",
+      "message": "Enter an address that starts with http://, https:// or /.",
+      "field": "url"
+    },
+    {
+      "name": "url /a b",
+      "scope": "url",
+      "url": "/a b",
+      "message": "Enter an address that starts with http://, https:// or /.",
+      "field": "url"
+    },
+    {
+      "name": "url /a#b",
+      "scope": "url",
+      "url": "/a#b",
+      "message": "Enter an address that starts with http://, https:// or /.",
+      "field": "url"
+    },
+    {
+      "name": "prefix /blog?a=1",
+      "scope": "prefix",
+      "url": "/blog?a=1",
+      "message": "Enter a path that starts with /, without a query.",
+      "field": "url"
+    },
+    {
+      "name": "all /x",
+      "scope": "all",
+      "url": "/x",
+      "message": "Choose one address, everything under a path, or everything.",
+      "field": "scope"
+    }
+  ]
+}

@@ -39,6 +39,8 @@ export interface ProxyForm {
   idleConnMs: number;
   hostMode: HostHeaderMode;
   hostValue: string;
+  /** proxy_config.strip_path_prefix: '' for none, else a path such as /shop. */
+  stripPathPrefix: string;
   /** proxy_config.trust_forwarded; absent or null = false. */
   trustForwarded: boolean;
   /** proxy_config.trusted_proxies as editable text, one IP or CIDR per line. */
@@ -117,6 +119,7 @@ export function defaultProxyForm(): ProxyForm {
     idleConnMs: PROXY_DEFAULTS.idleConnMs,
     hostMode: 'preserve',
     hostValue: '',
+    stripPathPrefix: '',
     // A new route trusts no forwarded header: the socket is the client.
     trustForwarded: false,
     trustedProxies: '',
@@ -193,6 +196,7 @@ export const MANAGED_PROXY_KEYS: readonly string[] = Object.freeze([
   'conn_wait_ms',
   'idle_conn_ms',
   'host_header',
+  'strip_path_prefix',
   'req_headers',
   'resp_headers',
   'trust_forwarded',
@@ -230,6 +234,7 @@ export function proxyFormFrom(pc: ProxyConfig | null | undefined): ProxyForm {
     idleConnMs: positive(cfg.idle_conn_ms, PROXY_DEFAULTS.idleConnMs),
     hostMode: mode === 'upstream' || mode === 'custom' ? mode : 'preserve',
     hostValue: cfg.host_header?.value ?? '',
+    stripPathPrefix: typeof cfg.strip_path_prefix === 'string' ? cfg.strip_path_prefix : '',
     // Absent or null means not trusted; only explicit true opts in.
     trustForwarded: cfg.trust_forwarded === true,
     trustedProxies: Array.isArray(cfg.trusted_proxies) ? cfg.trusted_proxies.filter((v): v is string => typeof v === 'string').join('\n') : '',
@@ -314,6 +319,8 @@ export function proxyConfigFrom(p: ProxyForm): ProxyConfig {
     conn_wait_ms: p.connWaitMs,
     idle_conn_ms: p.idleConnMs,
     host_header: { mode: p.hostMode, value: p.hostMode === 'custom' ? p.hostValue.trim() : '' },
+    // Left out when empty: the save replaces the whole object, so a missing key is no prefix.
+    ...(p.stripPathPrefix.trim() ? { strip_path_prefix: p.stripPathPrefix.trim() } : {}),
     req_headers: headerRulesTo(p.reqHeaders),
     resp_headers: headerRulesTo(p.respHeaders),
     trust_forwarded: p.trustForwarded,
@@ -520,6 +527,7 @@ export type RouteField =
   | 'proxy.connWaitMs'
   | 'proxy.idleConnMs'
   | 'proxy.hostValue'
+  | 'proxy.stripPathPrefix'
   | 'proxy.trustedProxies'
   | 'proxy.reqHeaders'
   | 'proxy.respHeaders';
@@ -544,10 +552,20 @@ export const ROUTE_FIELD_LABELS: Record<RouteField, string> = {
   'proxy.connWaitMs': 'Connection wait timeout',
   'proxy.idleConnMs': 'Idle connection timeout',
   'proxy.hostValue': 'Custom Host value',
+  'proxy.stripPathPrefix': 'Remove path prefix',
   'proxy.trustedProxies': 'Trusted proxies',
   'proxy.reqHeaders': 'Request headers',
   'proxy.respHeaders': 'Response headers',
 };
+
+export const STRIP_PREFIX_MESSAGE = 'Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters.';
+
+/** Why a path prefix is refused (domain.CheckStripPathPrefix), or null: '/' and segments, no empty, . or .. segment, printable ASCII without space, ?, #, % or backslash, at most 256 bytes. '' is no prefix. */
+export function checkStripPathPrefix(prefix: string): string | null {
+  if (prefix === '') return null;
+  if (!prefix.startsWith('/') || prefix.length > 256 || /[^!-~]|[?#%\\]/.test(prefix)) return STRIP_PREFIX_MESSAGE;
+  return prefix.slice(1).split('/').some((segment) => segment === '' || segment === '.' || segment === '..') ? STRIP_PREFIX_MESSAGE : null;
+}
 
 /** Only [A-Za-z0-9-] (domain validHeaderName). */
 export function isProxyHeaderName(name: string): boolean {
@@ -693,6 +711,8 @@ export function validateRouteForm(form: RouteForm, opts: ValidateRouteOptions = 
     if (!p.hostValue.trim()) errors['proxy.hostValue'] = 'Enter the Host value to send upstream.';
     else if (/[\r\n]/.test(p.hostValue)) errors['proxy.hostValue'] = 'Host value must not contain line breaks.';
   }
+  const prefix = checkStripPathPrefix(p.stripPathPrefix.trim());
+  if (prefix) errors['proxy.stripPathPrefix'] = prefix;
   if (p.trustForwarded) {
     const proxies = validateTrustedProxies(p.trustedProxies);
     if (proxies) errors['proxy.trustedProxies'] = proxies;

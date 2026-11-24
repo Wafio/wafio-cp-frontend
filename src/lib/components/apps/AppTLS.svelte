@@ -15,11 +15,15 @@
   import { focusFormError } from '#lib/focus-error.js';
   import { createPoller } from '#lib/polling.svelte.js';
   import { toast } from '#lib/stores/toast.js';
-  import { Alert, Badge, Button, ConfirmModal, DateTime, EmptyState, Field, InlineError, Spinner, Switch } from '#lib/components/ui/index.js';
+  import { Alert, Badge, Button, ConfirmModal, DateTime, EmptyState, Field, InlineError, Select, Spinner, Switch } from '#lib/components/ui/index.js';
   import ChoiceGroup from '#lib/components/waf-policy/ChoiceGroup.svelte';
   import CertificateUpload from './CertificateUpload.svelte';
+  import type { DeliveryFeed } from './delivery-feed.svelte.js';
+  import PartStatus from './PartStatus.svelte';
+  import { partLine, tooOld } from './speed';
   import { trustedProxyList, type ProxyForm, type RouteForm } from './route-model';
   import {
+    CANONICAL_HOST_NOTE,
     CERTIFICATE_IN_USE_TEXT,
     MOVED_UPLOAD_TEXT,
     OWN_LISTENER,
@@ -28,6 +32,7 @@
     actionErrorText,
     backToProxyText,
     behindCloudflareText,
+    canonicalHostHint,
     certificateAlerts,
     certificateCard,
     chooseMode,
@@ -40,6 +45,7 @@
     formFromTLS,
     gatewayChecks,
     gatewaySteps,
+    hostChoices,
     inputFromForm,
     mergeEdits,
     mergePoll,
@@ -59,7 +65,9 @@
     switchDisabled,
     tlsNotices,
     tlsProblem,
+    unusedMainHostText,
     uploadsFirst,
+    withoutMainHost,
     type CertificateFacts,
     type CheckState,
     type TLSConfirm,
@@ -80,6 +88,7 @@
     dirty = $bindable(false),
     onchange = undefined,
     initial = undefined,
+    delivery = undefined,
   }: {
     projectId: string;
     appId: string;
@@ -101,10 +110,12 @@
     onchange?: (state: AppTLSState) => void;
     /** Settings to start from, as the server answers them (the page's first read, or a test). The panel still reads them. */
     initial?: AppTLSState;
+    /** What the agent reported about the main host name; without it the field shows no status. */
+    delivery?: DeliveryFeed;
   } = $props();
 
   const uid = $props.id();
-  const BLANK: AppTLSInput = { mode: 'proxy', hosts: [], listen: '', redirect_listen: '', source: '' };
+  const BLANK: AppTLSInput = { mode: 'proxy', hosts: [], listen: '', redirect_listen: '', source: '', canonical_host: '' };
 
   // ── Data ────────────────────────────────────────────────────────────────
   const seed = untrack(() => initial ?? null);
@@ -177,7 +188,7 @@
   // ── Form state ──────────────────────────────────────────────────────────
   let attempted = $state(false);
   let touched = $state<Partial<Record<TLSField, boolean>>>({});
-  let serverError = $state<{ field: 'hosts' | 'listen' | 'redirect_listen' | 'source'; message: string; sent: string } | null>(null);
+  let serverError = $state<{ field: 'hosts' | 'listen' | 'redirect_listen' | 'source' | 'canonical_host'; message: string; sent: string } | null>(null);
   let saveError = $state('');
   /** The refusal is about a Routing setting. */
   let routingError = $state(false);
@@ -220,6 +231,23 @@
   // An agent that cannot serve certificates takes no request.
   const canRequest = $derived(assigned && loaded?.agent_supported !== false);
 
+  // The main host name: its choices, and what the agent says about it. An agent that is too old for it takes none, but a saved one can be cleared.
+  const savedMainHost = $derived(loaded?.canonical_host ?? '');
+  const mainHostOld = $derived(tooOld(delivery?.state ?? null, 'redirects'));
+  const mainHostLocked = $derived(mainHostOld && savedMainHost === '');
+  const hostOptions = $derived.by(() => {
+    const all = hostChoices(form.hosts.split('\n'), form.canonicalHost);
+    return mainHostOld ? all.filter((option) => option.value === '' || option.value === savedMainHost) : all;
+  });
+  const mainHostLine = $derived(
+    delivery
+      ? partLine({ delivery: delivery.state, part: 'redirects', label: 'the main host name', inUse: inGateway && savedMainHost !== '', now: delivery.now, waitingSince: delivery.waitingSince, quiet: ['unassigned', 'offline'] })
+      : null,
+  );
+
+  // A main host name saved in Gateway stays stored when the application goes back behind a proxy, where the form shows no field for it.
+  const unusedMainHost = $derived(loaded && loaded.mode !== 'gateway' ? savedMainHost : '');
+
   $effect(() => {
     dirty = isDirty;
   });
@@ -231,7 +259,7 @@
     return undefined;
   }
 
-  const shownErrors = $derived({ hosts: shown('hosts'), listen: shown('listen'), redirect_listen: shown('redirect_listen'), source: shown('source') });
+  const shownErrors = $derived({ hosts: shown('hosts'), listen: shown('listen'), redirect_listen: shown('redirect_listen'), source: shown('source'), canonical_host: shown('canonical_host') });
 
   function touch(field: TLSField) {
     touched[field] = true;
@@ -274,6 +302,7 @@
   async function save() {
     if (!canConfigure || busy || !loaded) return;
     const sent = input;
+    const hadMainHost = savedMainHost !== '';
     busy = true;
     saving = true;
     saveError = '';
@@ -293,12 +322,36 @@
     beforeBack = null;
     adopt(res.data, true);
     lastActionAt = Date.now();
+    if (hadMainHost || (res.data.canonical_host ?? '') !== '') delivery?.acted();
     if (res.data.mode === 'gateway') savedInGateway = true;
     else {
       toast.success('Gateway settings saved.', 'Saved');
       // The bar goes away with the save, and the button that opened the dialog with it.
       void refocus('title');
     }
+  }
+
+  /** Saves the stored settings with no main host name, the way out when this mode shows no field for it. */
+  async function clearMainHost() {
+    if (!canConfigure || busy || !loaded) return;
+    busy = true;
+    saveError = '';
+    routingError = false;
+    const my = epoch.next();
+    const res = await putAppTLS(projectId, appId, withoutMainHost(loaded));
+    busy = false;
+    if (!epoch.isCurrent(my) || res.error?.kind === 'aborted') return;
+    if (res.error || !res.data) {
+      saveError = classifyTLSRefusal(res.error, agentName).message;
+      void focusFormError(root);
+      return;
+    }
+    adopt(res.data, true);
+    lastActionAt = Date.now();
+    delivery?.acted();
+    toast.success('Main host name cleared.', 'Saved');
+    // The button went with the line it belonged to.
+    void refocus('title');
   }
 
   function refused(error: ApiError | undefined, sent: AppTLSInput) {
@@ -316,6 +369,8 @@
     }
     routingError = refusal.kind === 'routing';
     saveError = refusal.message;
+    // An agent that is too old for the main host name has told the control plane so: read the flags again.
+    if (refusal.kind === 'too-old') void delivery?.refresh();
     // An open dialog shows the text itself.
     if (confirm === null) void focusFormError(root);
   }
@@ -506,6 +561,14 @@
 
         {#if form.mode !== 'gateway'}
           <p class="tls-hint">{proxyModeText(agentName)}</p>
+          {#if unusedMainHost !== ''}
+            <div class="tls-unused">
+              <p class="tls-hint">{unusedMainHostText(unusedMainHost)}</p>
+              {#if canConfigure}
+                <Button variant="secondary" size="sm" class="tls-tap" disabled={busy} onclick={() => void clearMainHost()}>Clear main host name</Button>
+              {/if}
+            </div>
+          {/if}
         {:else}
           <section class="tls-block" aria-labelledby="{uid}-addresses">
             <h3 id="{uid}-addresses">Addresses</h3>
@@ -528,6 +591,16 @@
                   ></textarea>
                 {/snippet}
               </Field>
+            </div>
+
+            <div class="tls-field" onfocusout={() => touch('canonical_host')}>
+              <Field label="Main host name" error={shownErrors.canonical_host} hint={canonicalHostHint(form.redirect, form.canonicalHost)}>
+                {#snippet children(c)}
+                  <Select {...c} options={hostOptions} bind:value={form.canonicalHost} disabled={readonly || mainHostLocked} />
+                {/snippet}
+              </Field>
+              <p class="tls-hint">{CANONICAL_HOST_NOTE}</p>
+              <PartStatus line={mainHostLine} />
             </div>
 
             <div class="tls-field" onfocusout={() => touch('listen')}>
@@ -718,6 +791,9 @@
   .tls-block { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; padding-top: var(--sp-5); border-top: 1px solid var(--border); }
   .tls-block h3 { margin: 0; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text-primary); }
   .tls-field { min-width: 0; }
+  .tls-field .tls-hint { margin-top: var(--sp-2); }
+  .tls-unused { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); }
+  .tls-field :global(.part-status:not(:empty)) { margin-top: var(--sp-2); }
   .tls-form textarea, .tls-form input.mono { font-family: var(--font-mono); font-size: var(--fs-sm); }
   .tls-form textarea { resize: vertical; line-height: 1.5; }
 
