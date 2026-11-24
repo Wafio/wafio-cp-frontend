@@ -26,6 +26,7 @@
     REQUEST_TEXT,
     actionErrorText,
     backToProxyText,
+    behindCloudflareText,
     certificateAlerts,
     certificateCard,
     chooseMode,
@@ -528,6 +529,7 @@
                 </Field>
               </div>
             {/if}
+            <p class="tls-hint"><strong>Behind Cloudflare.</strong> {behindCloudflareText(form.source)}</p>
           {/if}
         </section>
 

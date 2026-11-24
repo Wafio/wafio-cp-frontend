@@ -2,19 +2,26 @@
 // SCRIPT_INVALID handling.
 import { describe, expect, test } from 'bun:test';
 import type { AgentRoute, App } from '../src/lib/api';
+import { formatDate } from '../src/lib/format';
 import {
+  CLOUDFLARE_RANGES,
+  CLOUDFLARE_RANGES_DATE,
   agentRouteBodyFrom,
   appUpdateBodyFrom,
   routeFormFromAgentRoute,
   routeFormFromApp,
+  cloudflareHint,
   defaultProxyForm,
   emptyRouteForm,
+  holdsOtherProxies,
+  isTrustedProxyEntry,
   proxyConfigFrom,
   proxyErrorField,
   proxyFormFrom,
   trustedProxyList,
   validateRouteForm,
   validateTrustedProxies,
+  withCloudflare,
 } from '../src/lib/components/apps/route-model';
 import { SCRIPT_MAX_BYTES, ruleSaveError, scriptBytes, scriptSizeError } from '../src/lib/components/rules/script-access';
 import { configWarningTone } from '../src/lib/tone';
@@ -114,6 +121,51 @@ describe('trusted proxies', () => {
   test('warnings use the generic warning tone', () => {
     expect(configWarningTone('TRUSTED_PROXIES_UNSET')).toBe('warning');
     expect(configWarningTone('')).toBe('neutral');
+  });
+});
+
+describe('Cloudflare preset', () => {
+  test('the list is valid for the server, without repeats, and within 64 entries', () => {
+    expect(CLOUDFLARE_RANGES.length).toBeGreaterThan(0);
+    expect(CLOUDFLARE_RANGES.length).toBeLessThanOrEqual(64);
+    expect(new Set(CLOUDFLARE_RANGES).size).toBe(CLOUDFLARE_RANGES.length);
+    for (const entry of CLOUDFLARE_RANGES) expect(isTrustedProxyEntry(entry)).toBe(true);
+    expect(validateTrustedProxies(CLOUDFLARE_RANGES.join('\n'))).toBeNull();
+    expect(CLOUDFLARE_RANGES.some((entry) => entry.includes(':'))).toBe(true);
+    expect(CLOUDFLARE_RANGES.some((entry) => !entry.includes(':'))).toBe(true);
+  });
+
+  test('replaces the list and trusts forwarded headers, and the saved routing carries exactly those entries', () => {
+    const form = emptyRouteForm();
+    form.proxy.trustedProxies = '10.0.0.5\n192.0.2.0/24';
+    form.proxy.rejectInvalidPathEncoding = false;
+    form.proxy = withCloudflare(form.proxy);
+    expect(form.proxy.trustForwarded).toBe(true);
+    expect(trustedProxyList(form.proxy)).toEqual([...CLOUDFLARE_RANGES]);
+    expect(validateRouteForm(form, { requireRouting: false })['proxy.trustedProxies']).toBeUndefined();
+    const out = proxyConfigFrom(form.proxy);
+    expect(out.trust_forwarded).toBe(true);
+    expect(out.trusted_proxies).toEqual([...CLOUDFLARE_RANGES]);
+    // The other proxy settings stay as they were.
+    expect(out.reject_invalid_path_encoding).toBe(false);
+  });
+
+  test('asks first only when the list holds an entry that is not Cloudflare\'s', () => {
+    expect(holdsOtherProxies('')).toBe(false);
+    expect(holdsOtherProxies(' \n\n')).toBe(false);
+    expect(holdsOtherProxies(CLOUDFLARE_RANGES.join('\n'))).toBe(false);
+    expect(holdsOtherProxies(CLOUDFLARE_RANGES.slice(0, 3).join(', '))).toBe(false);
+    expect(holdsOtherProxies('10.0.0.5')).toBe(true);
+    expect(holdsOtherProxies(`${CLOUDFLARE_RANGES[0]}\n10.0.0.5`)).toBe(true);
+    // An entry that is not an address is still the person's own text.
+    expect(holdsOtherProxies('proxy.local')).toBe(true);
+  });
+
+  test('the hint carries the date of the copy and the advice to accept only your zone', () => {
+    const hint = cloudflareHint();
+    expect(hint.startsWith(`Cloudflare's addresses on ${formatDate(CLOUDFLARE_RANGES_DATE)}. `)).toBe(true);
+    expect(hint).toContain("Every Cloudflare customer's traffic comes from them, so another Cloudflare account may be able to set the client address WAFio sees.");
+    expect(hint).toContain("To accept only your zone, use Authenticated Origin Pulls with your zone's own certificate, or a Cloudflare Tunnel.");
   });
 });
 

@@ -3,7 +3,7 @@
 import './support/runes';
 import './support/ssr';
 import { describe, expect, test } from 'bun:test';
-import { emptyRouteForm } from '../src/lib/components/apps/route-model';
+import { cloudflareHint, emptyRouteForm } from '../src/lib/components/apps/route-model';
 import { renderComponent } from './support/ssr';
 
 // The UI barrel pulls in PageHeader, which reads `dev` from SvelteKit.
@@ -39,5 +39,22 @@ describe('FastCGI keep-alive switch', () => {
 
   test('is not offered for an HTTP upstream', async () => {
     expect(await render('http')).not.toContain('Keep FastCGI connections');
+  });
+});
+
+describe('Trusted proxies, Cloudflare preset', () => {
+  const props = (over: object = {}) => ({ initial: emptyRouteForm(), onsubmit: async () => null, ...over }) as never;
+
+  test('is offered beside the list with its hint, and no dialog is open', async () => {
+    const html = await renderComponent(AppRouteForm, props());
+    expect(html.indexOf('Trusted proxies')).toBeGreaterThan(-1);
+    expect(html.indexOf("Use Cloudflare's addresses")).toBeGreaterThan(html.indexOf('Trusted proxies'));
+    expect(html).toContain(cloudflareHint());
+    expect(html).not.toContain('Replace the trusted proxies?');
+  });
+
+  test('cannot be used on a read-only form', async () => {
+    const html = await renderComponent(AppRouteForm, props({ disabled: true }));
+    expect(html).toMatch(/<fieldset[^>]*route-fieldset[^>]*disabled[^>]*>[\s\S]*Use Cloudflare's addresses/);
   });
 });

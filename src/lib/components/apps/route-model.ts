@@ -12,6 +12,7 @@
  * applies), -1 = unlimited, >0 = milliseconds.
  */
 import type { AgentRoute, AgentRouteBody, App, AppUpdateBody, ProxyConfig } from '../../api';
+import { formatDate } from '../../format';
 import { isIP, isIPOrCIDR, parseCIDR, parseList } from '../../validation';
 
 export type UpstreamType = 'http' | 'fcgi';
@@ -355,6 +356,47 @@ export function validateTrustedProxies(text: string): string | null {
   if (bad.length) return `Not an IP address or CIDR: ${bad.slice(0, 3).join(', ')}${bad.length > 3 ? ` and ${bad.length - 3} more` : ''}.`;
   return null;
 }
+
+/**
+ * Cloudflare's ranges from https://www.cloudflare.com/ips/, copied on CLOUDFLARE_RANGES_DATE. They change rarely:
+ * compare with that page before touching either.
+ */
+export const CLOUDFLARE_RANGES_DATE = '2026-11-24T12:00:00Z';
+export const CLOUDFLARE_RANGES: readonly string[] = [
+  '173.245.48.0/20',
+  '103.21.244.0/22',
+  '103.22.200.0/22',
+  '103.31.4.0/22',
+  '141.101.64.0/18',
+  '108.162.192.0/18',
+  '190.93.240.0/20',
+  '188.114.96.0/20',
+  '197.234.240.0/22',
+  '198.41.128.0/17',
+  '162.158.0.0/15',
+  '104.16.0.0/13',
+  '104.24.0.0/14',
+  '172.64.0.0/13',
+  '131.0.72.0/22',
+  '2400:cb00::/32',
+  '2606:4700::/32',
+  '2803:f800::/32',
+  '2405:b500::/32',
+  '2405:8100::/32',
+  '2a06:98c0::/29',
+  '2c0f:f248::/32',
+];
+
+/** The preset replaces the list, so an entry that is not one of Cloudflare's asks for a confirm first. */
+export function holdsOtherProxies(text: string): boolean {
+  return parseList(text ?? '').some((entry) => !CLOUDFLARE_RANGES.includes(entry));
+}
+
+/** The proxy settings with forwarded headers trusted from Cloudflare's addresses only. */
+export const withCloudflare = (p: ProxyForm): ProxyForm => ({ ...p, trustForwarded: true, trustedProxies: CLOUDFLARE_RANGES.join('\n') });
+
+export const cloudflareHint = (): string =>
+  `Cloudflare's addresses on ${formatDate(CLOUDFLARE_RANGES_DATE)}. Every Cloudflare customer's traffic comes from them, so another Cloudflare account may be able to set the client address WAFio sees. To accept only your zone, use Authenticated Origin Pulls with your zone's own certificate, or a Cloudflare Tunnel.`;
 
 /**
  * Field of a 400 INVALID_PROXY_CONFIG message such as

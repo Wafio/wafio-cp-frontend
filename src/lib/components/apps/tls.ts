@@ -527,6 +527,14 @@ export function gatewaySteps(o: { agent: string; ports: string; source: TLSSourc
   ];
 }
 
+/** The note under the Gateway addresses; only a Let's Encrypt request has a first try that Cloudflare breaks. */
+export function behindCloudflareText(source: TLSSource): string {
+  const full = 'Set SSL/TLS to Full.';
+  return source === 'acme'
+    ? `${full} The first request usually fails, since Cloudflare does not pass the TLS-ALPN-01 check; the agent tries HTTP-01 10 minutes later, or at once with Try again now after 5 minutes.`
+    : full;
+}
+
 export function backToProxyText(o: { agent: string; own: OwnListener; ports: string }): string {
   return `${agentStart(o.agent)} stops serving HTTPS for this application and listens on ${ownAddress(o.own) ?? 'the listen address on the Routing tab'} again, which frees ${o.ports}. Then start the web server in front of it; a load balancer on another machine can be switched first.`;
 }

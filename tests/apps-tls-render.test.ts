@@ -100,6 +100,10 @@ describe('HTTPS tab, Behind a proxy', () => {
     expect(tag(html, /<input[^>]*type="radio"[^>]*value="gateway"[^>]*>/)).not.toContain('checked');
   });
 
+  test('has no Cloudflare note', async () => {
+    expect(await render(state())).not.toContain('Cloudflare');
+  });
+
   test('shows the host names and the certificate source, and no listener', async () => {
     const html = await render(state());
     expect(html).toContain('One per line, up to 100, such as shop.example.com. No wildcards, IP addresses or ports; international names in xn-- form.');
@@ -148,6 +152,15 @@ describe('HTTPS tab, Gateway', () => {
     const html = await render(state({ mode: 'gateway', redirect_listen: '' }));
     expect(tag(html, /<button[^>]*role="switch"[^>]*>/)).toContain('aria-checked="false"');
     expect(html).not.toContain('Redirect address');
+  });
+
+  test('says what to set in Cloudflare; the first request and Try again now only where the agent asks Let\'s Encrypt', async () => {
+    const acme = await render(state(GATEWAY));
+    expect(acme).toContain('<strong>Behind Cloudflare.</strong> Set SSL/TLS to Full. The first request usually fails, since Cloudflare does not pass the TLS-ALPN-01 check; the agent tries HTTP-01 10 minutes later, or at once with Try again now after 5 minutes.');
+    const uploaded = await render(state({ ...GATEWAY, source: 'uploaded' }));
+    expect(uploaded).toContain('<strong>Behind Cloudflare.</strong> Set SSL/TLS to Full.</p>');
+    expect(uploaded).not.toContain('TLS-ALPN-01');
+    expect(await render(state({ ...GATEWAY, source: '' }))).not.toContain('TLS-ALPN-01');
   });
 
   test('says nothing of a save before one is made', async () => {
