@@ -4,27 +4,35 @@
   nothing: "Save changes" keeps the saved mode, and "Switch to ..." saves with the other one after one confirm, as does
   a change of certificate source in Gateway. The panel reads the settings when it opens (the page may hand over what it
   read), then follows the server on a timer and keeps what the person is editing. Only the answer of a save carries the
-  DNS hints, so the panel keeps them until the next save.
+  DNS hints, so the panel keeps them until the next save. The card of the saved certificate source follows the agent's
+  report and carries the request, upload, replace and delete of the certificate.
 -->
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
-  import { getAppTLS, putAppTLS, type ApiError, type AppTLSInput, type AppTLSState, type TLSSource } from '#lib/api.js';
+  import { deleteAppCertificate, getAppTLS, putAppTLS, requestAppACME, type ApiError, type AppTLSInput, type AppTLSState, type TLSSource } from '#lib/api.js';
   import { needsConfirmation } from '#lib/confirm-tiers.js';
   import { focusFormError } from '#lib/focus-error.js';
   import { createPoller } from '#lib/polling.svelte.js';
   import { toast } from '#lib/stores/toast.js';
-  import { Alert, Badge, Button, ConfirmModal, Field, InlineError, Spinner, Switch } from '#lib/components/ui/index.js';
+  import { Alert, Badge, Button, ConfirmModal, DateTime, EmptyState, Field, InlineError, Spinner, Switch } from '#lib/components/ui/index.js';
   import ChoiceGroup from '#lib/components/waf-policy/ChoiceGroup.svelte';
+  import CertificateUpload from './CertificateUpload.svelte';
   import { trustedProxyList, type ProxyForm, type RouteForm } from './route-model';
   import {
+    CERTIFICATE_IN_USE_TEXT,
     OWN_LISTENER,
     POLL_SLOW_MS,
+    REQUEST_TEXT,
+    actionErrorText,
     backToProxyText,
+    certificateAlerts,
+    certificateCard,
     chooseMode,
     classifyTLSRefusal,
     confirmFor,
     createEpoch,
     dnsWarningText,
+    expiryPhrase,
     formFromTLS,
     gatewayChecks,
     gatewaySteps,
@@ -35,6 +43,9 @@
     normalizeFormats,
     pollIntervalMs,
     portsText,
+    requestAgainText,
+    requestOpensAt,
+    retryUntil,
     sameTLS,
     savedInGatewayText,
     setRedirect,
@@ -43,6 +54,8 @@
     switchDisabled,
     tlsNotices,
     tlsProblem,
+    uploadsFirst,
+    type CertificateFacts,
     type CheckState,
     type TLSConfirm,
     type TLSField,
@@ -95,8 +108,10 @@
   let loadFailed = $state(false);
   let busy = $state(false);
   let form = $state<TLSForm>(formFromTLS(seed ?? BLANK));
-  /** When the person last saved here: the agent is then asked about faster. */
+  /** When the person last acted here (saved, requested, uploaded, deleted): the agent is then asked about faster. */
   let lastActionAt = $state<number | null>(null);
+  /** Ticks, so the dates and waits of the card stay true between polls. */
+  let now = $state(Date.now());
   const epoch = createEpoch();
 
   const stored = $derived<AppTLSInput>(loaded ?? BLANK);
@@ -142,7 +157,11 @@
     onchange?.(merged);
   }
 
-  onMount(() => void refresh());
+  onMount(() => {
+    void refresh();
+    const tick = setInterval(() => (now = Date.now()), 5000);
+    return () => clearInterval(tick);
+  });
   onDestroy(() => epoch.next());
 
   const poller = createPoller(() => refresh(), POLL_SLOW_MS, { immediate: false });
@@ -163,6 +182,13 @@
   let beforeBack: TLSForm | null = null;
   let saving = $state(false);
   let root = $state<HTMLElement>();
+  /** Epoch ms a refusal (409 ACME_REQUEST_TOO_SOON) said to wait until. */
+  let retryAt = $state<number | null>(null);
+  let requesting = $state(false);
+  let requestError = $state('');
+  let uploadOpen = $state(false);
+  let deleteOpen = $state(false);
+  let deleteError = $state('');
 
   const readonly = $derived(!canConfigure);
   const input = $derived(inputFromForm(form));
@@ -180,6 +206,12 @@
   const canonical = $derived(normalizeFormats(input).settings);
   const redirectOn = $derived(Boolean(canonical?.redirect_listen));
   const name = $derived(appName || 'this application');
+  const inGateway = $derived(loaded?.mode === 'gateway');
+  const card = $derived(loaded ? certificateCard(loaded, { assigned, agent: agentName, now, lastActionAt }) : null);
+  const alerts = $derived(loaded ? certificateAlerts(loaded, agentName, now) : []);
+  const opensAt = $derived(requestOpensAt(loaded?.acme?.requested_at, retryAt, now));
+  const requestWaits = $derived(opensAt > now);
+  const uploadsInstead = $derived(loaded !== null && uploadsFirst(loaded, input, needed));
 
   $effect(() => {
     dirty = isDirty;
@@ -274,6 +306,58 @@
     if (confirm === null) void focusFormError(root);
   }
 
+  // ── The certificate ─────────────────────────────────────────────────────
+  async function requestCertificate() {
+    if (!canConfigure || busy || !loaded) return;
+    busy = true;
+    requesting = true;
+    requestError = '';
+    const my = epoch.next();
+    const res = await requestAppACME(projectId, appId);
+    busy = false;
+    requesting = false;
+    if (!epoch.isCurrent(my) || res.error?.kind === 'aborted') return;
+    if (res.error || !res.data) {
+      retryAt = retryUntil(res.error, Date.now());
+      // A wait the control plane named is shown at the button.
+      requestError = retryAt === null ? actionErrorText(res.error, agentName, 'Could not request a certificate.') : '';
+      return;
+    }
+    retryAt = null;
+    lastActionAt = Date.now();
+    follow(res.data);
+  }
+
+  async function uploaded() {
+    uploadOpen = false;
+    lastActionAt = Date.now();
+    toast.success('The certificate was uploaded.', 'Uploaded');
+    await refresh();
+  }
+
+  function askDelete() {
+    if (!canConfigure || busy) return;
+    deleteError = '';
+    if (needsConfirmation('delete-certificate')) deleteOpen = true;
+    else void deleteCertificate();
+  }
+
+  async function deleteCertificate() {
+    if (!canConfigure || busy) return;
+    busy = true;
+    deleteError = '';
+    const res = await deleteAppCertificate(projectId, appId);
+    busy = false;
+    if (res.error || !res.data) {
+      deleteError = actionErrorText(res.error, agentName, 'Could not delete the certificate.');
+      return;
+    }
+    deleteOpen = false;
+    lastActionAt = Date.now();
+    toast.success('The private key was deleted.', 'Deleted');
+    await refresh();
+  }
+
   function discard() {
     if (!loaded) return;
     form = formFromTLS(loaded);
@@ -308,11 +392,43 @@
     { value: 'uploaded', label: 'Uploaded certificate', description: 'A certificate you bought or issued with your own CA. Its key can be replaced, never read back.' },
   ];
   const footerNote = $derived(busy ? 'Saving…' : isDirty ? 'Unsaved changes' : '');
-  const primaryLabel = $derived(switching === 'gateway' ? 'Switch to Gateway' : switching === 'proxy' ? 'Switch to Behind a proxy' : 'Save changes');
+  const primaryLabel = $derived(
+    uploadsInstead ? 'Upload certificate' : switching === 'gateway' ? 'Switch to Gateway' : switching === 'proxy' ? 'Switch to Behind a proxy' : 'Save changes',
+  );
+  const primaryLocked = $derived(uploadsInstead ? readonly || busy : locked);
 </script>
 
 {#snippet routingLink()}
   <Button variant="secondary" size="sm" class="tls-tap" href={routingHref}>Open the Routing tab</Button>
+{/snippet}
+
+{#snippet facts(f: CertificateFacts)}
+  <dl class="tls-facts">
+    <dt>Issuer</dt>
+    <dd><bdi>{f.issuer}</bdi></dd>
+    <dt>Names</dt>
+    <dd><bdi>{f.names.join(', ')}</bdi></dd>
+    {#if f.notBefore}
+      <dt>Valid from</dt>
+      <dd><DateTime value={f.notBefore} format="date" /></dd>
+    {/if}
+    {#if f.notAfter}
+      <dt>Expires</dt>
+      <dd><DateTime value={f.notAfter} format="date" /> ({expiryPhrase(f.notAfter, now)})</dd>
+    {/if}
+    {#if f.renewalAt !== null}
+      <dt>Renewal starts</dt>
+      <dd><DateTime value={new Date(f.renewalAt)} format="date" /></dd>
+    {/if}
+    {#if f.keyType}
+      <dt>Key type</dt>
+      <dd>{f.keyType}</dd>
+    {/if}
+    {#if f.uploadedAt}
+      <dt>Uploaded</dt>
+      <dd><DateTime value={f.uploadedAt} /></dd>
+    {/if}
+  </dl>
 {/snippet}
 
 <section class="tls" aria-labelledby="{uid}-title">
@@ -416,6 +532,67 @@
         <section class="tls-block" aria-labelledby="{uid}-certificate">
           <h3 id="{uid}-certificate">Certificate</h3>
           <ChoiceGroup legend="Certificate source" name="{uid}-source" options={sourceOptions} bind:value={form.source} columns={2} disabled={readonly} error={shownErrors.source} />
+
+          {#if card}
+            <div class="tls-card" role="group" aria-label="Saved certificate">
+              <div class="tls-card-head">
+                <h4>{card.source === 'acme' ? "Let's Encrypt" : 'Uploaded certificate'}</h4>
+                {#if card.inUse && inGateway}<Badge tone="success">In use</Badge>{/if}
+              </div>
+              {#each alerts as alert (alert.text)}
+                <Alert tone={alert.tone} message={alert.text} />
+              {/each}
+              {#if card.empty}
+                <EmptyState title="No certificate uploaded" message="Upload the certificate chain and its private key." level={5} compact>
+                  {#snippet action()}
+                    <Button class="tls-tap" disabled={readonly || busy} onclick={() => (uploadOpen = true)}>Upload certificate</Button>
+                  {/snippet}
+                </EmptyState>
+              {/if}
+              {#if card.facts}{@render facts(card.facts)}{/if}
+              {#if card.failure || card.lines.length > 0 || card.served}
+                <div class="tls-card-status" aria-live="polite">
+                  {#if card.failure}
+                    <p>
+                      {card.failure.lead}
+                      {#if card.failure.error}<bdi class="tls-error">{card.failure.error}</bdi>{/if}
+                    </p>
+                    {#if card.failure.next}<p>{card.failure.next}</p>{/if}
+                  {/if}
+                  {#each card.lines as line (line)}<p>{line}</p>{/each}
+                  {#if card.served}
+                    <p class="tls-sub">Served now</p>
+                    {@render facts(card.served)}
+                  {/if}
+                </div>
+              {/if}
+
+              {#if card.source === 'acme' && inGateway && assigned}
+                <div class="tls-card-actions">
+                  <Button variant="secondary" class="tls-tap" loading={requesting} disabled={readonly || busy || requestWaits} onclick={() => void requestCertificate()}>
+                    {card.failure ? 'Try again now' : 'Request a new certificate'}
+                  </Button>
+                </div>
+                {#if requestWaits}<p class="tls-hint">{requestAgainText(opensAt)}</p>{/if}
+                <p class="tls-hint">{REQUEST_TEXT}</p>
+                {#if requestError}<Alert tone="error" title="Not requested" message={requestError} />{/if}
+              {/if}
+
+              {#if card.source === 'uploaded' && loaded?.certificate}
+                <div class="tls-card-actions">
+                  <Button variant="secondary" class="tls-tap" disabled={readonly || busy} onclick={() => (uploadOpen = true)}>Replace certificate</Button>
+                  <Button variant="secondary" class="tls-tap" disabled={readonly || busy || inGateway} onclick={askDelete}>Delete certificate</Button>
+                </div>
+                {#if inGateway}<p class="tls-hint">{CERTIFICATE_IN_USE_TEXT}</p>{/if}
+                <p class="tls-hint">After a move to another WAF agent, or the removal of its agent, upload a new certificate with a new key: the old host may keep a copy of this one.</p>
+              {:else if card.source === 'acme' && loaded?.certificate}
+                <div class="tls-card-actions">
+                  <p class="tls-hint">An uploaded certificate of this application is still stored with its key.</p>
+                  <Button variant="secondary" class="tls-tap" disabled={readonly || busy} onclick={askDelete}>Delete certificate</Button>
+                </div>
+              {/if}
+            </div>
+          {/if}
         </section>
       </fieldset>
     </div>
@@ -423,7 +600,7 @@
     <div class="tls-actions">
       <span class="tls-dirty" role="status">{footerNote}</span>
       <Button variant="secondary" class="tls-tap" disabled={!isDirty || busy || readonly} onclick={discard}>Discard changes</Button>
-      <Button class="tls-tap" loading={saving} disabled={!isDirty || locked} onclick={requestSave}>{primaryLabel}</Button>
+      <Button class="tls-tap" loading={saving} disabled={!isDirty || primaryLocked} onclick={uploadsInstead ? () => (uploadOpen = true) : requestSave}>{primaryLabel}</Button>
     </div>
   {/if}
 </section>
@@ -469,6 +646,32 @@
   {/if}
 </ConfirmModal>
 
+<ConfirmModal
+  open={deleteOpen}
+  title="Delete the uploaded certificate of {name}?"
+  confirmLabel="Delete certificate"
+  cancelLabel="Cancel"
+  loading={busy}
+  onconfirm={() => void deleteCertificate()}
+  onclose={() => (deleteOpen = false)}
+>
+  <p>Deletes the private key of every certificate uploaded for {name}. A copy an agent already received is not recalled.</p>
+  {#if deleteError}<Alert tone="error" title="Not deleted" message={deleteError} />{/if}
+</ConfirmModal>
+
+<CertificateUpload
+  open={uploadOpen}
+  {projectId}
+  {appId}
+  {appName}
+  {agentName}
+  replacing={loaded?.source === 'uploaded' && loaded.certificate !== null}
+  becomesSource={loaded?.source !== 'uploaded'}
+  gateway={inGateway}
+  onuploaded={() => void uploaded()}
+  onclose={() => (uploadOpen = false)}
+/>
+
 <style>
   .tls { display: flex; flex-direction: column; gap: var(--sp-4); width: 100%; min-width: 0; container-type: inline-size; }
   .tls-head h2 { margin: 0; font-size: var(--fs-md); }
@@ -482,6 +685,19 @@
   .tls-field { min-width: 0; }
   .tls-form textarea, .tls-form input.mono { font-family: var(--font-mono); font-size: var(--fs-sm); }
   .tls-form textarea { resize: vertical; line-height: 1.5; }
+
+  .tls-card { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-card); }
+  .tls-card-head { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+  .tls-card-head h4 { margin: 0; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text-primary); }
+  .tls-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--sp-1) var(--sp-4); margin: 0; font-size: var(--fs-sm); }
+  .tls-facts dt { color: var(--text-muted); }
+  .tls-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .tls-card-status { display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-sm); }
+  .tls-card-status p, .tls-hint { margin: 0; line-height: 1.5; }
+  .tls-sub { font-weight: var(--fw-medium); color: var(--text-primary); }
+  .tls-error { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); }
+  .tls-card-actions { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+  .tls-hint { font-size: var(--fs-sm); color: var(--text-muted); max-width: 70ch; }
 
   .tls-checks { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0 0 var(--sp-3); padding: 0; list-style: none; font-size: var(--fs-sm); }
   .tls-checks li { display: flex; align-items: flex-start; gap: var(--sp-2); }

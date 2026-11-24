@@ -1,24 +1,34 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { formatDate, formatDateTime } from '../src/lib/format';
 import type { ApiError, ApiResult, AppTLSCertificate, AppTLSCertificateInput, AppTLSInput, AppTLSState, AppTLSStatus } from '../src/lib/api';
 import {
   ACME_REQUEST_GAP_MS,
+  CERTIFICATE_IN_USE_TEXT,
   NO_REPORT_AFTER_MS,
   OWN_LISTENER,
   POLL_FAST_MS,
   POLL_SLOW_MS,
+  REQUEST_TEXT,
   TLS_LIMITS,
+  actionErrorText,
   backToProxyText,
   canonicalListen,
+  certificateAlerts,
+  certificateCard,
   certificateCoversHost,
+  certificateErrorText,
   checkTLSFit,
   chooseMode,
+  chosenFileText,
   classifyTLSRefusal,
   confirmFor,
   createEpoch,
   currentStatus,
   dnsWarningText,
+  expiryBadge,
   expiryOf,
+  expiryPhrase,
   formFromTLS,
   gatewayChecks,
   gatewaySteps,
@@ -33,6 +43,7 @@ import {
   portsText,
   readPemFile,
   renewalStart,
+  requestAgainText,
   requestOpensAt,
   retryUntil,
   sameTLS,
@@ -45,6 +56,8 @@ import {
   tlsNotices,
   tlsProblem,
   trustText,
+  uploadSourceText,
+  uploadsFirst,
   waitingSince,
   withoutDnsHints,
   type CertificateForm,
@@ -1025,8 +1038,266 @@ describe('where the Not saved alert is', () => {
   });
 });
 
+describe('the card of the saved certificate source', () => {
+  const o = { assigned: true, agent: 'edge-1', now: NOW, lastActionAt: null as number | null };
+  const asked = (over: Partial<AppTLSState>, more: Partial<typeof o> = {}) => certificateCard(state(over), { ...o, ...more });
+  const uploadedState = (over: Partial<AppTLSState> = {}, report: Partial<AppTLSStatus> | null = {}): Partial<AppTLSState> => ({
+    source: 'uploaded',
+    certificate: certificate(),
+    acme: null,
+    status: report && status({ source: 'uploaded', certificate_id: 'cert-1', request_id: '', leaf_sha256: certificate().leaf_sha256, ...report }),
+    ...over,
+  });
+  const NOTHING = 'Nothing is served yet: HTTPS visitors get a connection error';
+
+  describe('Behind a proxy, whatever the agent reported', () => {
+    test('Let\'s Encrypt: the agent orders on the switch, and the old report is not read', () => {
+      const card = asked({ mode: 'proxy' });
+      expect(card).toMatchObject({ source: 'acme', facts: null, inUse: false, failure: null, lines: ['edge-1 orders the first certificate when you switch to Gateway.'] });
+      expect(asked({ mode: 'proxy' }, { agent: '' })?.lines).toEqual(['The WAF agent orders the first certificate when you switch to Gateway.']);
+    });
+    test('uploaded: the certificate with its facts, never in use', () => {
+      const card = asked(uploadedState({ mode: 'proxy' }));
+      expect(card).toMatchObject({ source: 'uploaded', inUse: false, lines: [], empty: false });
+      expect(card?.facts).toMatchObject({ issuer: 'Example CA', names: ['shop.example.com'], keyType: 'ecdsa-p256', uploadedAt: certificate().created_at, renewalAt: null });
+    });
+    test('uploaded with nothing uploaded: the empty state, in either mode', () => {
+      expect(asked(uploadedState({ mode: 'proxy', certificate: null }))).toMatchObject({ empty: true, facts: null });
+      expect(asked(uploadedState({ certificate: null }, null))).toMatchObject({ empty: true });
+    });
+    test('no source saved: no card', () => {
+      expect(asked({ mode: 'proxy', source: '' })).toBeNull();
+    });
+  });
+
+  describe('Gateway, before the agent reports', () => {
+    test('no agent: the notice of an unassigned application', () => {
+      expect(asked({}, { assigned: false })?.lines).toEqual(['No WAF agent serves this application. These settings take effect once one is assigned on the Assignment tab.']);
+    });
+    test('no report yet: waiting, then after 2 minutes the ports', () => {
+      const fresh = { status: null, acme: { request_id: 'req-1', requested_at: iso(NOW - 30 * 1000) } };
+      expect(asked(fresh)?.lines).toEqual(['Waiting for edge-1 to report.']);
+      expect(asked({ ...fresh, acme: { request_id: 'req-1', requested_at: iso(NOW - 2 * MINUTE) } })?.lines).toEqual([
+        'No report from edge-1 yet. Check that it is online and that nothing else holds port 443 on its host.',
+      ]);
+      expect(asked({ ...fresh, acme: { request_id: 'req-1', requested_at: iso(NOW - 2 * MINUTE) }, redirect_listen: '0.0.0.0:80' })?.lines[0]).toContain('ports 443 and 80');
+      expect(asked({ ...fresh, acme: { request_id: 'req-1', requested_at: iso(NOW - 2 * MINUTE) } }, { agent: '' })?.lines[0]).toStartWith('No report from the WAF agent yet.');
+    });
+    test('an action of this tab restarts the 2 minutes', () => {
+      const old = { status: null, acme: { request_id: 'req-1', requested_at: iso(NOW - 30 * MINUTE) } };
+      expect(asked(old, { lastActionAt: NOW - 20 * 1000 })?.lines).toEqual(['Waiting for edge-1 to report.']);
+      expect(asked(old, { lastActionAt: NOW - 3 * MINUTE })?.lines[0]).toStartWith('No report from');
+    });
+    test('an uploaded certificate counts from its upload', () => {
+      const fresh = uploadedState({ certificate: certificate({ created_at: iso(NOW - 10 * 1000) }) }, null);
+      expect(asked(fresh)?.lines).toEqual(['Waiting for edge-1 to report.']);
+      expect(asked({ ...fresh, certificate: certificate({ created_at: iso(NOW - 5 * MINUTE) }) })?.lines[0]).toStartWith('No report from');
+    });
+  });
+
+  describe('Gateway, a report about an older request or certificate', () => {
+    const older = (over: Partial<AppTLSStatus>, more: Partial<AppTLSState> = {}) => asked({ status: status({ request_id: 'req-0', ...over }), ...more });
+    test('with a leaf: the new id is awaited and what the old row serves is shown', () => {
+      const card = older({ names: ['old.example.com'], issuer: 'Old CA', not_after: iso(NOW + 30 * 24 * HOUR), not_before: iso(NOW - 60 * 24 * HOUR) });
+      expect(card?.lines).toEqual(['Waiting for edge-1 to take the new request.']);
+      expect(card?.served).toMatchObject({ names: ['old.example.com'], issuer: 'Old CA' });
+      expect(card?.facts).toBeNull();
+      expect(card?.inUse).toBe(false);
+    });
+    test('without a leaf: Let\'s Encrypt had a placeholder, an upload had nothing', () => {
+      expect(older({ leaf_sha256: '' })?.lines).toEqual([
+        'Waiting for edge-1 to take the new request.',
+        'Until it is issued, HTTPS visitors get a browser warning and a 503 page.',
+      ]);
+      const upload = asked(uploadedState({ redirect_listen: '' }, { certificate_id: 'cert-0', leaf_sha256: '' }));
+      expect(upload?.lines).toEqual(['Waiting for edge-1 to take the new certificate.', `${NOTHING}. Nothing answers on HTTP.`]);
+      expect(asked(uploadedState({ redirect_listen: '0.0.0.0:80' }, { certificate_id: 'cert-0', leaf_sha256: '' }))?.lines[1]).toBe(`${NOTHING}, and HTTP visitors get 503.`);
+    });
+    test('a report of the other source is old, whatever its ids say', () => {
+      const card = asked({ source: 'acme', status: status({ source: 'uploaded', request_id: 'req-1', certificate_id: 'cert-1' }) });
+      expect(card?.lines[0]).toBe('Waiting for edge-1 to take the new request.');
+    });
+    test('an uploaded certificate keeps its own facts while the old one is still served', () => {
+      const card = asked(uploadedState({}, { certificate_id: 'cert-0', names: ['old.example.com'] }));
+      expect(card?.facts?.names).toEqual(['shop.example.com']);
+      expect(card?.served?.names).toEqual(['old.example.com']);
+    });
+  });
+
+  describe('Gateway, Let\'s Encrypt', () => {
+    const report = (over: Partial<AppTLSStatus>) => asked({ status: status(over) });
+    test('pending without a leaf: a placeholder is served', () => {
+      const card = report({ state: 'pending', leaf_sha256: '' });
+      expect(card).toMatchObject({ facts: null, inUse: false, failure: null });
+      expect(card?.lines).toEqual(["Requesting a certificate from Let's Encrypt.", 'Until it is issued, HTTPS visitors get a browser warning and a 503 page.']);
+    });
+    test('pending with a leaf: the current certificate stays, with its facts', () => {
+      const card = report({ state: 'pending', not_after: iso(NOW + 5 * 24 * HOUR) });
+      expect(card?.lines).toEqual(["Requesting a certificate from Let's Encrypt.", 'The current certificate stays in use until then.']);
+      expect(card?.facts).toMatchObject({ names: ['shop.example.com'], issuer: 'Example CA' });
+      expect(card?.inUse).toBe(false);
+    });
+    test('active: the facts of the leaf, in use, with the renewal a third of the lifetime before the end', () => {
+      const from = NOW - 30 * 24 * HOUR;
+      const to = NOW + 60 * 24 * HOUR;
+      const card = report({ not_before: iso(from), not_after: iso(to) });
+      expect(card).toMatchObject({ inUse: true, lines: [], failure: null });
+      expect(card?.facts?.renewalAt).toBe(renewalStart(iso(from), iso(to)));
+      expect(card?.facts?.keyType).toBeNull();
+    });
+    test('failed: the agent text and the next try, or none; the leaf still served, or the placeholder', () => {
+      const next = iso(NOW + 10 * MINUTE);
+      const withNext = report({ state: 'failed', error: 'rate limited', next_attempt_at: next });
+      expect(withNext?.failure).toEqual({ lead: 'The last request failed:', error: 'rate limited', next: `Next try ${formatDateTime(next)}.` });
+      expect(withNext?.facts).not.toBeNull();
+      expect(withNext?.lines).toEqual([]);
+      const none = report({ state: 'failed', error: 'refused', leaf_sha256: '' });
+      expect(none?.failure?.next).toBe('No new try is planned. Fix the cause, then try again.');
+      expect(none).toMatchObject({ facts: null, lines: ['Until it is issued, HTTPS visitors get a browser warning and a 503 page.'] });
+    });
+    test('the agent text is kept as it is, for the page to show as text', () => {
+      const text = '<img src=x onerror=alert(1)> \u202eabc';
+      expect(report({ state: 'failed', error: text })?.failure?.error).toBe(text);
+    });
+  });
+
+  describe('Gateway, uploaded', () => {
+    const report = (over: Partial<AppTLSStatus>, more: Partial<AppTLSState> = {}) => asked(uploadedState(more, over));
+    test('active: the leaf is the certificate\'s, in use', () => {
+      expect(report({ state: 'active' })).toMatchObject({ inUse: true, lines: [], failure: null, facts: { issuer: 'Example CA' } });
+    });
+    test('missing while the agent has no host credential: not host-bound', () => {
+      expect(report({ state: 'missing', leaf_sha256: '' }, { agent_host_bound: false })?.lines[0]).toStartWith('edge-1 needs a credential bound to its host to receive an uploaded key.');
+      expect(report({ state: 'missing' }, { agent_host_bound: false })?.lines).toHaveLength(1);
+    });
+    test('missing with a leaf that differs: the previous certificate is served; with no leaf nothing is', () => {
+      expect(report({ state: 'missing', leaf_sha256: 'c'.repeat(64) })?.lines).toEqual(['edge-1 serves the previous certificate until it receives this one, within about a minute.']);
+      expect(report({ state: 'missing', leaf_sha256: '' })?.lines[0]).toStartWith(NOTHING);
+    });
+    test('failed: the text for the code, and for no code the agent text with the next try', () => {
+      const code = report({ state: 'failed', error: 'x509: bad', error_code: 'key_mismatch' });
+      expect(code?.failure).toEqual({ lead: 'edge-1 refused this certificate (key_mismatch). Upload the chain and key again.', error: '', next: '' });
+      const next = iso(NOW + MINUTE);
+      const plain = report({ state: 'failed', error: 'something odd', error_code: '', next_attempt_at: next });
+      expect(plain?.failure).toEqual({ lead: 'edge-1 reported:', error: 'something odd', next: `Next try ${formatDateTime(next)}.` });
+      expect(report({ state: 'failed', error: 'older control plane' })?.failure?.error).toBe('older control plane');
+    });
+    test('a state the table does not name waits for the agent', () => {
+      expect(report({ state: 'pending' })?.lines).toEqual(['Waiting for edge-1 to report.']);
+    });
+  });
+
+  test('the text for each code of the control plane', () => {
+    expect(certificateErrorText('key_unreadable', 'edge-1')).toBe(
+      'The control plane cannot open the stored key, for example after totp.enc_key changed without wafio rekey. Upload the certificate again.',
+    );
+    expect(certificateErrorText('write_failed', 'edge-1')).toBe('edge-1 could not write the certificate to its key directory and retries. Check the disk and the directory on its host.');
+    expect(certificateErrorText('invalid_ack', '')).toBe('The WAF agent sent an answer the control plane does not know. Check its version and log.');
+    for (const code of ['bad_pem', 'too_large', 'key_mismatch', 'leaf_mismatch', 'unsupported_key']) {
+      expect(certificateErrorText(code, 'edge-1')).toBe(`edge-1 refused this certificate (${code}). Upload the chain and key again.`);
+    }
+  });
+});
+
+describe('expiry', () => {
+  const soon = (not_after: string, over = {}) => [{ code: 'expires_soon' as const, days_left: 3, not_after, ...over }];
+
+  test('the phrase: hours on the last day, days after, expired at or past the end', () => {
+    expect(expiryPhrase(iso(NOW + 5 * HOUR), NOW)).toBe('in 5 hours');
+    expect(expiryPhrase(iso(NOW + HOUR), NOW)).toBe('in 1 hour');
+    expect(expiryPhrase(iso(NOW + 36 * HOUR), NOW)).toBe('in 1 day');
+    expect(expiryPhrase(iso(NOW + 80 * 24 * HOUR), NOW)).toBe('in 80 days');
+    expect(expiryPhrase(iso(NOW), NOW)).toBe('expired');
+    expect(expiryPhrase(iso(NOW - HOUR), NOW)).toBe('expired');
+    expect(expiryPhrase('not a date', NOW)).toBe('');
+  });
+
+  test('an uploaded certificate says to upload a new one, a Let\'s Encrypt one that the renewal is late', () => {
+    const end = iso(NOW + 5 * 24 * HOUR);
+    const date = formatDate(end);
+    expect(certificateAlerts({ source: 'uploaded', warnings: soon(end) }, 'edge-1', NOW)).toEqual([
+      { tone: 'warning', text: `The certificate expires ${date} (in 5 days). Upload a new one before then.` },
+    ]);
+    expect(certificateAlerts({ source: 'acme', warnings: soon(end) }, 'edge-1', NOW)).toEqual([
+      { tone: 'warning', text: `The certificate expires ${date} (in 5 days) and is not renewed yet. Check the status below, and that edge-1 can reach Let's Encrypt.` },
+    ]);
+    expect(certificateAlerts({ source: 'acme', warnings: soon(end) }, '', NOW)[0].text).toEndWith("and that the WAF agent can reach Let's Encrypt.");
+  });
+
+  test('the last day is counted in hours', () => {
+    const [alert] = certificateAlerts({ source: 'uploaded', warnings: soon(iso(NOW + 5 * HOUR)) }, 'edge-1', NOW);
+    expect(alert.text).toContain('(in 5 hours)');
+  });
+
+  test('a certificate at or past its end has expired, whatever the days of the report say', () => {
+    for (const end of [NOW, NOW - HOUR]) {
+      expect(certificateAlerts({ source: 'uploaded', warnings: soon(iso(end), { days_left: 2 }) }, 'edge-1', NOW)).toEqual([
+        { tone: 'error', text: `The certificate expired ${formatDate(iso(end))}. Visitors get a certificate error.` },
+      ]);
+    }
+  });
+
+  test('a chain that is not trusted is a warning of its own, and other warnings or a report without a date say nothing', () => {
+    const alerts = certificateAlerts({ source: 'uploaded', warnings: [{ code: 'not_trusted' }, { code: 'dns_mismatch', host: 'a.example.com' }, { code: 'expires_soon', days_left: 3 }] }, 'edge-1', NOW);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toStartWith('This chain does not lead to a root that browsers trust.');
+    expect(alerts[0].text).toContain('Behind Cloudflare, an Origin CA certificate is fine.');
+  });
+
+  test('the header badge is for Gateway only, and says expired once it is', () => {
+    const warnings = soon(iso(NOW + 5 * 24 * HOUR));
+    expect(expiryBadge({ mode: 'gateway', warnings }, NOW)).toMatchObject({ label: 'Certificate expires soon', tone: 'warning' });
+    expect(expiryBadge({ mode: 'proxy', warnings }, NOW)).toBeNull();
+    expect(expiryBadge({ mode: 'gateway', warnings: soon(iso(NOW - HOUR)) }, NOW)).toMatchObject({ label: 'Certificate expired', tone: 'danger' });
+    expect(expiryBadge({ mode: 'gateway', warnings: [{ code: 'not_trusted' }] }, NOW)).toBeNull();
+    expect(expiryBadge({ mode: 'gateway', warnings: [] }, NOW)).toBeNull();
+  });
+});
+
+describe('the request and the upload', () => {
+  test('the request text carries the rate and the agreement, and the wait names a time', () => {
+    expect(REQUEST_TEXT).toBe(
+      "Starts a request now, unless Let's Encrypt set a wait after its rate limit. One request every 5 minutes. By requesting, you accept the Let's Encrypt Subscriber Agreement.",
+    );
+    expect(requestAgainText(NOW)).toBe(`You can request again at ${formatDateTime(NOW)}.`);
+  });
+
+  test('an upload over another source says it takes its place, in Gateway also what the agent does meanwhile', () => {
+    expect(uploadSourceText({ gateway: false, agent: 'edge-1' })).toBe('This upload becomes the source of this application.');
+    expect(uploadSourceText({ gateway: true, agent: 'edge-1' })).toBe(
+      'This upload becomes the source of this application. edge-1 switches to it within about a minute and serves the current certificate until then, if it has one.',
+    );
+    expect(uploadSourceText({ gateway: true, agent: '' })).toContain(' The WAF agent switches to it');
+  });
+
+  test('choosing Uploaded with nothing uploaded makes the main button upload, except to go back to a proxy', () => {
+    const none = { source: 'acme' as const, certificate: null };
+    expect(uploadsFirst(none, { source: 'uploaded' }, null)).toBe(true);
+    expect(uploadsFirst({ source: '', certificate: null }, { source: 'uploaded' }, null)).toBe(true);
+    expect(uploadsFirst(none, { source: 'uploaded' }, 'gateway')).toBe(true);
+    expect(uploadsFirst(none, { source: 'uploaded' }, 'proxy')).toBe(false);
+    expect(uploadsFirst(none, { source: 'acme' }, null)).toBe(false);
+    expect(uploadsFirst({ source: 'acme', certificate: certificate() }, { source: 'uploaded' }, null)).toBe(false);
+    expect(uploadsFirst({ source: 'uploaded', certificate: null }, { source: 'uploaded' }, null)).toBe(false);
+  });
+
+  test('a chosen key file is listed by name and size, and only that', () => {
+    expect(chosenFileText({ name: 'shop.key', size: 1700 })).toBe('shop.key (1.7 KiB)');
+    expect(chosenFileText({ name: 'k.pem', size: 12 })).toBe('k.pem (12 B)');
+  });
+
+  test('the dashboard\'s texts for a refused request or delete, else the server\'s', () => {
+    const http = (over: Partial<ApiError>): ApiError => ({ kind: 'http', status: 409, error: 'Server text.', ...over });
+    expect(actionErrorText(http({ code: 'CERTIFICATE_IN_USE' }), 'edge-1', 'x')).toBe(CERTIFICATE_IN_USE_TEXT);
+    expect(actionErrorText(http({ code: 'TLS_UNSUPPORTED' }), 'edge-1', 'x')).toContain('edge-1 cannot serve certificates');
+    expect(actionErrorText(http({ code: 'SOMETHING_ELSE' }), 'edge-1', 'x')).toBe('Server text.');
+    expect(actionErrorText(http({ error: '' }), 'edge-1', 'Fallback.')).toBe('Fallback.');
+    expect(actionErrorText(undefined, 'edge-1', 'Fallback.')).toBe('Fallback.');
+  });
+});
+
 describe('the TLS files hold no storage, log or markup', () => {
-  test.each(['tls.ts', 'AppTLS.svelte'])('%s', (file) => {
+  test.each(['tls.ts', 'AppTLS.svelte', 'CertificateUpload.svelte'])('%s', (file) => {
     const source = readFileSync(new URL(`../src/lib/components/apps/${file}`, import.meta.url), 'utf8');
     for (const word of ['{@html', 'localStorage', 'sessionStorage', 'console.']) expect(source).not.toContain(word);
   });

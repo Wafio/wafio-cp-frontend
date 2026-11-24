@@ -49,6 +49,8 @@ export const CONFIRM_TIERS = {
   'enable-maintenance': 'simple',
   // The agent starts or stops serving HTTPS for an application; switching back undoes it.
   'switch-https-mode': 'simple',
+  // Wipes the private key of every uploaded certificate of an application; uploading again restores it.
+  'delete-certificate': 'simple',
   // Reversible removals and changes: re-adding restores the previous state.
   'delete-custom-rule': 'simple',
   'delete-detection-rule': 'simple',

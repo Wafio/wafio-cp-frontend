@@ -15,7 +15,7 @@ import type {
   TLSMode,
   TLSSource,
 } from '../../api';
-import { formatDate } from '../../format';
+import { formatBytes, formatDate, formatDateTime } from '../../format';
 import { ipToBytes, isIPv4 } from '../../validation';
 import { quoted, stripFieldPrefix } from './maintenance';
 
@@ -493,9 +493,15 @@ export function portsText(listen: string, redirect: string): string {
   return list.length === 1 ? `port ${list[0]}` : `ports ${list.join(' and ')}`;
 }
 
+/** What visitors on HTTP get while HTTPS is not served: 503 with the redirect on, else nothing. Ends a sentence that has no full stop yet. */
+const httpAfter = (redirect: boolean): string => (redirect ? ', and HTTP visitors get 503' : '. Nothing answers on HTTP');
+
+const PLACEHOLDER_TEXT = 'Until it is issued, HTTPS visitors get a browser warning and a 503 page.';
+const CURRENT_STAYS_TEXT = 'The current certificate stays in use until then.';
+
 /** What a source choice does right away, in Gateway: the first order of Let's Encrypt, or the upload being sent to the agent. */
 export function sourceSwitchText(source: 'acme' | 'uploaded', o: { agent: string; redirect: boolean }): string {
-  const http = o.redirect ? ', and HTTP visitors get 503' : '. Nothing answers on HTTP';
+  const http = httpAfter(o.redirect);
   return source === 'acme'
     ? `Until the certificate is issued, HTTPS visitors get a browser warning, then a 503 page${http}. A try takes up to 3 minutes; after a failure the agent waits 10 minutes, then longer. Switching places the first request: by switching, you accept the Let's Encrypt Subscriber Agreement.`
     : `Until ${agentMid(o.agent)} has the certificate, usually within a minute, HTTPS connections fail${http}.`;
@@ -507,7 +513,7 @@ export function sourceSwitchText(source: 'acme' | 'uploaded', o: { agent: string
  */
 export function sourceChangeText(source: 'acme' | 'uploaded', o: { agent: string; hasLeaf: boolean }): string {
   if (source === 'uploaded') return `${agentStart(o.agent)} switches to it within about a minute and serves the current certificate until then, if it has one.`;
-  const meanwhile = o.hasLeaf ? 'The current certificate stays in use until then.' : 'Until it is issued, HTTPS visitors get a browser warning and a 503 page.';
+  const meanwhile = o.hasLeaf ? CURRENT_STAYS_TEXT : PLACEHOLDER_TEXT;
   return `Requesting a certificate from Let's Encrypt. ${meanwhile} Switching places the first request: by switching, you accept the Let's Encrypt Subscriber Agreement.`;
 }
 
@@ -650,10 +656,10 @@ export interface CertificateForm {
 export type CertificatePlace = 'chain' | 'key' | 'form';
 
 /** `place` is where the text belongs: under the chain, under the key, or above both. */
-export type CertificateOutcome =
-  | { ok: true; certificate: AppTLSCertificate }
-  | { ok: false; aborted: boolean; place: CertificatePlace; message: string };
+export type CertificateRefusal = { ok: false; aborted: boolean; place: CertificatePlace; message: string };
+export type CertificateOutcome = { ok: true; certificate: AppTLSCertificate } | CertificateRefusal;
 
+export const CERTIFICATE_IN_USE_TEXT = "In use. Switch to Let's Encrypt or Behind a proxy first, or upload a replacement.";
 const KEY_IN_CHAIN = 'This text holds a private key. Put only certificates here and the key in the key field.';
 const NOT_PEM_TEXT = 'This file is not PEM text. Convert it first (.pfx: openssl pkcs12 -in file.pfx -nodes -nocerts for the key, -nokeys for the chain).';
 const PRIVATE_KEY_BLOCK = /PRIVATE KEY-----/;
@@ -686,7 +692,7 @@ function codeText(error: ApiError, agent: string): string | null {
     case 'CERTIFICATE_REQUIRED':
       return 'Upload a certificate that is valid now before you choose Uploaded certificate.';
     case 'CERTIFICATE_IN_USE':
-      return 'In use. Switch to Let\'s Encrypt or Behind a proxy first, or upload a replacement.';
+      return CERTIFICATE_IN_USE_TEXT;
     default:
       return null;
   }
@@ -695,6 +701,11 @@ function codeText(error: ApiError, agent: string): string | null {
 /** The texts of the answers an upload can get that carry no field. */
 function uploadErrorText(error: ApiError, agent: string): string | null {
   return error.status === 429 ? 'Too many uploads in the last minute. Try again soon.' : codeText(error, agent);
+}
+
+/** The text of a refused request, delete or upload: the dashboard's own for the codes it knows, else the server's. */
+export function actionErrorText(error: ApiError | undefined, agent: string, fallback: string): string {
+  return (error && codeText(error, agent)) || error?.error || fallback;
 }
 
 const failure = (place: CertificatePlace, message: string, aborted = false): CertificateOutcome => ({ ok: false, aborted, place, message });
@@ -736,3 +747,238 @@ export async function sendCertificate(
     form.keyFile = null;
   }
 }
+
+// ── The certificate card ───────────────────────────────────────────────────
+
+/** A certificate as the card shows it: the uploaded one, or the leaf the agent reports. */
+export interface CertificateFacts {
+  names: string[];
+  issuer: string;
+  notBefore: string | null;
+  notAfter: string | null;
+  /** Epoch ms from which the agent renews; Let's Encrypt only. */
+  renewalAt: number | null;
+  /** Uploaded certificates only. */
+  keyType: string | null;
+  uploadedAt: string | null;
+}
+
+export interface CardFailure {
+  /** The text before the agent's own words, or the whole text for a code the dashboard knows. */
+  lead: string;
+  /** The agent's words: plain text, shown in a <bdi>. */
+  error: string;
+  next: string;
+}
+
+/** What the card of the saved certificate source says. */
+export interface CertificateCard {
+  source: 'acme' | 'uploaded';
+  /** The certificate of the source, when there is one to show. */
+  facts: CertificateFacts | null;
+  /** What the agent serves while it has not taken the saved request or certificate. */
+  served: CertificateFacts | null;
+  lines: string[];
+  failure: CardFailure | null;
+  /** The agent reports that it serves exactly this source. */
+  inUse: boolean;
+  /** Uploaded, and nothing uploaded yet. */
+  empty: boolean;
+}
+
+const uploadedFacts = (c: AppTLSCertificate): CertificateFacts => ({
+  names: c.names,
+  issuer: c.issuer,
+  notBefore: c.not_before,
+  notAfter: c.not_after,
+  renewalAt: null,
+  keyType: c.key_type,
+  uploadedAt: c.created_at,
+});
+
+const servedFacts = (s: AppTLSStatus): CertificateFacts => ({
+  names: s.names,
+  issuer: s.issuer,
+  notBefore: s.not_before,
+  notAfter: s.not_after,
+  renewalAt: s.source === 'acme' ? renewalStart(s.not_before, s.not_after) : null,
+  keyType: null,
+  uploadedAt: null,
+});
+
+const hasLeaf = (status: AppTLSStatus): boolean => status.leaf_sha256 !== '';
+
+const nothingServedText = (redirect: boolean): string => `Nothing is served yet: HTTPS visitors get a connection error${httpAfter(redirect)}.`;
+
+function nextTryText(status: AppTLSStatus): string {
+  return status.next_attempt_at ? `Next try ${formatDateTime(status.next_attempt_at)}.` : 'No new try is planned. Fix the cause, then try again.';
+}
+
+/** Why the agent refused an uploaded certificate, for the codes of the control plane. */
+export function certificateErrorText(code: string, agent: string): string {
+  switch (code) {
+    case 'key_unreadable':
+      return 'The control plane cannot open the stored key, for example after totp.enc_key changed without wafio rekey. Upload the certificate again.';
+    case 'write_failed':
+      return `${agentStart(agent)} could not write the certificate to its key directory and retries. Check the disk and the directory on its host.`;
+    case 'invalid_ack':
+      return `${agentStart(agent)} sent an answer the control plane does not know. Check its version and log.`;
+    default:
+      return `${agentStart(agent)} refused this certificate (${code}). Upload the chain and key again.`;
+  }
+}
+
+/**
+ * The card of the saved source, null while none is chosen. Behind a proxy it names the source; in Gateway it follows
+ * the agent's last report, which counts only when it is about what is saved (currentStatus). Until then the card says
+ * what the older report says is served.
+ */
+export function certificateCard(state: AppTLSState, o: { assigned: boolean; agent: string; now: number; lastActionAt: number | null }): CertificateCard | null {
+  const source = state.source;
+  if (source === '') return null;
+  const card: CertificateCard = {
+    source,
+    facts: source === 'uploaded' && state.certificate ? uploadedFacts(state.certificate) : null,
+    served: null,
+    lines: [],
+    failure: null,
+    inUse: false,
+    empty: source === 'uploaded' && !state.certificate,
+  };
+  if (card.empty) return card;
+  if (state.mode !== 'gateway') {
+    if (source === 'acme') card.lines.push(`${agentStart(o.agent)} orders the first certificate when you switch to Gateway.`);
+    return card;
+  }
+  if (!o.assigned) {
+    card.lines.push(noticeText('unassigned', o.agent));
+    return card;
+  }
+  const redirect = state.redirect_listen !== '';
+  const status = state.status;
+  if (!status) {
+    const late = noReportYet(state, o.lastActionAt, o.now);
+    card.lines.push(
+      late
+        ? `No report from ${agentMid(o.agent)} yet. Check that it is online and that nothing else holds ${portsText(state.listen, state.redirect_listen)} on its host.`
+        : `Waiting for ${agentMid(o.agent)} to report.`,
+    );
+    return card;
+  }
+  const current = currentStatus(state);
+  if (!current) {
+    card.lines.push(`Waiting for ${agentMid(o.agent)} to take the new ${source === 'acme' ? 'request' : 'certificate'}.`);
+    if (hasLeaf(status)) card.served = servedFacts(status);
+    else card.lines.push(status.source === 'acme' ? PLACEHOLDER_TEXT : nothingServedText(redirect));
+    return card;
+  }
+  if (source === 'acme') {
+    const leaf = hasLeaf(current);
+    if (current.state === 'active') {
+      card.facts = servedFacts(current);
+      card.inUse = true;
+      return card;
+    }
+    if (leaf) card.facts = servedFacts(current);
+    if (current.state === 'failed') {
+      card.failure = { lead: 'The last request failed:', error: current.error, next: nextTryText(current) };
+      if (!leaf) card.lines.push(PLACEHOLDER_TEXT);
+    } else {
+      card.lines.push("Requesting a certificate from Let's Encrypt.", leaf ? CURRENT_STAYS_TEXT : PLACEHOLDER_TEXT);
+    }
+    return card;
+  }
+  if (current.state === 'active') {
+    card.inUse = true;
+  } else if (current.state === 'missing') {
+    if (state.agent_host_bound === false) card.lines.push(notHostBoundText(o.agent));
+    else if (hasLeaf(current)) card.lines.push(`${agentStart(o.agent)} serves the previous certificate until it receives this one, within about a minute.`);
+    else card.lines.push(nothingServedText(redirect));
+  } else if (current.state === 'failed') {
+    const code = current.error_code ?? '';
+    card.failure = code
+      ? { lead: certificateErrorText(code, o.agent), error: '', next: '' }
+      : { lead: `${agentStart(o.agent)} reported:`, error: current.error, next: nextTryText(current) };
+  } else {
+    card.lines.push(`Waiting for ${agentMid(o.agent)} to report.`);
+  }
+  return card;
+}
+
+/** "in 5 days", "in 3 hours" on the last day, "expired" once not_after has passed; '' for something that is not a date. */
+export function expiryPhrase(notAfter: string, now: number): string {
+  const expiry = expiryOf(notAfter, now);
+  if (!expiry) return '';
+  if (expiry.expired) return 'expired';
+  if (expiry.days === 0) return `in ${expiry.hours} ${expiry.hours === 1 ? 'hour' : 'hours'}`;
+  return `in ${expiry.days} ${expiry.days === 1 ? 'day' : 'days'}`;
+}
+
+export interface CardAlert {
+  tone: 'warning' | 'error';
+  text: string;
+}
+
+const NOT_TRUSTED_TEXT =
+  'This chain does not lead to a root that browsers trust. Visitors who connect directly get a warning unless their devices trust your CA, which is normal for a private CA. Behind Cloudflare, an Origin CA certificate is fine.';
+
+/** The alerts of the card: the chain is not trusted, the certificate is close to its end or past it. */
+export function certificateAlerts(state: Pick<AppTLSState, 'source' | 'warnings'>, agent: string, now: number): CardAlert[] {
+  const out: CardAlert[] = [];
+  for (const warning of state.warnings) {
+    if (warning.code === 'not_trusted') {
+      out.push({ tone: 'warning', text: NOT_TRUSTED_TEXT });
+    } else if (warning.code === 'expires_soon' && warning.not_after) {
+      const expiry = expiryOf(warning.not_after, now);
+      if (!expiry) continue;
+      const date = formatDate(warning.not_after);
+      if (expiry.expired) {
+        out.push({ tone: 'error', text: `The certificate expired ${date}. Visitors get a certificate error.` });
+      } else if (state.source === 'acme') {
+        out.push({
+          tone: 'warning',
+          text: `The certificate expires ${date} (${expiryPhrase(warning.not_after, now)}) and is not renewed yet. Check the status below, and that ${agentMid(agent)} can reach Let's Encrypt.`,
+        });
+      } else {
+        out.push({ tone: 'warning', text: `The certificate expires ${date} (${expiryPhrase(warning.not_after, now)}). Upload a new one before then.` });
+      }
+    }
+  }
+  return out;
+}
+
+/** The badge in the page header: only while the agent serves HTTPS, since a certificate behind a proxy is not in use. */
+export function expiryBadge(state: Pick<AppTLSState, 'mode' | 'warnings'>, now: number): { label: string; tone: 'warning' | 'danger'; title: string } | null {
+  if (state.mode !== 'gateway') return null;
+  for (const warning of state.warnings) {
+    const expiry = warning.code === 'expires_soon' && warning.not_after ? expiryOf(warning.not_after, now) : null;
+    if (!expiry || !warning.not_after) continue;
+    const date = formatDate(warning.not_after);
+    return expiry.expired
+      ? { label: 'Certificate expired', tone: 'danger', title: `The certificate expired ${date}.` }
+      : { label: 'Certificate expires soon', tone: 'warning', title: `The certificate expires ${date} (${expiryPhrase(warning.not_after, now)}).` };
+  }
+  return null;
+}
+
+export const REQUEST_TEXT =
+  "Starts a request now, unless Let's Encrypt set a wait after its rate limit. One request every 5 minutes. By requesting, you accept the Let's Encrypt Subscriber Agreement.";
+
+export const requestAgainText = (opensAt: number): string => `You can request again at ${formatDateTime(opensAt)}.`;
+
+/** What an upload over a source that is not the uploaded one does, in the text of the dialog. */
+export function uploadSourceText(o: { gateway: boolean; agent: string }): string {
+  const source = 'This upload becomes the source of this application.';
+  return o.gateway ? `${source} ${sourceChangeText('uploaded', { agent: o.agent, hasLeaf: false })}` : source;
+}
+
+/**
+ * Choosing the uploaded source with nothing uploaded: the upload makes itself the source (a save would be refused
+ * for the missing certificate), so the main button uploads. Not for a switch back to Behind a proxy.
+ */
+export function uploadsFirst(saved: Pick<AppTLSState, 'source' | 'certificate'>, input: Pick<AppTLSInput, 'source'>, confirm: TLSConfirm | null): boolean {
+  return input.source === 'uploaded' && saved.source !== 'uploaded' && saved.certificate === null && confirm !== 'proxy';
+}
+
+/** A chosen key file as the dialog lists it: its name and size, never its text. */
+export const chosenFileText = (file: Pick<File, 'name' | 'size'>): string => `${file.name} (${formatBytes(file.size)})`;

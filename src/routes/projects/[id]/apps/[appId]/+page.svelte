@@ -54,7 +54,7 @@
     writeAppRange,
   } from '#lib/components/apps/app-page.js';
   import { APP_STATE_TEXT, appState, routeSummary } from '#lib/components/apps/inventory.js';
-  import { withoutDnsHints } from '#lib/components/apps/tls.js';
+  import { expiryBadge, withoutDnsHints } from '#lib/components/apps/tls.js';
   import { usePageDetail } from '#lib/page-meta.svelte.js';
   import {
     agentRouteBodyFrom,
@@ -77,6 +77,7 @@
   // The HTTPS tab owns its state once it is open; this is what the first render of the tab starts from. It holds no
   // DNS hints: they last until the next save or until the person leaves the tab.
   let tls = $state<AppTLSState | null>(null);
+  const certificateBadge = $derived(tls ? expiryBadge(tls, Date.now()) : null);
   let loading = $state(true);
   let loadError = $state<ApiError | null>(null);
   let bindingError = $state('');
@@ -323,6 +324,9 @@
           <Badge tone={stateText.tone} title={stateText.hint}>{stateText.label}</Badge>
           {#if app.maintenance_enabled}
             <Badge tone="warning" title="Maintenance mode is on: visitors see the maintenance page.">Maintenance</Badge>
+          {/if}
+          {#if certificateBadge}
+            <Badge tone={certificateBadge.tone} title={certificateBadge.title}>{certificateBadge.label}</Badge>
           {/if}
           {#if assignment}
             <span class="app-agent">
