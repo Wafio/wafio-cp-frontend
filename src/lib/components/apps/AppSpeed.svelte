@@ -1,6 +1,6 @@
 <!--
-  AppSpeed: the Speed tab. Parts that make an application faster for visitors and work in both modes: compression
-  and files from a folder (the cache comes next). Each part has its heading, a sentence for visitors, a switch, its
+  AppSpeed: the Speed tab. Parts that make an application faster for visitors and work in both modes: compression,
+  files from a folder and the cache (CacheSection). Each part has its heading, a sentence for visitors, a switch, its
   main fields, its limits folded under "Advanced limits", one status line and its own Save. The defaults are filled
   in, so switching on and saving is enough. A switch saves nothing by itself. The settings and what the agent
   reported come from the page's feed; this panel keeps what the person is typing when a read arrives, and says in
@@ -14,6 +14,7 @@
   import { toast } from '#lib/stores/toast.js';
   import { Alert, Button, ConfirmModal, Field, InlineError, Spinner, Switch } from '#lib/components/ui/index.js';
   import ChoiceGroup from '#lib/components/waf-policy/ChoiceGroup.svelte';
+  import CacheSection from './CacheSection.svelte';
   import LifetimeInput from './LifetimeInput.svelte';
   import PartStatus from './PartStatus.svelte';
   import type { DeliveryFeed } from './delivery-feed.svelte.js';
@@ -52,11 +53,14 @@
     projectId,
     appId,
     feed,
+    appName = '',
     canConfigure = false,
     dirty = $bindable(false),
   }: {
     projectId: string;
     appId: string;
+    /** Named in the question before every stored copy is removed. */
+    appName?: string;
     /** The settings and the agent's report, kept current by the page. */
     feed: DeliveryFeed;
     canConfigure?: boolean;
@@ -120,8 +124,9 @@
   const compressionDirty = $derived(!sameCompression(compression, storedCompression));
   const filesDirty = $derived(!sameStaticFiles(files, storedFiles));
 
+  let cacheDirty = $state(false);
   $effect(() => {
-    dirty = compressionDirty || filesDirty;
+    dirty = compressionDirty || filesDirty || cacheDirty;
   });
 
   const fieldValue = (field: CompressionField | StaticFilesField) =>
@@ -361,6 +366,8 @@
         <Button class="sp-tap" loading={busy === 'files'} disabled={readonly || busy !== null || !filesDirty} onclick={askSaveFiles}>Save files</Button>
       </div>
     </section>
+
+    <CacheSection {projectId} {appId} {appName} {feed} {canConfigure} bind:dirty={cacheDirty} />
   {/if}
 </section>
 
@@ -388,6 +395,8 @@
   .sp-fixed { margin: var(--sp-1) 0 0; font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.5; max-width: 70ch; }
   .sp-fieldset { display: flex; flex-direction: column; gap: var(--sp-4); border: 0; padding: 0; margin: 0; min-width: 0; }
   .sp-fieldset input.mono { font-family: var(--font-mono); font-size: var(--fs-sm); }
+  /* A field in a disabled group reads as read only: the group is set to disabled by the viewer, the old agent and the lock. */
+  .sp :global(:is(input, textarea):disabled) { opacity: 0.6; cursor: not-allowed; }
   .sp-short { max-width: 14rem; }
 
   .sp-advanced { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-secondary); }

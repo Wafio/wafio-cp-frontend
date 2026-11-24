@@ -441,7 +441,7 @@
           onchange={(next) => (tls = withoutDnsHints(next))}
         />
       {:else if tab === 'speed'}
-        <AppSpeed projectId={projectId} appId={app.id} feed={delivery} canConfigure={ctx.canConfigure} bind:dirty={speedDirty} />
+        <AppSpeed projectId={projectId} appId={app.id} appName={app.name} feed={delivery} canConfigure={ctx.canConfigure} bind:dirty={speedDirty} />
       {:else if tab === 'routing'}
         <section class="routing" aria-labelledby="routing-title">
           <header>

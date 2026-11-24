@@ -1,7 +1,8 @@
 /**
- * Speed tab of an application (compression, files from a folder) and the status lines of the main host name and
- * the path prefix: the checks the control plane makes (same numbers and texts, never stricter), the form models,
- * what the agent reported in words, and how often to ask. Pure functions; the panel is AppSpeed.svelte.
+ * Speed tab of an application (compression, files from a folder; the cache's own checks are in cache.ts) and the
+ * status lines of the main host name and the path prefix: the checks the control plane makes (same numbers and texts,
+ * never stricter), the form models, what the agent reported in words, and how often to ask. Pure functions; the
+ * panel is AppSpeed.svelte.
  */
 import type { ApiError, AppCompression, AppCompressionStats, AppDelivery, AppEdgeFeatureState, AppStaticFiles, EdgePart, StaticMissing } from '../../api';
 import { formatBytes, formatNumber } from '../../format';
@@ -250,6 +251,12 @@ export function refusalReason(state: Pick<AppEdgeFeatureState, 'code' | 'detail'
       return `it cannot read ${where}. It runs as the user wafio, and its service hides /home, /root and /run/user`;
     case 'root_forbidden':
       return `${where} holds system or WAFio files`;
+    case 'cache_dir_unusable':
+      return 'its cache folder /var/cache/wafio-waf was not usable at start; its log says why. Fix or reinstall, then restart it';
+    case 'disk_too_small':
+      return `the cache disk has less free space than its applications ask for${state.detail ? ` (${state.detail})` : ''}, and 5 % of the disk stays free. Lower Disk space or free space on the host`;
+    case 'memory_too_small':
+      return `hot copies would use more than a quarter of the host's memory${state.detail ? ` (${state.detail})` : ''}. Lower Memory for hot copies`;
     case 'invalid':
       return `the settings failed its own checks${state.detail ? ` (${state.detail})` : ''}. Upgrade the agent`;
     default:
@@ -283,8 +290,10 @@ export function partLine(o: PartInput): PartLine | null {
   const agent = d.agent;
   if (!agent) return o.inUse && !o.quiet?.includes('unassigned') ? { tone: 'info', text: UNASSIGNED_TEXT } : null;
   if (agent.features[o.part] === false) return { tone: 'warning', text: tooOldText(agent.name, o.label ?? PART_LABEL[o.part]) };
-  if (!o.inUse) return null;
   const state = reported(d, o.part);
+  // A cache folder that cannot be used stops the cache for every application, also while its switch is off.
+  const noFolder = o.part === 'cache' && state?.state === 'refused' && state.code === 'cache_dir_unusable';
+  if (!o.inUse && !noFolder) return null;
   if (state?.state === 'refused') {
     return {
       tone: 'warning',
@@ -300,11 +309,11 @@ export function partLine(o: PartInput): PartLine | null {
     : { tone: 'info', text: `Saved. Waiting for ${agent.name} to apply it.` };
 }
 
-/** A part of the saved settings is on and its agent has not answered the latest bundle. */
+/** A part of the saved settings is on and its agent has not answered the latest bundle, or a removal waits for its answer. */
 export function waitingForAgent(d: AppDelivery | null): boolean {
   if (!d?.agent?.online) return false;
   const on: [EdgePart, boolean][] = [['compression', d.compression.enabled], ['static_files', d.static_files.enabled], ['cache', d.cache.enabled]];
-  return on.some(([part, enabled]) => enabled && d.agent?.features[part] !== false && reported(d, part) === null);
+  return on.some(([part, enabled]) => enabled && d.agent?.features[part] !== false && reported(d, part) === null) || d.purges.some((row) => row.state === 'pending');
 }
 
 /** 10 s while waiting for the agent and for 2 minutes after a save, else 60 s. */

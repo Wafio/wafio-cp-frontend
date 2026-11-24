@@ -128,6 +128,33 @@ describe('createDeliveryFeed', () => {
     expect(feed.waitingSince).toBeGreaterThan(first);
   });
 
+  test('a removal that was queued is shown at once, newest first, the list keeps 10, and the feed reads again', async () => {
+    const row = (id: string) => ({ id, scope: 'app' as const, url: '', state: 'pending' as const, error: '', by: 'Dewi', agent: '', created_at: '2026-11-24T12:00:00Z', finished_at: null });
+    const old = Array.from({ length: 10 }, (_, i) => ({ ...row(`old-${i}`), state: 'done' as const }));
+    const urls = answers(delivery({ purges: old }));
+    const { feed } = start();
+    await settle();
+    const before = urls.length;
+    feed.purged(row('new'));
+    expect(feed.state?.purges).toHaveLength(10);
+    expect(feed.state?.purges[0].id).toBe('new');
+    expect(feed.state?.purges[9].id).toBe('old-8');
+    feed.purged(row('new'));
+    expect(feed.state?.purges.filter((p) => p.id === 'new')).toHaveLength(1);
+    await settle();
+    expect(urls.length).toBeGreaterThan(before);
+  });
+
+  test('a removal that was queued counts as an action, so the feed reads every 10 seconds for a while', async () => {
+    answers(delivery());
+    const { feed } = start();
+    await settle();
+    const first = feed.waitingSince;
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    feed.purged({ id: 'x', scope: 'app', url: '', state: 'pending', error: '', by: '', agent: '', created_at: '2026-11-24T12:00:00Z', finished_at: null });
+    expect(feed.waitingSince).toBeGreaterThan(first);
+  });
+
   test('a new application starts from nothing', async () => {
     answers(delivery());
     const { feed, ctl } = start();
