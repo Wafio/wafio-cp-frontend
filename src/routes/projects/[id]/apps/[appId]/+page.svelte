@@ -1,10 +1,10 @@
 <!--
   Application page, the single page of an application. Tabs live in the URL
   (?tab=monitoring|decisions|config|
-  blockwindow|maintenance|routing|assignment), so alerts and other pages can
+  blockwindow|maintenance|https|routing|assignment), so alerts and other pages can
   deep-link and Back restores the previous tab.
 
-  Unsaved edits in Config (ConfigWafForm), Maintenance and Routing
+  Unsaved edits in Config (ConfigWafForm), Maintenance, HTTPS and Routing
   (AppRouteForm) are guarded on tab switch and on navigation away.
 -->
 <script lang="ts">
@@ -15,6 +15,7 @@
   import {
     deleteApp,
     getApp,
+    getAppTLS,
     getAppWAFAgent,
     listAgentRoutes,
     listFleetAgents,
@@ -23,6 +24,7 @@
     type AgentRoute,
     type ApiError,
     type App,
+    type AppTLSState,
     type AppWAFAssignment,
     type FleetAgent,
   } from '#lib/api.js';
@@ -40,6 +42,7 @@
   import AppConfigPanel from '#lib/components/apps/AppConfigPanel.svelte';
   import AppMaintenance from '#lib/components/apps/AppMaintenance.svelte';
   import AppRouteForm from '#lib/components/apps/AppRouteForm.svelte';
+  import AppTLS from '#lib/components/apps/AppTLS.svelte';
   import DecisionFeed from '#lib/components/apps/DecisionFeed.svelte';
   import {
     appHref,
@@ -70,6 +73,8 @@
   let assignment = $state<AppWAFAssignment | null>(null);
   let agents = $state<FleetAgent[]>([]);
   let route = $state<AgentRoute | null>(null);
+  // The HTTPS tab owns its state once it is open; this is what the first render of the tab starts from.
+  let tls = $state<AppTLSState | null>(null);
   let loading = $state(true);
   let loadError = $state<ApiError | null>(null);
   let bindingError = $state('');
@@ -92,10 +97,11 @@
     const project = projectId;
     const id = appId;
     if (!opts.silent) loading = true;
-    const [appRes, bindRes, agentsRes] = await Promise.all([
+    const [appRes, bindRes, agentsRes, tlsRes] = await Promise.all([
       getApp(project, id),
       getAppWAFAgent(project, id),
       listFleetAgents({ projectId: project, kind: 'waf' }),
+      getAppTLS(project, id),
     ]);
     if (my !== epoch) return;
     if (appRes.error || !appRes.data) {
@@ -109,6 +115,7 @@
     app = appRes.data.app;
     assignment = binding;
     route = nextRoute;
+    tls = tlsRes.data ?? null;
     agents = agentsRes.data?.agents ?? [];
     // 404 WAF_AGENT_NOT_ASSIGNED is the unassigned state, not a failure.
     bindingError = bindRes.error && bindRes.error.code !== 'WAF_AGENT_NOT_ASSIGNED' ? bindRes.error.error || 'Could not load the assignment.' : '';
@@ -122,6 +129,7 @@
       app = null;
       assignment = null;
       route = null;
+      tls = null;
       agents = [];
       loadError = null;
       bindingError = '';
@@ -158,6 +166,7 @@
   // ── Unsaved changes ──────────────────────────────────────────────
   let configDirty = $state(false);
   let maintenanceDirty = $state(false);
+  let tlsDirty = $state(false);
   let routingDirty = $state(false);
   let discardPrompt = $state<{ resolve: (ok: boolean) => void } | null>(null);
 
@@ -174,7 +183,7 @@
     prompt?.resolve(ok);
   }
 
-  const unsaved = createDirtyTracker(() => configDirty || maintenanceDirty || routingDirty, { confirm: () => askDiscard() });
+  const unsaved = createDirtyTracker(() => configDirty || maintenanceDirty || tlsDirty || routingDirty, { confirm: () => askDiscard() });
   unsaved.guardNavigation();
 
   // A panel that is no longer shown cannot hold unsaved edits (Back/Forward
@@ -182,6 +191,7 @@
   $effect(() => {
     if (tab !== 'config') configDirty = false;
     if (tab !== 'maintenance') maintenanceDirty = false;
+    if (tab !== 'https') tlsDirty = false;
     if (tab !== 'routing') routingDirty = false;
   });
 
@@ -199,6 +209,7 @@
     // Agreed to discard: the navigation below must not ask again.
     configDirty = false;
     maintenanceDirty = false;
+    tlsDirty = false;
     routingDirty = false;
     await navigate(appTabSearch(page.url.searchParams, target));
   }
@@ -276,6 +287,7 @@
     deleteOpen = false;
     configDirty = false;
     maintenanceDirty = false;
+    tlsDirty = false;
     routingDirty = false;
     toast.success('Its routing, configuration history and custom rules were removed.', `${current.name} deleted`);
     await goto(`${base}/projects/${projectId}/apps`);
@@ -376,6 +388,21 @@
           canConfigure={ctx.canConfigure}
           bind:dirty={maintenanceDirty}
           onchange={setMaintenance}
+        />
+      {:else if tab === 'https'}
+        <AppTLS
+          {projectId}
+          appId={app.id}
+          appName={app.name}
+          assigned={Boolean(assignment)}
+          agentName={agent?.name ?? ''}
+          agentOnline={agent?.is_online}
+          canConfigure={ctx.canConfigure}
+          routing={routeInitial}
+          routingHref={appHref(base, projectId, app.id, 'routing')}
+          initial={tls ?? undefined}
+          bind:dirty={tlsDirty}
+          onchange={(next) => (tls = next)}
         />
       {:else if tab === 'routing'}
         <section class="routing" aria-labelledby="routing-title">

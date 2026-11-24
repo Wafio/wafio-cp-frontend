@@ -11,9 +11,13 @@ import type {
   AppTLSInput,
   AppTLSState,
   AppTLSStatus,
+  AppTLSWarning,
+  TLSMode,
+  TLSSource,
 } from '../../api';
+import { formatDate } from '../../format';
 import { ipToBytes, isIPv4 } from '../../validation';
-import { quoted } from './maintenance';
+import { quoted, stripFieldPrefix } from './maintenance';
 
 /** The limits of the control plane (domain.TLSMaxHosts, CertChainMaxBytes, CertKeyMaxBytes). */
 export const TLS_LIMITS = { hosts: 100, hostBytes: 253, labelBytes: 63, chainBytes: 64 << 10, keyBytes: 16 << 10 } as const;
@@ -187,16 +191,28 @@ export function normalizeTLS(input: AppTLSInput): NormalizedTLS {
   return { settings: { mode: input.mode, hosts, listen, redirect_listen: redirect, source: input.source } };
 }
 
-const OWN_LISTENER = 'The listen address on the Routing tab of this application uses it.';
+export const OWN_LISTENER = 'The listen address on the Routing tab of this application uses it.';
+
+/** The listener the application opens for itself on the Routing tab: `host` '' is 0.0.0.0, no port means no listener. */
+export interface OwnListener {
+  host: string;
+  port: number | null;
+}
+
+/** The own listener as ip:port, null without a port. */
+function ownAddress(own: OwnListener): string | null {
+  if (!own.port) return null;
+  const host = own.host.trim() || '0.0.0.0';
+  return host.includes(':') ? `[${host}]:${own.port}` : `${host}:${own.port}`;
+}
 
 /**
  * Gateway only: the HTTPS or redirect address of `settings` (as normalizeTLS returns it) that clashes with the
- * listener the application opens for itself on the Routing tab. `host` '' is 0.0.0.0; no port means no listener.
+ * listener the application opens for itself on the Routing tab.
  */
-export function checkTLSFit(settings: Pick<AppTLSInput, 'listen' | 'redirect_listen'>, own: { host: string; port: number | null }): TLSFieldError | null {
-  if (!own.port) return null;
-  const host = own.host.trim() || '0.0.0.0';
-  const mine = canonicalListen(host.includes(':') ? `[${host}]:${own.port}` : `${host}:${own.port}`);
+export function checkTLSFit(settings: Pick<AppTLSInput, 'listen' | 'redirect_listen'>, own: OwnListener): TLSFieldError | null {
+  const address = ownAddress(own);
+  const mine = address && canonicalListen(address);
   if (!mine) return null;
   for (const field of ['listen', 'redirect_listen'] as const) {
     if (listenersClash(settings[field], mine)) return { field, message: OWN_LISTENER };
@@ -329,6 +345,264 @@ export function noReportYet(state: Pick<AppTLSState, 'source' | 'acme' | 'certif
   return now - waitingSince(state, lastActionAt) >= NO_REPORT_AFTER_MS;
 }
 
+// ── The form of the tab ────────────────────────────────────────────────────
+
+export const DEFAULT_REDIRECT_LISTEN = '0.0.0.0:80';
+
+/** What the person edits: host names one per line, the redirect as a switch and an address. */
+export interface TLSForm {
+  mode: TLSMode;
+  hosts: string;
+  listen: string;
+  redirect: boolean;
+  redirectListen: string;
+  source: TLSSource;
+}
+
+export function formFromTLS(settings: AppTLSInput): TLSForm {
+  return {
+    mode: settings.mode,
+    hosts: settings.hosts.join('\n'),
+    listen: settings.listen,
+    redirect: settings.redirect_listen !== '',
+    redirectListen: settings.redirect_listen,
+    source: settings.source,
+  };
+}
+
+/** The settings as typed: blank lines dropped, the rest left to the checks. */
+export function inputFromForm(form: TLSForm): AppTLSInput {
+  return {
+    mode: form.mode,
+    hosts: form.hosts.split('\n').map(trimAscii).filter((host) => host !== ''),
+    listen: form.listen,
+    redirect_listen: form.redirect ? form.redirectListen : '',
+    source: form.source,
+  };
+}
+
+/** The redirect switch; turning it on with no address takes port 80. */
+export function setRedirect(form: TLSForm, on: boolean): TLSForm {
+  return { ...form, redirect: on, redirectListen: on && !form.redirectListen.trim() ? DEFAULT_REDIRECT_LISTEN : form.redirectListen };
+}
+
+/**
+ * Choosing Gateway for the first time turns the redirect on at port 80. Choosing Behind a proxy puts the
+ * saved listeners back, since that mode does not show them and an edit there could not be seen or fixed.
+ */
+export function chooseMode(form: TLSForm, mode: TLSMode, stored: AppTLSInput): TLSForm {
+  if (mode === 'proxy') {
+    const { listen, redirect, redirectListen } = formFromTLS(stored);
+    return { ...form, mode, listen, redirect, redirectListen };
+  }
+  const first = stored.mode !== 'gateway' && form.redirectListen.trim() === '';
+  return first ? setRedirect({ ...form, mode }, true) : { ...form, mode };
+}
+
+/** The same settings once the server's normal form is applied; unreadable settings count as they are typed. */
+export function sameTLS(a: AppTLSInput, b: AppTLSInput): boolean {
+  const key = (value: AppTLSInput) => {
+    const s = normalizeTLS(value).settings ?? value;
+    return JSON.stringify([s.mode, s.hosts, s.listen, s.redirect_listen, s.source]);
+  };
+  return key(a) === key(b);
+}
+
+/** normalizeTLS without what only Gateway requires (a source, a host name): the dialog of a switch to Gateway checks those. */
+export function normalizeFormats(input: AppTLSInput): NormalizedTLS {
+  return normalizeTLS({ ...input, mode: 'proxy' });
+}
+
+/** The first field the server would refuse, or the address that clashes with the application's own listener in Gateway. */
+export function tlsProblem(input: AppTLSInput, own: OwnListener, toGateway = false): TLSFieldError | null {
+  const result = toGateway ? normalizeFormats(input) : normalizeTLS(input);
+  if (result.error) return result.error;
+  return input.mode === 'gateway' ? checkTLSFit(result.settings, own) : null;
+}
+
+/** The Gateway switch needs an agent that serves certificates; `null` (not known) passes. An app already in Gateway stays editable. */
+export function switchDisabled(o: { canConfigure: boolean; busy: boolean; to: TLSMode | null; supported: boolean | null }): boolean {
+  return !o.canConfigure || o.busy || (o.to === 'gateway' && o.supported === false);
+}
+
+// ── Texts ──────────────────────────────────────────────────────────────────
+
+/** The agent's name, or "The WAF agent" at the start of a sentence. */
+const agentStart = (agent: string): string => agent || 'The WAF agent';
+/** The agent's name, or "the WAF agent" inside a sentence. */
+const agentMid = (agent: string): string => agent || 'the WAF agent';
+
+export function unsupportedText(agent: string): string {
+  return `${agentStart(agent)} cannot serve certificates: it is older than this feature, or its key directory /var/lib/wafio-waf-agent/tls/ was unusable at start (its log says why). Upgrade it, or fix the directory and restart it.`;
+}
+
+export function notHostBoundText(agent: string): string {
+  return `${agentStart(agent)} needs a credential bound to its host to receive an uploaded key. On a registered host, set WAFIO_HOST_KEY in /etc/wafio/waf-agent.env and restart it. Otherwise enroll it under a new name with a host key from the Hosts page, then move this application to it on the Assignment tab.`;
+}
+
+export type TLSNotice = 'unassigned' | 'unsupported' | 'unsupported-gateway' | 'offline' | 'readonly';
+
+/** The alerts above the form, in the order they are shown. `mode` is the saved one. */
+export function tlsNotices(o: { assigned: boolean; mode: TLSMode; supported: boolean | null; online: boolean | undefined; canConfigure: boolean }): TLSNotice[] {
+  const out: TLSNotice[] = [];
+  if (!o.assigned) out.push('unassigned');
+  if (o.supported === false) out.push(o.mode === 'gateway' ? 'unsupported-gateway' : 'unsupported');
+  if (o.online === false) out.push('offline');
+  if (!o.canConfigure) out.push('readonly');
+  return out;
+}
+
+export function noticeText(notice: TLSNotice, agent: string): string {
+  switch (notice) {
+    case 'unassigned':
+      return 'No WAF agent serves this application. These settings take effect once one is assigned on the Assignment tab.';
+    case 'unsupported':
+      return unsupportedText(agent);
+    case 'unsupported-gateway':
+      return `${agentStart(agent)} no longer serves certificates, so it serves this application in plain HTTP at its Routing listen address.`;
+    case 'offline':
+      return `${agentStart(agent)} is offline. The change takes effect when it reconnects.`;
+    case 'readonly':
+      return 'Read-only: changing HTTPS settings needs member or owner access.';
+  }
+}
+
+/** "port 443", "ports 443 and 80": the ports of the HTTPS address and, when there is one, the redirect address. */
+export function portsText(listen: string, redirect: string): string {
+  const ports = new Set<number>();
+  for (const address of [listen || DEFAULT_TLS_LISTEN, redirect]) {
+    const parsed = address ? parseListen(address) : null;
+    if (parsed) ports.add(parsed.port);
+  }
+  const list = [...ports];
+  if (list.length === 0) return 'the listening ports';
+  return list.length === 1 ? `port ${list[0]}` : `ports ${list.join(' and ')}`;
+}
+
+/** What a source choice does right away, in Gateway: the first order of Let's Encrypt, or the upload being sent to the agent. */
+export function sourceSwitchText(source: 'acme' | 'uploaded', o: { agent: string; redirect: boolean }): string {
+  const http = o.redirect ? ', and HTTP visitors get 503' : '. Nothing answers on HTTP';
+  return source === 'acme'
+    ? `Until the certificate is issued, HTTPS visitors get a browser warning, then a 503 page${http}. A try takes up to 3 minutes; after a failure the agent waits 10 minutes, then longer. Switching places the first request: by switching, you accept the Let's Encrypt Subscriber Agreement.`
+    : `Until ${agentMid(o.agent)} has the certificate, usually within a minute, HTTPS connections fail${http}.`;
+}
+
+/** What the person does outside WAFio for a switch to Gateway. */
+export function gatewaySteps(o: { agent: string; ports: string; source: TLSSource }): string[] {
+  return [
+    "Point each host name's DNS at this server, or at a CDN that connects here over HTTPS (Cloudflare: Full).",
+    `Free ${o.ports} on ${agentMid(o.agent)}'s host: stop or move the web server there. Until then ${agentMid(o.agent)} keeps its current settings for all its applications and retries every minute.`,
+    'If you reach this dashboard through that web server, set up another way in first, or switching back needs a shell.',
+    `Open ${o.ports} to visitors in every firewall${o.source === 'acme' ? "; Let's Encrypt checks from several networks" : ''}.`,
+  ];
+}
+
+export function backToProxyText(o: { agent: string; own: OwnListener; ports: string }): string {
+  return `${agentStart(o.agent)} stops serving HTTPS for this application and listens on ${ownAddress(o.own) ?? 'the listen address on the Routing tab'} again, which frees ${o.ports}. Then start the web server in front of it; a load balancer on another machine can be switched first.`;
+}
+
+export const TRUST_WARNING =
+  'Forwarded headers are trusted from loopback and the private ranges. In Gateway mode a load balancer or NAT that hides client addresses, a machine on your network or a container could set any client address. With nothing in front, turn this off on the Routing tab; behind a CDN, keep only its addresses.';
+
+export function savedInGatewayText(agent: string): string {
+  return `Saved. ${agentStart(agent)} applies it within about a minute. If it cannot (a port in use, say), it keeps its current settings for all its applications; its log says why.`;
+}
+
+/** The DNS hint of a save: what a host resolves to against what the agent's host reports. */
+export function dnsWarningText(warning: AppTLSWarning, agent: string): string {
+  return `${warning.host} resolves to ${(warning.resolved ?? []).join(', ')}, but ${agentMid(agent)}'s host reports ${(warning.agent_addresses ?? []).join(', ')}. Visitors and Let's Encrypt go where DNS points; behind a CDN that is expected.`;
+}
+
+// ── The checks of a switch to Gateway ──────────────────────────────────────
+
+export type CheckState = 'passed' | 'failed' | 'warning' | 'unknown';
+
+export interface TLSCheck {
+  id: 'source' | 'hosts' | 'agent' | 'certificate' | 'bound' | 'trust';
+  state: CheckState;
+  text: string;
+}
+
+function certificateCheck(certificate: AppTLSCertificate | null, hosts: readonly string[], now: number): TLSCheck {
+  const check = (state: CheckState, text: string): TLSCheck => ({ id: 'certificate', state, text });
+  if (!certificate) return check('failed', 'No certificate is uploaded. Upload one before you switch.');
+  if (expiryOf(certificate.not_after, now)?.expired ?? true) return check('failed', 'The uploaded certificate has expired.');
+  const missing = hosts.find((host) => !certificateCoversHost(certificate.names, host));
+  if (missing) return check('failed', `The uploaded certificate does not cover ${missing}.`);
+  return check('passed', `The uploaded certificate covers every host name and is valid until ${formatDate(certificate.not_after)}.`);
+}
+
+/**
+ * What a switch to Gateway needs: a source, a host name, an agent that serves certificates and, for an uploaded
+ * certificate, one that is valid now, covers every host and can reach the agent. A failed check keeps the switch
+ * from being confirmed; "not known" and a warning do not, and the server checks again.
+ */
+export function gatewayChecks(o: {
+  input: Pick<AppTLSInput, 'hosts' | 'source'>;
+  certificate: AppTLSCertificate | null;
+  supported: boolean | null;
+  hostBound: boolean | null;
+  /** Forwarded headers are on with no trusted proxy listed. */
+  trustWithoutList: boolean;
+  agent: string;
+  now: number;
+}): TLSCheck[] {
+  const hosts = [...new Set(o.input.hosts.map(lowerAscii))];
+  const source = o.input.source;
+  const checks: TLSCheck[] = [
+    source === ''
+      ? { id: 'source', state: 'failed', text: 'Choose a certificate source.' }
+      : { id: 'source', state: 'passed', text: source === 'acme' ? "Let's Encrypt gives the certificate." : 'The certificate is the one you uploaded.' },
+    hosts.length === 0
+      ? { id: 'hosts', state: 'failed', text: 'Add at least one host name.' }
+      : { id: 'hosts', state: 'passed', text: hosts.length === 1 ? 'One host name.' : `${hosts.length} host names.` },
+    o.supported === false
+      ? { id: 'agent', state: 'failed', text: unsupportedText(o.agent) }
+      : o.supported === null
+        ? { id: 'agent', state: 'unknown', text: 'It is not known yet whether the WAF agent can serve certificates. The control plane checks again when you switch.' }
+        : { id: 'agent', state: 'passed', text: `${agentStart(o.agent)} can serve certificates.` },
+  ];
+  if (source === 'uploaded') {
+    checks.push(certificateCheck(o.certificate, hosts, o.now));
+    checks.push(
+      o.hostBound === false
+        ? { id: 'bound', state: 'failed', text: notHostBoundText(o.agent) }
+        : o.hostBound === null
+          ? { id: 'bound', state: 'unknown', text: 'It is not known yet whether the WAF agent can receive an uploaded key. The control plane checks again when you switch.' }
+          : { id: 'bound', state: 'passed', text: `${agentStart(o.agent)} can receive an uploaded key.` },
+    );
+  }
+  checks.push(
+    o.trustWithoutList
+      ? { id: 'trust', state: 'warning', text: TRUST_WARNING }
+      : { id: 'trust', state: 'passed', text: 'Forwarded headers are off, or trusted only from your own list.' },
+  );
+  return checks;
+}
+
+// ── Refusals of a save ─────────────────────────────────────────────────────
+
+/** Where the answer of a refused save is shown: under a field, above the form with a link to Routing, or above the form. */
+export type TLSRefusal =
+  | { kind: 'field'; field: 'hosts' | 'listen' | 'redirect_listen' | 'source'; message: string }
+  | { kind: 'routing' | 'unsupported' | 'save'; message: string };
+
+/**
+ * A 400 INVALID_TLS_SETTINGS and the conflicts and size refusals that name a field belong under it, and
+ * CERTIFICATE_DOES_NOT_COVER under the host names (its text names the host). A LISTEN_CONFLICT on `listen_port`
+ * is a Routing setting. The rest is shown above the form, TLS_UNSUPPORTED also telling the panel the agent cannot.
+ */
+export function classifyTLSRefusal(error: ApiError | undefined, agent: string): TLSRefusal {
+  const text = error?.error || 'Could not save the HTTPS settings.';
+  const field = error?.field;
+  const named = field === 'hosts' || field === 'listen' || field === 'redirect_listen' || field === 'source';
+  if (error?.code === 'INVALID_TLS_SETTINGS' && named) return { kind: 'field', field, message: stripFieldPrefix(text, field) };
+  if ((error?.code === 'LISTEN_CONFLICT' || error?.code === 'HOST_CONFLICT' || error?.code === 'TLS_BUNDLE_TOO_LARGE') && named) return { kind: 'field', field, message: text };
+  if (error?.code === 'LISTEN_CONFLICT' && field === 'listen_port') return { kind: 'routing', message: text };
+  if (error?.code === 'CERTIFICATE_DOES_NOT_COVER') return { kind: 'field', field: 'hosts', message: text };
+  return { kind: error?.code === 'TLS_UNSUPPORTED' ? 'unsupported' : 'save', message: (error && codeText(error, agent)) ?? text };
+}
+
 // ── Sending a certificate ──────────────────────────────────────────────────
 
 /** What the person typed or chose. The key lives here only until the send ends. */
@@ -366,14 +640,27 @@ export async function readPemFile(file: File, kind: 'chain' | 'key'): Promise<{ 
   return kind === 'chain' && PRIVATE_KEY_BLOCK.test(text) ? { message: KEY_IN_CHAIN } : { text };
 }
 
-/** The texts of the codes an upload can be answered with that carry no field. */
-function uploadErrorText(error: ApiError, agent: string): string | null {
-  if (error.status === 429) return 'Too many uploads in the last minute. Try again soon.';
-  if (error.code === 'KEY_ENCRYPTION_UNAVAILABLE') return 'The control plane cannot store keys: totp.enc_key is not set.';
-  if (error.code === 'AGENT_NOT_HOST_BOUND') {
-    return `${agent || 'The WAF agent'} needs a credential bound to its host to receive an uploaded key. On a registered host, set WAFIO_HOST_KEY in /etc/wafio/waf-agent.env and restart it. Otherwise enroll it under a new name with a host key from the Hosts page, then move this application to it on the Assignment tab.`;
+/** The dashboard's text for an answer that names no field, null for any other. */
+function codeText(error: ApiError, agent: string): string | null {
+  switch (error.code) {
+    case 'KEY_ENCRYPTION_UNAVAILABLE':
+      return 'The control plane cannot store keys: totp.enc_key is not set.';
+    case 'AGENT_NOT_HOST_BOUND':
+      return notHostBoundText(agent);
+    case 'TLS_UNSUPPORTED':
+      return unsupportedText(agent);
+    case 'CERTIFICATE_REQUIRED':
+      return 'Upload a certificate that is valid now before you choose Uploaded certificate.';
+    case 'CERTIFICATE_IN_USE':
+      return 'In use. Switch to Let\'s Encrypt or Behind a proxy first, or upload a replacement.';
+    default:
+      return null;
   }
-  return null;
+}
+
+/** The texts of the answers an upload can get that carry no field. */
+function uploadErrorText(error: ApiError, agent: string): string | null {
+  return error.status === 429 ? 'Too many uploads in the last minute. Try again soon.' : codeText(error, agent);
 }
 
 const failure = (place: CertificatePlace, message: string, aborted = false): CertificateOutcome => ({ ok: false, aborted, place, message });

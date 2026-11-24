@@ -4,28 +4,49 @@ import type { ApiError, ApiResult, AppTLSCertificate, AppTLSCertificateInput, Ap
 import {
   ACME_REQUEST_GAP_MS,
   NO_REPORT_AFTER_MS,
+  OWN_LISTENER,
   POLL_FAST_MS,
   POLL_SLOW_MS,
   TLS_LIMITS,
+  TRUST_WARNING,
+  backToProxyText,
   canonicalListen,
   certificateCoversHost,
   checkTLSFit,
+  chooseMode,
+  classifyTLSRefusal,
   createEpoch,
   currentStatus,
+  dnsWarningText,
   expiryOf,
+  formFromTLS,
+  gatewayChecks,
+  gatewaySteps,
+  inputFromForm,
   listenersOverlap,
   mergeEdits,
   mergePoll,
   noReportYet,
+  noticeText,
   normalizeTLS,
   pollIntervalMs,
+  portsText,
   readPemFile,
   renewalStart,
   requestOpensAt,
   retryUntil,
+  sameTLS,
+  savedInGatewayText,
   sendCertificate,
+  setRedirect,
+  sourceSwitchText,
+  switchDisabled,
+  tlsNotices,
+  tlsProblem,
   waitingSince,
   type CertificateForm,
+  type CheckState,
+  type TLSCheck,
 } from '../src/lib/components/apps/tls';
 
 // The control plane's cases (domain.TLSSettings.Normalize and CertificateCoversHost).
@@ -640,9 +661,276 @@ describe('the five calls of api.ts', () => {
   });
 });
 
-describe('the TLS model holds no storage, log or markup', () => {
-  test('tls.ts', () => {
-    const source = readFileSync(new URL('../src/lib/components/apps/tls.ts', import.meta.url), 'utf8');
+describe('the form of the tab', () => {
+  test('host names are one per line; blank lines go and only ASCII spaces are trimmed', () => {
+    const form = formFromTLS(input({ hosts: ['a.example.com', 'b.example.com'] }));
+    expect(form.hosts).toBe('a.example.com\nb.example.com');
+    expect(inputFromForm({ ...form, hosts: ' a.example.com \r\n\n\t\nB.example.com\n \n' }).hosts).toEqual(['a.example.com', 'B.example.com', ' ']);
+  });
+
+  test('the redirect is an address while its switch is on, and empty while it is off', () => {
+    const form = formFromTLS(input({ redirect_listen: '0.0.0.0:80' }));
+    expect(form).toMatchObject({ redirect: true, redirectListen: '0.0.0.0:80' });
+    expect(inputFromForm(form).redirect_listen).toBe('0.0.0.0:80');
+    const off = setRedirect(form, false);
+    expect(inputFromForm(off).redirect_listen).toBe('');
+    expect(off.redirectListen).toBe('0.0.0.0:80');
+    expect(setRedirect({ ...form, redirectListen: '' }, true)).toMatchObject({ redirect: true, redirectListen: '0.0.0.0:80' });
+    expect(setRedirect({ ...form, redirectListen: '10.0.0.1:8080' }, true).redirectListen).toBe('10.0.0.1:8080');
+  });
+
+  test('choosing Gateway the first time turns the redirect on at port 80, and later keeps what is there', () => {
+    const proxy = input({ mode: 'proxy', hosts: [], source: '' });
+    const first = chooseMode(formFromTLS(proxy), 'gateway', proxy);
+    expect(first).toMatchObject({ mode: 'gateway', redirect: true, redirectListen: '0.0.0.0:80' });
+    // An address typed before stays, and an app that is in Gateway already is not touched.
+    const typed = { ...formFromTLS(proxy), redirectListen: '10.0.0.1:8080' };
+    expect(chooseMode(typed, 'gateway', proxy)).toMatchObject({ redirect: false, redirectListen: '10.0.0.1:8080' });
+    const gateway = input({ redirect_listen: '' });
+    expect(chooseMode({ ...formFromTLS(gateway), mode: 'proxy' }, 'gateway', gateway)).toMatchObject({ mode: 'gateway', redirect: false, redirectListen: '' });
+  });
+
+  test('choosing Behind a proxy puts the saved listeners back, and keeps the rest of the edits', () => {
+    const saved = input({ listen: '0.0.0.0:8443', redirect_listen: '0.0.0.0:80', hosts: ['a.example.com'] });
+    const edited = { ...formFromTLS(saved), listen: 'junk', redirect: false, redirectListen: '', hosts: 'b.example.com', source: 'acme' as const };
+    expect(chooseMode(edited, 'proxy', saved)).toEqual({ ...formFromTLS(saved), mode: 'proxy', hosts: 'b.example.com', source: 'acme' });
+  });
+
+  test('settings count as the same once the server normal form is applied', () => {
+    expect(sameTLS(input({ listen: '' }), input({ listen: '0.0.0.0:443' }))).toBe(true);
+    expect(sameTLS(input({ hosts: [' A.example.com', 'a.example.com'] }), input({ hosts: ['a.example.com'] }))).toBe(true);
+    expect(sameTLS(input({ listen: '0.0.0.0:8443' }), input({ listen: '0.0.0.0:443' }))).toBe(false);
+    expect(sameTLS(input({ mode: 'proxy' }), input({ mode: 'gateway' }))).toBe(false);
+    // A form the server would refuse differs from the saved one, whatever it holds.
+    expect(sameTLS(input({ hosts: [] }), input({ hosts: ['a.example.com'] }))).toBe(false);
+    expect(sameTLS(input({ listen: 'junk' }), input({ listen: '0.0.0.0:443' }))).toBe(false);
+  });
+});
+
+describe('what the form would be refused for', () => {
+  const own = { host: '', port: 8080 };
+
+  test('the first refused field is named with the text of the server', () => {
+    expect(tlsProblem(input({ hosts: ['10.0.0.1'] }), own)).toEqual({ field: 'hosts', message: '"10.0.0.1" must be a DNS name, not an IP address' });
+    expect(tlsProblem(input({ listen: 'junk' }), own)?.field).toBe('listen');
+    expect(tlsProblem(input({ hosts: [] }), own)).toEqual({ field: 'hosts', message: 'at least one host is required when mode is "gateway"' });
+  });
+
+  test('a switch to Gateway leaves a missing source and host name to the checks of its dialog, but not a badly written one', () => {
+    const bare = input({ mode: 'gateway', hosts: [], source: '' });
+    expect(tlsProblem(bare, own)?.field).toBe('source');
+    expect(tlsProblem(bare, own, true)).toBeNull();
+    expect(tlsProblem({ ...bare, hosts: ['shop'] }, own, true)?.field).toBe('hosts');
+    expect(tlsProblem({ ...bare, listen: 'junk' }, own, true)?.field).toBe('listen');
+  });
+
+  test('the own listener clashes in Gateway only, under the address it takes', () => {
+    expect(tlsProblem(input(), { host: '', port: 443 })).toEqual({ field: 'listen', message: OWN_LISTENER });
+    expect(tlsProblem(input({ redirect_listen: '0.0.0.0:80' }), { host: '', port: 80 })).toEqual({ field: 'redirect_listen', message: OWN_LISTENER });
+    expect(tlsProblem(input({ mode: 'proxy' }), { host: '', port: 443 })).toBeNull();
+    expect(tlsProblem(input({ mode: 'gateway' }), { host: '', port: 443 }, true)).toEqual({ field: 'listen', message: OWN_LISTENER });
+    expect(tlsProblem(input(), { host: '', port: null })).toBeNull();
+  });
+});
+
+describe('the switch and the notices', () => {
+  test('the Gateway switch waits for an agent that serves certificates; not known passes; a Gateway app stays editable', () => {
+    const ok = { canConfigure: true, busy: false };
+    expect(switchDisabled({ ...ok, to: 'gateway', supported: false })).toBe(true);
+    expect(switchDisabled({ ...ok, to: 'gateway', supported: null })).toBe(false);
+    expect(switchDisabled({ ...ok, to: 'gateway', supported: true })).toBe(false);
+    // Switching back and saving in Gateway never ask the agent.
+    expect(switchDisabled({ ...ok, to: 'proxy', supported: false })).toBe(false);
+    expect(switchDisabled({ ...ok, to: null, supported: false })).toBe(false);
+    expect(switchDisabled({ canConfigure: false, busy: false, to: null, supported: true })).toBe(true);
+    expect(switchDisabled({ canConfigure: true, busy: true, to: null, supported: true })).toBe(true);
+  });
+
+  test('notices come in a fixed order, and an unsupported agent reads differently in Gateway', () => {
+    const base = { assigned: true, mode: 'proxy' as const, supported: true, online: true, canConfigure: true };
+    expect(tlsNotices(base)).toEqual([]);
+    expect(tlsNotices({ ...base, assigned: false, supported: null, online: undefined, canConfigure: false })).toEqual(['unassigned', 'readonly']);
+    expect(tlsNotices({ ...base, supported: false, online: false, canConfigure: false })).toEqual(['unsupported', 'offline', 'readonly']);
+    expect(tlsNotices({ ...base, mode: 'gateway', supported: false })).toEqual(['unsupported-gateway']);
+  });
+
+  test('the texts name the agent, or say the WAF agent', () => {
+    expect(noticeText('offline', 'edge-1')).toBe('edge-1 is offline. The change takes effect when it reconnects.');
+    expect(noticeText('offline', '')).toBe('The WAF agent is offline. The change takes effect when it reconnects.');
+    expect(noticeText('unsupported', 'edge-1')).toBe(
+      'edge-1 cannot serve certificates: it is older than this feature, or its key directory /var/lib/wafio-waf-agent/tls/ was unusable at start (its log says why). Upgrade it, or fix the directory and restart it.',
+    );
+    expect(noticeText('unsupported-gateway', 'edge-1')).toBe('edge-1 no longer serves certificates, so it serves this application in plain HTTP at its Routing listen address.');
+    expect(noticeText('readonly', '')).toBe('Read-only: changing HTTPS settings needs member or owner access.');
+  });
+});
+
+describe('the checks of a switch to Gateway', () => {
+  const ok = { input: { hosts: ['shop.example.com'], source: 'acme' as const }, certificate: null, supported: true, hostBound: true, trustWithoutList: false, agent: 'edge-1', now: NOW };
+  const states = (checks: TLSCheck[]): Record<string, CheckState> => Object.fromEntries(checks.map((c) => [c.id, c.state]));
+
+  test('Let\'s Encrypt with everything in place passes every check', () => {
+    expect(states(gatewayChecks(ok))).toEqual({ source: 'passed', hosts: 'passed', agent: 'passed', trust: 'passed' });
+  });
+
+  test('a missing source or host name fails, and a repeated host name counts once', () => {
+    expect(states(gatewayChecks({ ...ok, input: { hosts: [], source: '' } }))).toMatchObject({ source: 'failed', hosts: 'failed' });
+    expect(gatewayChecks({ ...ok, input: { hosts: ['a.example.com', 'A.example.com'], source: 'acme' } }).find((c) => c.id === 'hosts')?.text).toBe('One host name.');
+  });
+
+  test('an agent that cannot serve certificates fails; one not known yet only says so', () => {
+    const failed = gatewayChecks({ ...ok, supported: false }).find((c) => c.id === 'agent');
+    expect(failed).toMatchObject({ state: 'failed' });
+    expect(failed?.text).toContain('edge-1 cannot serve certificates');
+    expect(states(gatewayChecks({ ...ok, supported: null })).agent).toBe('unknown');
+  });
+
+  test('forwarded headers on with an empty list are a warning that links Routing and never fail the switch', () => {
+    const checks = gatewayChecks({ ...ok, trustWithoutList: true });
+    expect(checks.find((c) => c.id === 'trust')).toEqual({ id: 'trust', state: 'warning', text: TRUST_WARNING });
+    expect(TRUST_WARNING.startsWith('Forwarded headers are trusted from loopback and the private ranges.')).toBe(true);
+    expect(checks.some((c) => c.state === 'failed')).toBe(false);
+  });
+
+  test('an uploaded certificate must exist, be valid now and cover every host name', () => {
+    const uploaded = { ...ok, input: { hosts: ['shop.example.com'], source: 'uploaded' as const } };
+    const cert = (over = {}) => gatewayChecks({ ...uploaded, certificate: certificate(over) }).find((c) => c.id === 'certificate');
+    expect(gatewayChecks(uploaded).find((c) => c.id === 'certificate')).toMatchObject({ state: 'failed', text: 'No certificate is uploaded. Upload one before you switch.' });
+    expect(cert()).toMatchObject({ state: 'passed' });
+    expect(cert({ not_after: iso(NOW) })).toMatchObject({ state: 'failed', text: 'The uploaded certificate has expired.' });
+    expect(cert({ not_after: iso(NOW - HOUR) })).toMatchObject({ state: 'failed' });
+    expect(cert({ not_after: iso(NOW + HOUR) })).toMatchObject({ state: 'passed' });
+    expect(cert({ names: ['*.example.com'] })).toMatchObject({ state: 'passed' });
+    expect(cert({ names: ['other.example.com'] })).toMatchObject({ state: 'failed', text: 'The uploaded certificate does not cover shop.example.com.' });
+    const two = gatewayChecks({ ...uploaded, input: { hosts: ['shop.example.com', 'blog.example.com'], source: 'uploaded' }, certificate: certificate() });
+    expect(two.find((c) => c.id === 'certificate')?.text).toBe('The uploaded certificate does not cover blog.example.com.');
+  });
+
+  test('an uploaded certificate needs an agent with a credential bound to its host; Let\'s Encrypt does not', () => {
+    const uploaded = { ...ok, input: { hosts: ['shop.example.com'], source: 'uploaded' as const }, certificate: certificate() };
+    expect(states(gatewayChecks(uploaded)).bound).toBe('passed');
+    expect(gatewayChecks({ ...uploaded, hostBound: false }).find((c) => c.id === 'bound')?.text).toContain('edge-1 needs a credential bound to its host to receive an uploaded key.');
+    expect(states(gatewayChecks({ ...uploaded, hostBound: null })).bound).toBe('unknown');
+    expect(states(gatewayChecks({ ...ok, hostBound: false }))).not.toHaveProperty('bound');
+    expect(states(gatewayChecks({ ...ok, certificate: null }))).not.toHaveProperty('certificate');
+  });
+});
+
+describe('the texts of the dialogs', () => {
+  test('ports are the HTTPS port, and the redirect port when it is on', () => {
+    expect(portsText('0.0.0.0:443', '')).toBe('port 443');
+    expect(portsText('', '')).toBe('port 443');
+    expect(portsText('0.0.0.0:443', '0.0.0.0:80')).toBe('ports 443 and 80');
+    expect(portsText('[::]:8443', '[::]:8080')).toBe('ports 8443 and 8080');
+    expect(portsText('10.0.0.1:443', '10.0.0.2:443')).toBe('port 443');
+  });
+
+  test('the Let\'s Encrypt switch says what visitors get, per redirect, and carries the agreement line', () => {
+    const on = sourceSwitchText('acme', { agent: 'edge-1', redirect: true });
+    const off = sourceSwitchText('acme', { agent: 'edge-1', redirect: false });
+    expect(on).toBe(
+      "Until the certificate is issued, HTTPS visitors get a browser warning, then a 503 page, and HTTP visitors get 503. A try takes up to 3 minutes; after a failure the agent waits 10 minutes, then longer. Switching places the first request: by switching, you accept the Let's Encrypt Subscriber Agreement.",
+    );
+    expect(off).toContain('then a 503 page. Nothing answers on HTTP. A try takes up to 3 minutes');
+    expect(off).not.toContain('HTTP visitors get 503');
+    for (const text of [on, off]) expect(text).toContain("by switching, you accept the Let's Encrypt Subscriber Agreement.");
+  });
+
+  test('the uploaded switch names the agent, says what happens on HTTP, and has no agreement line', () => {
+    expect(sourceSwitchText('uploaded', { agent: 'edge-1', redirect: true })).toBe('Until edge-1 has the certificate, usually within a minute, HTTPS connections fail, and HTTP visitors get 503.');
+    expect(sourceSwitchText('uploaded', { agent: '', redirect: false })).toBe('Until the WAF agent has the certificate, usually within a minute, HTTPS connections fail. Nothing answers on HTTP.');
+    expect(sourceSwitchText('uploaded', { agent: 'edge-1', redirect: false })).not.toContain('Subscriber Agreement');
+  });
+
+  test('the steps outside WAFio name the ports and the agent; the Let\'s Encrypt remark only for Let\'s Encrypt', () => {
+    const steps = gatewaySteps({ agent: 'edge-1', ports: 'ports 443 and 80', source: 'acme' });
+    expect(steps).toEqual([
+      "Point each host name's DNS at this server, or at a CDN that connects here over HTTPS (Cloudflare: Full).",
+      "Free ports 443 and 80 on edge-1's host: stop or move the web server there. Until then edge-1 keeps its current settings for all its applications and retries every minute.",
+      'If you reach this dashboard through that web server, set up another way in first, or switching back needs a shell.',
+      "Open ports 443 and 80 to visitors in every firewall; Let's Encrypt checks from several networks.",
+    ]);
+    expect(gatewaySteps({ agent: '', ports: 'port 443', source: 'uploaded' })[3]).toBe('Open port 443 to visitors in every firewall.');
+    expect(gatewaySteps({ agent: '', ports: 'port 443', source: 'uploaded' })[1]).toContain("on the WAF agent's host");
+  });
+
+  test('switching back names the listen address of the Routing tab and the ports it frees', () => {
+    expect(backToProxyText({ agent: 'edge-1', own: { host: '127.0.0.1', port: 8080 }, ports: 'ports 443 and 80' })).toBe(
+      'edge-1 stops serving HTTPS for this application and listens on 127.0.0.1:8080 again, which frees ports 443 and 80. Then start the web server in front of it; a load balancer on another machine can be switched first.',
+    );
+    expect(backToProxyText({ agent: '', own: { host: '', port: 8080 }, ports: 'port 443' })).toContain('The WAF agent stops serving HTTPS');
+    expect(backToProxyText({ agent: '', own: { host: '', port: 8080 }, ports: 'port 443' })).toContain('listens on 0.0.0.0:8080 again');
+    expect(backToProxyText({ agent: '', own: { host: '::1', port: 8080 }, ports: 'port 443' })).toContain('listens on [::1]:8080 again');
+    expect(backToProxyText({ agent: '', own: { host: '', port: null }, ports: 'port 443' })).toContain('listens on the listen address on the Routing tab again');
+  });
+
+  test('a save in Gateway and a DNS hint', () => {
+    expect(savedInGatewayText('edge-1')).toBe(
+      'Saved. edge-1 applies it within about a minute. If it cannot (a port in use, say), it keeps its current settings for all its applications; its log says why.',
+    );
+    expect(savedInGatewayText('')).toContain('Saved. The WAF agent applies it');
+    const warning = { code: 'dns_mismatch' as const, host: 'shop.example.com', resolved: ['203.0.113.7', '203.0.113.8'], agent_addresses: ['198.51.100.2'] };
+    expect(dnsWarningText(warning, 'edge-1')).toBe(
+      "shop.example.com resolves to 203.0.113.7, 203.0.113.8, but edge-1's host reports 198.51.100.2. Visitors and Let's Encrypt go where DNS points; behind a CDN that is expected.",
+    );
+    expect(dnsWarningText(warning, '')).toContain("but the WAF agent's host reports");
+  });
+});
+
+describe('where a refused save is shown', () => {
+  const refused = (error: Partial<ApiError>) => classifyTLSRefusal({ error: 'The server says no', status: 400, ...error }, 'edge-1');
+
+  test('a refused field goes under it, without the "field: " prefix of the server', () => {
+    expect(refused({ code: 'INVALID_TLS_SETTINGS', field: 'hosts', error: 'hosts: "shop" must contain at least one dot' })).toEqual({ kind: 'field', field: 'hosts', message: '"shop" must contain at least one dot' });
+    expect(refused({ code: 'INVALID_TLS_SETTINGS', field: 'redirect_listen', error: 'redirect_listen: must differ from listen' })).toEqual({ kind: 'field', field: 'redirect_listen', message: 'must differ from listen' });
+    expect(refused({ code: 'INVALID_TLS_SETTINGS', field: 'source', error: 'source: is required when mode is "gateway"' })).toMatchObject({ kind: 'field', field: 'source' });
+  });
+
+  test('a conflict or a bundle that is too large goes under its field with the text of the server', () => {
+    for (const [code, field] of [['LISTEN_CONFLICT', 'listen'], ['LISTEN_CONFLICT', 'redirect_listen'], ['HOST_CONFLICT', 'hosts'], ['TLS_BUNDLE_TOO_LARGE', 'hosts']] as const) {
+      expect(refused({ status: 409, code, field, error: 'Text of the server' })).toEqual({ kind: 'field', field, message: 'Text of the server' });
+    }
+  });
+
+  test('a conflict with the listener of the Routing tab has no field here', () => {
+    expect(refused({ status: 409, code: 'LISTEN_CONFLICT', field: 'listen_port', error: 'address 0.0.0.0:443 is already used by application shop' })).toEqual({
+      kind: 'routing',
+      message: 'address 0.0.0.0:443 is already used by application shop',
+    });
+  });
+
+  test('a certificate that does not cover a host goes under the host names, naming the host', () => {
+    const text = 'The current certificate does not cover blog.example.com. Upload a certificate that covers every host, or change the hosts.';
+    expect(refused({ status: 409, code: 'CERTIFICATE_DOES_NOT_COVER', host: 'blog.example.com', error: text })).toEqual({ kind: 'field', field: 'hosts', message: text });
+  });
+
+  test('the answers with no field get the text of the dashboard', () => {
+    const texts = {
+      CERTIFICATE_REQUIRED: 'Upload a certificate that is valid now before you choose Uploaded certificate.',
+      KEY_ENCRYPTION_UNAVAILABLE: 'The control plane cannot store keys: totp.enc_key is not set.',
+      CERTIFICATE_IN_USE: 'In use. Switch to Let\'s Encrypt or Behind a proxy first, or upload a replacement.',
+    };
+    for (const [code, message] of Object.entries(texts)) expect(refused({ status: 409, code })).toEqual({ kind: 'save', message });
+    expect(refused({ status: 409, code: 'AGENT_NOT_HOST_BOUND' })).toMatchObject({ kind: 'save' });
+    expect((refused({ status: 409, code: 'AGENT_NOT_HOST_BOUND' }) as { message: string }).message).toContain('edge-1 needs a credential bound to its host to receive an uploaded key.');
+  });
+
+  test('an agent that cannot serve certificates is told to the panel, with the text of the dashboard', () => {
+    const refusal = refused({ status: 409, code: 'TLS_UNSUPPORTED' });
+    expect(refusal.kind).toBe('unsupported');
+    expect(refusal.message).toContain('edge-1 cannot serve certificates');
+  });
+
+  test('anything else keeps the text of the server, a rate limit included', () => {
+    expect(refused({ status: 429, code: 'RATE_LIMITED', error: 'Too many requests' })).toEqual({ kind: 'save', message: 'Too many requests' });
+    expect(refused({ status: 400, code: 'INVALID_TLS_SETTINGS', field: 'mode', error: 'mode: must be "proxy" or "gateway"' })).toMatchObject({ kind: 'save' });
+    expect(classifyTLSRefusal(undefined, '')).toEqual({ kind: 'save', message: 'Could not save the HTTPS settings.' });
+  });
+});
+
+describe('the TLS files hold no storage, log or markup', () => {
+  test.each(['tls.ts', 'AppTLS.svelte'])('%s', (file) => {
+    const source = readFileSync(new URL(`../src/lib/components/apps/${file}`, import.meta.url), 'utf8');
     for (const word of ['{@html', 'localStorage', 'sessionStorage', 'console.']) expect(source).not.toContain(word);
   });
 });

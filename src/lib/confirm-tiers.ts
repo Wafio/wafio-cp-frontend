@@ -47,6 +47,8 @@ export const CONFIRM_TIERS = {
   'enter-enforce': 'simple',
   // Visitors get the maintenance page instead of the site; turning it off undoes it.
   'enable-maintenance': 'simple',
+  // The agent starts or stops serving HTTPS for an application; switching back undoes it.
+  'switch-https-mode': 'simple',
   // Reversible removals and changes: re-adding restores the previous state.
   'delete-custom-rule': 'simple',
   'delete-detection-rule': 'simple',

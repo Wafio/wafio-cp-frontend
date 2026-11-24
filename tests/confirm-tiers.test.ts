@@ -19,7 +19,7 @@ describe('confirmation tier table', () => {
   });
 
   test('simple: enabling allow/block rules and lowering protection', () => {
-    for (const action of ['enable-allow-rule', 'enable-block-rule', 'lower-protection', 'enable-maintenance'] as const) {
+    for (const action of ['enable-allow-rule', 'enable-block-rule', 'lower-protection', 'enable-maintenance', 'switch-https-mode'] as const) {
       expect(tierFor(action)).toBe('simple');
     }
   });

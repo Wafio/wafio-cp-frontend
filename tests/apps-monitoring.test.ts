@@ -128,8 +128,11 @@ describe('application page URLs', () => {
     expect(readAppTab('?tab=config', { assigned: true })).toBe('config');
     expect(readAppTab('?tab=maintenance', { assigned: false })).toBe('monitoring');
     expect(readAppTab('?tab=maintenance', { assigned: true })).toBe('maintenance');
-    expect(appTabs({ assigned: true }).map((t) => t.id)).toEqual(['monitoring', 'decisions', 'config', 'blockwindow', 'maintenance', 'routing', 'assignment']);
+    expect(appTabs({ assigned: true }).map((t) => t.id)).toEqual(['monitoring', 'decisions', 'config', 'blockwindow', 'maintenance', 'https', 'routing', 'assignment']);
     expect(appTabs({ assigned: true }).find((t) => t.id === 'maintenance')?.label).toBe('Maintenance');
+    // HTTPS sits between Maintenance and Routing and is open without an agent.
+    expect(appTabs({ assigned: false }).find((t) => t.id === 'https')).toMatchObject({ label: 'HTTPS', disabled: false });
+    expect(readAppTab('?tab=https', { assigned: false })).toBe('https');
     // While maintenance mode is on, its tab stays open without an agent, so it can be turned off.
     expect(appTabs({ assigned: false, maintenance: true }).filter((t) => t.disabled).map((t) => t.id)).toEqual(['config', 'blockwindow']);
     expect(readAppTab('?tab=maintenance', { assigned: false, maintenance: true })).toBe('maintenance');
