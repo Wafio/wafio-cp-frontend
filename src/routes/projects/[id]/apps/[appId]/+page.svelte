@@ -145,7 +145,7 @@
 
   const assigned = $derived(Boolean(assignment));
   const agent = $derived(assignment ? agents.find((a) => a.id === assignment?.agent_id) : undefined);
-  const gatewayRoutingNote = $derived(routingNote(tls, agent?.name ?? ''));
+  const gatewayRoutingNote = $derived(routingNote(tls, agent?.name ?? '', assigned));
   const stateKey = $derived(app ? appState(app, assignment) : 'draft');
   const stateText = $derived(APP_STATE_TEXT[stateKey]);
   const summary = $derived(

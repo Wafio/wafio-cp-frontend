@@ -1001,9 +1001,9 @@ export function assignmentNote(state: Pick<AppTLSState, 'mode' | 'source'> | nul
   return state.source === 'uploaded' ? MOVED_UPLOAD_TEXT : state.source === 'acme' ? MOVED_ACME_TEXT : null;
 }
 
-/** The note above the Routing form of an application in Gateway: where the agent serves it, or that it cannot serve HTTPS. */
-export function routingNote(state: Pick<AppTLSState, 'mode' | 'listen' | 'agent_supported'> | null, agent: string): { tone: 'info' | 'error'; text: string } | null {
-  if (state?.mode !== 'gateway') return null;
+/** The note above the Routing form of an application in Gateway: where the agent serves it, or that it cannot serve HTTPS. No agent, no note. */
+export function routingNote(state: Pick<AppTLSState, 'mode' | 'listen' | 'agent_supported'> | null, agent: string, assigned: boolean): { tone: 'info' | 'error'; text: string } | null {
+  if (!assigned || state?.mode !== 'gateway') return null;
   if (state.agent_supported === false) return { tone: 'error', text: noticeText('unsupported-gateway', agent) };
   return { tone: 'info', text: `In Gateway mode ${agentMid(agent)} serves this application on ${state.listen || DEFAULT_TLS_LISTEN} (HTTPS tab) and keeps the listen address below reserved, unopened.` };
 }

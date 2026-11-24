@@ -1364,32 +1364,43 @@ describe('the notes on the Assignment and Routing tabs and where an agent is rem
 
   test('the Routing tab says where the agent serves the application, with the default address when none is set', () => {
     const gateway = { mode: 'gateway' as const, listen: '10.0.0.5:8443', agent_supported: true };
-    expect(routingNote(gateway, 'edge-1')).toEqual({
+    expect(routingNote(gateway, 'edge-1', true)).toEqual({
       tone: 'info',
       text: 'In Gateway mode edge-1 serves this application on 10.0.0.5:8443 (HTTPS tab) and keeps the listen address below reserved, unopened.',
     });
-    expect(routingNote({ ...gateway, listen: '', agent_supported: null }, '')?.text).toBe(
+    expect(routingNote({ ...gateway, listen: '', agent_supported: null }, '', true)?.text).toBe(
       'In Gateway mode the WAF agent serves this application on 0.0.0.0:443 (HTTPS tab) and keeps the listen address below reserved, unopened.',
     );
   });
 
   test('an agent that cannot serve certificates is said to serve plain HTTP at the Routing listen address', () => {
-    const unsupported = routingNote({ mode: 'gateway', listen: '', agent_supported: false }, 'edge-1');
+    const unsupported = routingNote({ mode: 'gateway', listen: '', agent_supported: false }, 'edge-1', true);
     expect(unsupported).toEqual({ tone: 'error', text: 'edge-1 no longer serves certificates, so it serves this application in plain HTTP at its Routing listen address.' });
     expect(unsupported?.text).toBe(noticeText('unsupported-gateway', 'edge-1'));
   });
 
+  test('an application with no agent assigned gets no Routing note, whatever the mode or support', () => {
+    expect(routingNote({ mode: 'gateway', listen: '10.0.0.5:8443', agent_supported: true }, '', false)).toBeNull();
+    expect(routingNote({ mode: 'gateway', listen: '', agent_supported: null }, '', false)).toBeNull();
+    expect(routingNote({ mode: 'gateway', listen: '', agent_supported: false }, '', false)).toBeNull();
+  });
+
   test('behind a proxy, or with no read of the settings, the Routing tab says nothing more', () => {
-    expect(routingNote({ mode: 'proxy', listen: '', agent_supported: true }, 'edge-1')).toBeNull();
-    expect(routingNote({ mode: 'proxy', listen: '', agent_supported: false }, 'edge-1')).toBeNull();
-    expect(routingNote(null, 'edge-1')).toBeNull();
+    expect(routingNote({ mode: 'proxy', listen: '', agent_supported: true }, 'edge-1', true)).toBeNull();
+    expect(routingNote({ mode: 'proxy', listen: '', agent_supported: false }, 'edge-1', true)).toBeNull();
+    expect(routingNote(null, 'edge-1', true)).toBeNull();
   });
 
   test('the application page shows the Routing note and hands its HTTPS read to the Assignment tab', () => {
     const source = page('apps/[appId]/+page.svelte');
-    expect(source).toContain('routingNote(tls, agent?.name ?? \'\')');
+    expect(source).toContain('routingNote(tls, agent?.name ?? \'\', assigned)');
     expect(source).toMatch(/\{#if gatewayRoutingNote\}\s*<Alert tone=\{gatewayRoutingNote\.tone\} message=\{gatewayRoutingNote\.text\} \/>/);
     expect(source).toMatch(/<AppAssignment[^>]*\{tls\}/);
+  });
+
+  test('a refusal that the agent cannot serve certificates tells the page, so the Routing note follows', () => {
+    const source = readFileSync(new URL('../src/lib/components/apps/AppTLS.svelte', import.meta.url), 'utf8');
+    expect(source).toMatch(/loaded = \{ \.\.\.loaded, agent_supported: false \};\s*onchange\?\.\(loaded\);/);
   });
 
   test('the uploaded card and the Assignment tab share one text', () => {

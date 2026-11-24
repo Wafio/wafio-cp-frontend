@@ -302,7 +302,10 @@
       void focusFormError(root);
       return;
     }
-    if (refusal.kind === 'unsupported' && loaded) loaded = { ...loaded, agent_supported: false };
+    if (refusal.kind === 'unsupported' && loaded) {
+      loaded = { ...loaded, agent_supported: false };
+      onchange?.(loaded);
+    }
     routingError = refusal.kind === 'routing';
     saveError = refusal.message;
     // An open dialog shows the text itself.
