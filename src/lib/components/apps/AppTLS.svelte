@@ -350,6 +350,8 @@
     lastActionAt = Date.now();
     delivery?.acted();
     toast.success('Main host name cleared.', 'Saved');
+    // The button went with the line it belonged to.
+    void refocus('title');
   }
 
   function refused(error: ApiError | undefined, sent: AppTLSInput) {

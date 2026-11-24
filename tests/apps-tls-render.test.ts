@@ -710,6 +710,14 @@ describe('focus after the control the person used has gone', () => {
     expect(fn('discard')).toContain("void refocus('title');");
   });
 
+  test('clearing a main host name saves only that change, and ends by focusing the title since its button goes', () => {
+    const body = fn('clearMainHost');
+    expect(body).toContain('putAppTLS(projectId, appId, withoutMainHost(loaded))');
+    expect(body).toContain('saveError = classifyTLSRefusal(res.error, agentName).message;');
+    expect(body).toContain('delivery?.acted();');
+    expect(body).toContain("void refocus('title');");
+  });
+
   test('focus is only moved when it was lost, and never to a disabled control', () => {
     const body = fn('refocus');
     expect(body).toContain('await tick();');
