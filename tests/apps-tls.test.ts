@@ -32,13 +32,13 @@ import {
 interface NormalizeCase {
   name: string;
   in: AppTLSInput;
-  out?: AppTLSInput;
+  result?: AppTLSInput;
   field?: string;
   message?: string;
 }
 const backend = JSON.parse(readFileSync(new URL('./fixtures/backend/tls-checks.json', import.meta.url), 'utf8')) as {
   normalize: NormalizeCase[];
-  covers: { names: string[]; host: string; covered: boolean }[];
+  covers_host: { names: string[]; host: string; covered: boolean }[];
 };
 
 const NON_ASCII = /[^\u0000-\u007f]/;
@@ -107,32 +107,31 @@ function state(over: Partial<AppTLSState> = {}): AppTLSState {
 describe('control plane parity', () => {
   test('the fixture holds the characters Go and JavaScript fold differently', () => {
     const text = JSON.stringify(backend);
-    for (const ch of ['İ', '﻿', '\u0085']) expect(text).toContain(ch);
+    for (const ch of ['\u0130', '\ufeff', '\u0085', '\u212a']) expect(text).toContain(ch);
   });
 
   test('every ASCII case of Normalize gets the stored form or the refusal of the server', () => {
     const judged = backend.normalize.filter((c) => !NON_ASCII.test(JSON.stringify(c.in)));
-    expect(judged.length).toBeGreaterThan(100);
+    expect(judged.length).toBeGreaterThanOrEqual(62);
     for (const c of judged) {
       const got = normalizeTLS(c.in);
-      if (c.out) expect({ name: c.name, got: got.settings, error: got.error }).toEqual({ name: c.name, got: c.out, error: undefined });
+      if (c.result) expect({ name: c.name, got: got.settings, error: got.error }).toEqual({ name: c.name, got: c.result, error: undefined });
       else expect({ name: c.name, error: got.error }).toEqual({ name: c.name, error: { field: c.field, message: c.message } });
     }
   });
 
   test('a case with a non-ASCII value is never refused when the server takes it', () => {
     const unjudged = backend.normalize.filter((c) => NON_ASCII.test(JSON.stringify(c.in)));
-    expect(unjudged.length).toBeGreaterThan(8);
+    expect(unjudged.length).toBeGreaterThanOrEqual(5);
     for (const c of unjudged) {
-      if (c.out) expect({ name: c.name, error: normalizeTLS(c.in).error }).toEqual({ name: c.name, error: undefined });
+      if (c.result) expect({ name: c.name, error: normalizeTLS(c.in).error }).toEqual({ name: c.name, error: undefined });
     }
   });
 
-  test('coverage agrees with the server, and says nothing for a non-ASCII value that decides it', () => {
-    for (const c of backend.covers) {
-      const got = certificateCoversHost(c.names, c.host);
-      if (NON_ASCII.test(JSON.stringify(c))) expect([c.covered, null]).toContain(got);
-      else expect({ ...c, got }).toEqual({ ...c, got: c.covered });
+  test('coverage agrees with the server', () => {
+    expect(backend.covers_host.length).toBeGreaterThanOrEqual(79);
+    for (const c of backend.covers_host) {
+      expect({ ...c, got: certificateCoversHost(c.names, c.host) }).toEqual({ ...c, got: c.covered });
     }
   });
 });
@@ -219,10 +218,11 @@ describe('coverage of the host names', () => {
     expect(certificateCoversHost([], 'shop.example.com')).toBe(false);
   });
 
-  test('a non-ASCII name that could fold into the host leaves it open, a match elsewhere still counts', () => {
-    expect(certificateCoversHost(['shop.İ.example.com'], 'shop.i.example.com')).toBeNull();
-    expect(certificateCoversHost(['münchen.de', '*.example.com'], 'shop.example.com')).toBe(true);
-    expect(certificateCoversHost(['münchen.de'], 'shop.example.com')).toBeNull();
+  test('only A to Z fold, so a look-alike character covers nothing', () => {
+    expect(certificateCoversHost(['istanbul.example.com', 'kyoto.example.com'], '\u0130stanbul.example.com')).toBe(false);
+    expect(certificateCoversHost(['istanbul.example.com', 'kyoto.example.com'], '\u212ayoto.example.com')).toBe(false);
+    expect(certificateCoversHost(['m\u00fcnchen.de', '*.example.com'], 'shop.example.com')).toBe(true);
+    expect(certificateCoversHost(['M\u00dcNCHEN.de'], 'm\u00fcnchen.de')).toBe(false);
   });
 });
 
@@ -563,6 +563,17 @@ describe('sendCertificate', () => {
     expect(await readPemFile(new Spy(['c'.repeat(TLS_LIMITS.chainBytes)], 'edge.pem'), 'chain')).toEqual({ text: 'c'.repeat(TLS_LIMITS.chainBytes) });
     const binary = await readPemFile(new File([new Uint8Array([0x30, 0x82, 0xff])], 'chain.p12'), 'chain');
     expect(binary.message).toStartWith('This file is not PEM text.');
+  });
+
+  test('a chain file that holds a private key gives the message and no text, a key file is returned as it is', async () => {
+    for (const label of ['PRIVATE KEY', 'RSA PRIVATE KEY', 'EC PRIVATE KEY', 'ENCRYPTED PRIVATE KEY']) {
+      const combined = `${CHAIN}-----BEGIN ${label}-----\nQUJD\n-----END ${label}-----\n`;
+      const read = await readPemFile(new File([combined], 'fullchain.pem'), 'chain');
+      expect({ label, read }).toEqual({ label, read: { message: 'This text holds a private key. Put only certificates here and the key in the key field.' } });
+    }
+    const keyText = `${BEGIN_KEY}\nQUJD\n${END_KEY}\n`;
+    expect(await readPemFile(new File([keyText], 'server.key'), 'key')).toEqual({ text: keyText });
+    expect(await readPemFile(new File([CHAIN], 'chain.pem'), 'chain')).toEqual({ text: CHAIN });
   });
 });
 

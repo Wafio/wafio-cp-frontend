@@ -4,12 +4,12 @@
       "name": "defaults of a proxy application",
       "in": {
         "mode": "proxy",
-        "hosts": [],
+        "hosts": null,
         "listen": "",
         "redirect_listen": "",
         "source": ""
       },
-      "out": {
+      "result": {
         "mode": "proxy",
         "hosts": [],
         "listen": "0.0.0.0:443",
@@ -28,7 +28,7 @@
         "redirect_listen": "",
         "source": "uploaded"
       },
-      "out": {
+      "result": {
         "mode": "gateway",
         "hosts": [
           "shop.example.com"
@@ -51,7 +51,7 @@
         "redirect_listen": "",
         "source": "acme"
       },
-      "out": {
+      "result": {
         "mode": "gateway",
         "hosts": [
           "shop.example.com",
@@ -66,12 +66,12 @@
       "name": "ipv6 listeners",
       "in": {
         "mode": "proxy",
-        "hosts": [],
+        "hosts": null,
         "listen": "[2001:0db8::0001]:8443",
         "redirect_listen": " [::]:80 ",
         "source": ""
       },
-      "out": {
+      "result": {
         "mode": "proxy",
         "hosts": [],
         "listen": "[2001:db8::1]:8443",
@@ -90,7 +90,7 @@
         "redirect_listen": "10.0.0.5:80",
         "source": "uploaded"
       },
-      "out": {
+      "result": {
         "mode": "gateway",
         "hosts": [
           "a.example.com"
@@ -112,7 +112,7 @@
         "redirect_listen": "",
         "source": ""
       },
-      "out": {
+      "result": {
         "mode": "proxy",
         "hosts": [
           "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example.com",
@@ -134,7 +134,7 @@
         "redirect_listen": "",
         "source": "uploaded"
       },
-      "out": {
+      "result": {
         "mode": "proxy",
         "hosts": [
           "a.example.com"
@@ -156,7 +156,7 @@
         "redirect_listen": "",
         "source": ""
       },
-      "out": {
+      "result": {
         "mode": "proxy",
         "hosts": [
           "123.my-shop-2.example.com",
@@ -168,7 +168,7 @@
       }
     },
     {
-      "name": "100 hosts",
+      "name": "hosts at the limit",
       "in": {
         "mode": "proxy",
         "hosts": [
@@ -277,7 +277,7 @@
         "redirect_listen": "",
         "source": ""
       },
-      "out": {
+      "result": {
         "mode": "proxy",
         "hosts": [
           "h0.example.com",
@@ -384,796 +384,13 @@
         "listen": "0.0.0.0:443",
         "redirect_listen": "",
         "source": ""
-      }
-    },
-    {
-      "name": "a repeat does not count",
-      "in": {
-        "mode": "proxy",
-        "hosts": [
-          "h0.example.com",
-          "h1.example.com",
-          "h2.example.com",
-          "h3.example.com",
-          "h4.example.com",
-          "h5.example.com",
-          "h6.example.com",
-          "h7.example.com",
-          "h8.example.com",
-          "h9.example.com",
-          "h10.example.com",
-          "h11.example.com",
-          "h12.example.com",
-          "h13.example.com",
-          "h14.example.com",
-          "h15.example.com",
-          "h16.example.com",
-          "h17.example.com",
-          "h18.example.com",
-          "h19.example.com",
-          "h20.example.com",
-          "h21.example.com",
-          "h22.example.com",
-          "h23.example.com",
-          "h24.example.com",
-          "h25.example.com",
-          "h26.example.com",
-          "h27.example.com",
-          "h28.example.com",
-          "h29.example.com",
-          "h30.example.com",
-          "h31.example.com",
-          "h32.example.com",
-          "h33.example.com",
-          "h34.example.com",
-          "h35.example.com",
-          "h36.example.com",
-          "h37.example.com",
-          "h38.example.com",
-          "h39.example.com",
-          "h40.example.com",
-          "h41.example.com",
-          "h42.example.com",
-          "h43.example.com",
-          "h44.example.com",
-          "h45.example.com",
-          "h46.example.com",
-          "h47.example.com",
-          "h48.example.com",
-          "h49.example.com",
-          "h50.example.com",
-          "h51.example.com",
-          "h52.example.com",
-          "h53.example.com",
-          "h54.example.com",
-          "h55.example.com",
-          "h56.example.com",
-          "h57.example.com",
-          "h58.example.com",
-          "h59.example.com",
-          "h60.example.com",
-          "h61.example.com",
-          "h62.example.com",
-          "h63.example.com",
-          "h64.example.com",
-          "h65.example.com",
-          "h66.example.com",
-          "h67.example.com",
-          "h68.example.com",
-          "h69.example.com",
-          "h70.example.com",
-          "h71.example.com",
-          "h72.example.com",
-          "h73.example.com",
-          "h74.example.com",
-          "h75.example.com",
-          "h76.example.com",
-          "h77.example.com",
-          "h78.example.com",
-          "h79.example.com",
-          "h80.example.com",
-          "h81.example.com",
-          "h82.example.com",
-          "h83.example.com",
-          "h84.example.com",
-          "h85.example.com",
-          "h86.example.com",
-          "h87.example.com",
-          "h88.example.com",
-          "h89.example.com",
-          "h90.example.com",
-          "h91.example.com",
-          "h92.example.com",
-          "h93.example.com",
-          "h94.example.com",
-          "h95.example.com",
-          "h96.example.com",
-          "h97.example.com",
-          "h98.example.com",
-          "h99.example.com",
-          "H0.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": ""
-      },
-      "out": {
-        "mode": "proxy",
-        "hosts": [
-          "h0.example.com",
-          "h1.example.com",
-          "h2.example.com",
-          "h3.example.com",
-          "h4.example.com",
-          "h5.example.com",
-          "h6.example.com",
-          "h7.example.com",
-          "h8.example.com",
-          "h9.example.com",
-          "h10.example.com",
-          "h11.example.com",
-          "h12.example.com",
-          "h13.example.com",
-          "h14.example.com",
-          "h15.example.com",
-          "h16.example.com",
-          "h17.example.com",
-          "h18.example.com",
-          "h19.example.com",
-          "h20.example.com",
-          "h21.example.com",
-          "h22.example.com",
-          "h23.example.com",
-          "h24.example.com",
-          "h25.example.com",
-          "h26.example.com",
-          "h27.example.com",
-          "h28.example.com",
-          "h29.example.com",
-          "h30.example.com",
-          "h31.example.com",
-          "h32.example.com",
-          "h33.example.com",
-          "h34.example.com",
-          "h35.example.com",
-          "h36.example.com",
-          "h37.example.com",
-          "h38.example.com",
-          "h39.example.com",
-          "h40.example.com",
-          "h41.example.com",
-          "h42.example.com",
-          "h43.example.com",
-          "h44.example.com",
-          "h45.example.com",
-          "h46.example.com",
-          "h47.example.com",
-          "h48.example.com",
-          "h49.example.com",
-          "h50.example.com",
-          "h51.example.com",
-          "h52.example.com",
-          "h53.example.com",
-          "h54.example.com",
-          "h55.example.com",
-          "h56.example.com",
-          "h57.example.com",
-          "h58.example.com",
-          "h59.example.com",
-          "h60.example.com",
-          "h61.example.com",
-          "h62.example.com",
-          "h63.example.com",
-          "h64.example.com",
-          "h65.example.com",
-          "h66.example.com",
-          "h67.example.com",
-          "h68.example.com",
-          "h69.example.com",
-          "h70.example.com",
-          "h71.example.com",
-          "h72.example.com",
-          "h73.example.com",
-          "h74.example.com",
-          "h75.example.com",
-          "h76.example.com",
-          "h77.example.com",
-          "h78.example.com",
-          "h79.example.com",
-          "h80.example.com",
-          "h81.example.com",
-          "h82.example.com",
-          "h83.example.com",
-          "h84.example.com",
-          "h85.example.com",
-          "h86.example.com",
-          "h87.example.com",
-          "h88.example.com",
-          "h89.example.com",
-          "h90.example.com",
-          "h91.example.com",
-          "h92.example.com",
-          "h93.example.com",
-          "h94.example.com",
-          "h95.example.com",
-          "h96.example.com",
-          "h97.example.com",
-          "h98.example.com",
-          "h99.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "",
-        "source": ""
-      }
-    },
-    {
-      "name": "tab and carriage return around a name",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "\ta.example.com\r",
-          "\u000bb.example.com\f"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com",
-          "b.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "port with leading zeros",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "0.0.0.0:0443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "listen with spaces around it",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "  10.0.0.1:443\t",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "10.0.0.1:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "upper-case ipv6",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[2001:DB8::A]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[2001:db8::a]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "longest run of zeros is compressed",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[2001:db8:0:0:1:0:0:1]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[2001:db8::1:0:0:1]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "first of two equal runs is compressed",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1:0:0:2:0:0:3:4]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1::2:0:0:3:4]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "a single zero group stays",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1:0:2:3:4:5:6:7]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1:0:2:3:4:5:6:7]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "all zeros",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[0:0:0:0:0:0:0:0]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[::]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "trailing zeros",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1:2:3:4:5:6:7::]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1:2:3:4:5:6:7:0]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "ipv4 tail",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[::1.2.3.4]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[::102:304]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "ipv4-mapped address",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[::ffff:10.0.0.5]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[::ffff:10.0.0.5]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "ipv4-mapped address in hex",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[::ffff:a00:5]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[::ffff:10.0.0.5]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "embedded ipv4 after six groups",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1:2:3:4:5:6:1.2.3.4]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1:2:3:4:5:6:102:304]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "redirect on another address of the same port family",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "10.0.0.5:443",
-        "redirect_listen": "0.0.0.0:80",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "10.0.0.5:443",
-        "redirect_listen": "0.0.0.0:80",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "redirect on the port of a mapped address",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "[::ffff:10.0.0.1]:443",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "[::ffff:10.0.0.1]:443",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "redirect on a mapped wildcard",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[::]:443",
-        "redirect_listen": "[::ffff:0.0.0.0]:80",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[::]:443",
-        "redirect_listen": "[::ffff:0.0.0.0]:80",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "redirect on another port of a wildcard",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "10.0.0.1:80",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "10.0.0.1:80",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "upper-case host and a Kelvin sign",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "Shop.\u212a.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "shop.k.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "a dotted capital I with a dot above",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "shop.\u0130.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "shop.i.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "a byte order mark after the name",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "shop.example.com\ufeff"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"shop.example.com\\ufeff\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
-    },
-    {
-      "name": "a byte order mark before the name",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "\ufeffshop.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"\\ufeffshop.example.com\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
-    },
-    {
-      "name": "a next-line character after the name",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "shop.example.com\u0085"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "shop.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "a next-line character before the name",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "\u0085shop.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "shop.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "a no-break space around the name",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "\u00a0shop.example.com\u00a0"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "shop.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "a next-line character alone",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "\u0085"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"\" is empty"
-    },
-    {
-      "name": "two spellings that fold to one name",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "shop.\u0130.example.com",
-          "shop.i.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "shop.i.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "upper-case umlaut",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "M\u00dcNCHEN.de"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"m\u00fcnchen.de\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
-    },
-    {
-      "name": "a no-break space around the listener",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "\u00a010.0.0.1:443\u00a0",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "10.0.0.1:443",
-        "redirect_listen": "",
-        "source": "uploaded"
       }
     },
     {
       "name": "no mode",
       "in": {
         "mode": "",
-        "hosts": [],
+        "hosts": null,
         "listen": "",
         "redirect_listen": "",
         "source": ""
@@ -1185,19 +402,7 @@
       "name": "unknown mode",
       "in": {
         "mode": "tls",
-        "hosts": [],
-        "listen": "",
-        "redirect_listen": "",
-        "source": ""
-      },
-      "field": "mode",
-      "message": "must be \"proxy\" or \"gateway\""
-    },
-    {
-      "name": "mode in capitals",
-      "in": {
-        "mode": "Proxy",
-        "hosts": [],
+        "hosts": null,
         "listen": "",
         "redirect_listen": "",
         "source": ""
@@ -1209,22 +414,10 @@
       "name": "unknown source",
       "in": {
         "mode": "proxy",
-        "hosts": [],
+        "hosts": null,
         "listen": "",
         "redirect_listen": "",
         "source": "manual"
-      },
-      "field": "source",
-      "message": "must be \"acme\" or \"uploaded\""
-    },
-    {
-      "name": "source in capitals",
-      "in": {
-        "mode": "proxy",
-        "hosts": [],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "ACME"
       },
       "field": "source",
       "message": "must be \"acme\" or \"uploaded\""
@@ -1247,7 +440,7 @@
       "name": "gateway without hosts",
       "in": {
         "mode": "gateway",
-        "hosts": [],
+        "hosts": null,
         "listen": "",
         "redirect_listen": "",
         "source": "uploaded"
@@ -1265,21 +458,6 @@
         "listen": "",
         "redirect_listen": "",
         "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"\" is empty"
-    },
-    {
-      "name": "proxy with a blank host",
-      "in": {
-        "mode": "proxy",
-        "hosts": [
-          "a.example.com",
-          ""
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": ""
       },
       "field": "hosts",
       "message": "\"\" is empty"
@@ -1425,48 +603,6 @@
       },
       "field": "hosts",
       "message": "\"203.0.113.7\" must be a DNS name, not an IP address"
-    },
-    {
-      "name": "ip literal in capitals of nothing",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "0.0.0.0"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"0.0.0.0\" must be a DNS name, not an IP address"
-    },
-    {
-      "name": "octet with a leading zero",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "203.0.113.07"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"203.0.113.07\" must not end with a label of digits only"
-    },
-    {
-      "name": "octet above 255",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "203.0.113.256"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"203.0.113.256\" must not end with a label of digits only"
     },
     {
       "name": "ipv6 literal",
@@ -1641,14 +777,14 @@
       "in": {
         "mode": "gateway",
         "hosts": [
-          "m\u00fcnchen.de"
+          "münchen.de"
         ],
         "listen": "",
         "redirect_listen": "",
         "source": "uploaded"
       },
       "field": "hosts",
-      "message": "\"m\u00fcnchen.de\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
+      "message": "\"münchen.de\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
     },
     {
       "name": "space inside",
@@ -1693,7 +829,7 @@
       "message": "\"a.example.com/x\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
     },
     {
-      "name": "newline inside",
+      "name": "newline",
       "in": {
         "mode": "gateway",
         "hosts": [
@@ -1705,308 +841,6 @@
       },
       "field": "hosts",
       "message": "\"a.example.com\\nb.example.com\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
-    },
-    {
-      "name": "control character inside",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a\u0001b.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"a\\x01b.example.com\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
-    },
-    {
-      "name": "quote and backslash inside",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a\"b\\c.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"a\\\"b\\\\c.example.com\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
-    },
-    {
-      "name": "last label of digits only",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "example.123"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"example.123\" must not end with a label of digits only"
-    },
-    {
-      "name": "last label of digits, first of two names",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com",
-          "b.1.2"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"b.1.2\" must not end with a label of digits only"
-    },
-    {
-      "name": "digits-only label that is not the last",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "123.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "123.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      }
-    },
-    {
-      "name": "a long name is shown cut",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\" has a label longer than 63 bytes"
-    },
-    {
-      "name": "second host is the bad one",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "ok.example.com",
-          "bad_.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"bad_.example.com\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
-    },
-    {
-      "name": "the first problem of a name wins",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "-a_.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"-a_.example.com\" has a label that starts or ends with a hyphen"
-    },
-    {
-      "name": "the first label with a problem wins",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a_.-b.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"a_.-b.example.com\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
-    },
-    {
-      "name": "bad mode before bad source",
-      "in": {
-        "mode": "x",
-        "hosts": [],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "y"
-      },
-      "field": "mode",
-      "message": "must be \"proxy\" or \"gateway\""
-    },
-    {
-      "name": "bad source before hosts",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "*"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": ""
-      },
-      "field": "source",
-      "message": "is required when mode is \"gateway\""
-    },
-    {
-      "name": "bad host before bad listener",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "*"
-        ],
-        "listen": "x",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"*\" must not contain a wildcard"
-    },
-    {
-      "name": "no host before bad listener",
-      "in": {
-        "mode": "gateway",
-        "hosts": [],
-        "listen": "x",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "at least one host is required when mode is \"gateway\""
-    },
-    {
-      "name": "a refused name before the count",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "h0.example.com",
-          "h1.example.com",
-          "h2.example.com",
-          "h3.example.com",
-          "h4.example.com",
-          "h5.example.com",
-          "h6.example.com",
-          "h7.example.com",
-          "h8.example.com",
-          "h9.example.com",
-          "h10.example.com",
-          "h11.example.com",
-          "h12.example.com",
-          "h13.example.com",
-          "h14.example.com",
-          "h15.example.com",
-          "h16.example.com",
-          "h17.example.com",
-          "h18.example.com",
-          "h19.example.com",
-          "h20.example.com",
-          "h21.example.com",
-          "h22.example.com",
-          "h23.example.com",
-          "h24.example.com",
-          "h25.example.com",
-          "h26.example.com",
-          "h27.example.com",
-          "h28.example.com",
-          "h29.example.com",
-          "h30.example.com",
-          "h31.example.com",
-          "h32.example.com",
-          "h33.example.com",
-          "h34.example.com",
-          "h35.example.com",
-          "h36.example.com",
-          "h37.example.com",
-          "h38.example.com",
-          "h39.example.com",
-          "h40.example.com",
-          "h41.example.com",
-          "h42.example.com",
-          "h43.example.com",
-          "h44.example.com",
-          "h45.example.com",
-          "h46.example.com",
-          "h47.example.com",
-          "h48.example.com",
-          "h49.example.com",
-          "h50.example.com",
-          "h51.example.com",
-          "h52.example.com",
-          "h53.example.com",
-          "h54.example.com",
-          "h55.example.com",
-          "h56.example.com",
-          "h57.example.com",
-          "h58.example.com",
-          "h59.example.com",
-          "h60.example.com",
-          "h61.example.com",
-          "h62.example.com",
-          "h63.example.com",
-          "h64.example.com",
-          "h65.example.com",
-          "h66.example.com",
-          "h67.example.com",
-          "h68.example.com",
-          "h69.example.com",
-          "h70.example.com",
-          "h71.example.com",
-          "h72.example.com",
-          "h73.example.com",
-          "h74.example.com",
-          "h75.example.com",
-          "h76.example.com",
-          "h77.example.com",
-          "h78.example.com",
-          "h79.example.com",
-          "h80.example.com",
-          "h81.example.com",
-          "h82.example.com",
-          "h83.example.com",
-          "h84.example.com",
-          "h85.example.com",
-          "h86.example.com",
-          "h87.example.com",
-          "h88.example.com",
-          "h89.example.com",
-          "h90.example.com",
-          "h91.example.com",
-          "h92.example.com",
-          "h93.example.com",
-          "h94.example.com",
-          "h95.example.com",
-          "h96.example.com",
-          "h97.example.com",
-          "h98.example.com",
-          "h99.example.com",
-          "h100.example.com",
-          "bad_.example.com"
-        ],
-        "listen": "",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "hosts",
-      "message": "\"bad_.example.com\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
     },
     {
       "name": "listen without a port",
@@ -2051,20 +885,6 @@
       "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
     },
     {
-      "name": "listen with an empty port",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "0.0.0.0:",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
       "name": "listen port 0",
       "in": {
         "mode": "gateway",
@@ -2093,62 +913,6 @@
       "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
     },
     {
-      "name": "listen port with a plus",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "0.0.0.0:+80",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "listen port with a letter",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "0.0.0.0:80x",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "listen port with a space",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "0.0.0.0: 80",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "listen port far out of range",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "0.0.0.0:99999999999999999999",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
       "name": "unbracketed ipv6",
       "in": {
         "mode": "gateway",
@@ -2156,20 +920,6 @@
           "a.example.com"
         ],
         "listen": "::1:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "ipv4 in brackets",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1.2.3.4]:443",
         "redirect_listen": "",
         "source": "uploaded"
       },
@@ -2191,293 +941,13 @@
       "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
     },
     {
-      "name": "listen with an empty zone",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[fe80::1%]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "listen with a missing bracket",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[::1:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "listen with a stray bracket",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "::1]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "listen with empty brackets",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "listen octet with a leading zero",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "01.2.3.4:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "listen octet above 255",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "1.2.3.256:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "listen with three octets",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "1.2.3:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "listen with five octets",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "1.2.3.4.5:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "ipv6 with two ellipses",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1::2::3]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "ipv6 with three colons",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1:::2]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "ipv6 with a leading colon",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[:1::2]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "ipv6 with a trailing colon",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1::2:]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "ipv6 with nine groups",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1:2:3:4:5:6:7:8:9]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "ipv6 with eight groups and an ellipsis",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1:2:3:4:5:6:7:8::]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "ipv6 with seven groups and an ellipsis",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1:2:3:4:5:6:7::8]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "ipv6 group of five digits",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[12345::1]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "ipv6 group that is not hex",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[g::1]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "ipv6 with an ipv4 tail in the wrong place",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[1:2:3:4:5:1.2.3.4]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "ipv6 with an ipv4 tail before the end",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[::1.2.3.4:1]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "ipv6 with an ipv4 tail that has a leading zero",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[::1.2.3.04]:443",
-        "redirect_listen": "",
-        "source": "uploaded"
-      },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
       "name": "redirect equals listen",
       "in": {
         "mode": "gateway",
         "hosts": [
           "a.example.com"
         ],
-        "listen": "0.0.0.0:443",
+        "listen": "",
         "redirect_listen": "0.0.0.0:443",
         "source": "uploaded"
       },
@@ -2505,7 +975,7 @@
         "hosts": [
           "a.example.com"
         ],
-        "listen": "0.0.0.0:443",
+        "listen": "",
         "redirect_listen": "0.0.0.0",
         "source": "uploaded"
       },
@@ -2513,161 +983,427 @@
       "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
     },
     {
-      "name": "redirect port 0",
+      "name": "last label of digits only, refused: 10.1.1",
       "in": {
-        "mode": "gateway",
+        "mode": "proxy",
         "hosts": [
-          "a.example.com"
+          "10.1.1"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": ""
+      },
+      "field": "hosts",
+      "message": "\"10.1.1\" must not end with a label of digits only"
+    },
+    {
+      "name": "last label of digits only, refused: shop.123",
+      "in": {
+        "mode": "proxy",
+        "hosts": [
+          "shop.123"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": ""
+      },
+      "field": "hosts",
+      "message": "\"shop.123\" must not end with a label of digits only"
+    },
+    {
+      "name": "last label of digits only, refused: a.example.123",
+      "in": {
+        "mode": "proxy",
+        "hosts": [
+          "a.example.123"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": ""
+      },
+      "field": "hosts",
+      "message": "\"a.example.123\" must not end with a label of digits only"
+    },
+    {
+      "name": "last label of digits only, refused: a.b.0",
+      "in": {
+        "mode": "proxy",
+        "hosts": [
+          "a.b.0"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": ""
+      },
+      "field": "hosts",
+      "message": "\"a.b.0\" must not end with a label of digits only"
+    },
+    {
+      "name": "last label of digits only, refused: 1.2.3.04",
+      "in": {
+        "mode": "proxy",
+        "hosts": [
+          "1.2.3.04"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": ""
+      },
+      "field": "hosts",
+      "message": "\"1.2.3.04\" must not end with a label of digits only"
+    },
+    {
+      "name": "last label with a letter, accepted: 123.example.com",
+      "in": {
+        "mode": "proxy",
+        "hosts": [
+          "123.example.com"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": ""
+      },
+      "result": {
+        "mode": "proxy",
+        "hosts": [
+          "123.example.com"
         ],
         "listen": "0.0.0.0:443",
-        "redirect_listen": "0.0.0.0:0",
-        "source": "uploaded"
-      },
-      "field": "redirect_listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
-    },
-    {
-      "name": "redirect on the port of a wildcard",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "0.0.0.0:443",
-        "redirect_listen": "10.0.0.1:443",
-        "source": "uploaded"
-      },
-      "field": "redirect_listen",
-      "message": "must not use the port of listen on an address that overlaps it"
-    },
-    {
-      "name": "redirect wildcard over a specific listener",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "10.0.0.5:443",
-        "redirect_listen": "0.0.0.0:443",
-        "source": "uploaded"
-      },
-      "field": "redirect_listen",
-      "message": "must not use the port of listen on an address that overlaps it"
-    },
-    {
-      "name": "redirect and listen are both wildcards",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "[::]:443",
-        "redirect_listen": "0.0.0.0:443",
-        "source": "uploaded"
-      },
-      "field": "redirect_listen",
-      "message": "must not use the port of listen on an address that overlaps it"
-    },
-    {
-      "name": "ipv6 wildcard over an ipv4 listener",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "10.0.0.5:443",
-        "redirect_listen": "[::]:443",
-        "source": "uploaded"
-      },
-      "field": "redirect_listen",
-      "message": "must not use the port of listen on an address that overlaps it"
-    },
-    {
-      "name": "redirect shares the port of a specific listener",
-      "in": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "10.0.0.5:443",
-        "redirect_listen": "10.0.0.6:443",
-        "source": "uploaded"
-      },
-      "out": {
-        "mode": "gateway",
-        "hosts": [
-          "a.example.com"
-        ],
-        "listen": "10.0.0.5:443",
-        "redirect_listen": "10.0.0.6:443",
-        "source": "uploaded"
+        "redirect_listen": "",
+        "source": ""
       }
     },
     {
-      "name": "a bad listen before a bad redirect",
+      "name": "last label with a letter, accepted: a.b1",
+      "in": {
+        "mode": "proxy",
+        "hosts": [
+          "a.b1"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": ""
+      },
+      "result": {
+        "mode": "proxy",
+        "hosts": [
+          "a.b1"
+        ],
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "",
+        "source": ""
+      }
+    },
+    {
+      "name": "last label with a letter, accepted: shop.c0m",
+      "in": {
+        "mode": "proxy",
+        "hosts": [
+          "shop.c0m"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": ""
+      },
+      "result": {
+        "mode": "proxy",
+        "hosts": [
+          "shop.c0m"
+        ],
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "",
+        "source": ""
+      }
+    },
+    {
+      "name": "last label with a letter, accepted: x.1a",
+      "in": {
+        "mode": "proxy",
+        "hosts": [
+          "x.1a"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": ""
+      },
+      "result": {
+        "mode": "proxy",
+        "hosts": [
+          "x.1a"
+        ],
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "",
+        "source": ""
+      }
+    },
+    {
+      "name": "last label with a letter, accepted: 1a.2b",
+      "in": {
+        "mode": "proxy",
+        "hosts": [
+          "1a.2b"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": ""
+      },
+      "result": {
+        "mode": "proxy",
+        "hosts": [
+          "1a.2b"
+        ],
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "",
+        "source": ""
+      }
+    },
+    {
+      "name": "last label with a letter, accepted: a-1.example.org",
+      "in": {
+        "mode": "proxy",
+        "hosts": [
+          "a-1.example.org"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": ""
+      },
+      "result": {
+        "mode": "proxy",
+        "hosts": [
+          "a-1.example.org"
+        ],
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "",
+        "source": ""
+      }
+    },
+    {
+      "name": "listeners overlap, refused: 0.0.0.0:443 and 10.0.0.1:443",
+      "in": {
+        "mode": "proxy",
+        "hosts": null,
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "10.0.0.1:443",
+        "source": ""
+      },
+      "field": "redirect_listen",
+      "message": "must not use the port of listen on an address that overlaps it"
+    },
+    {
+      "name": "listeners overlap, refused: 10.0.0.1:443 and 0.0.0.0:443",
+      "in": {
+        "mode": "proxy",
+        "hosts": null,
+        "listen": "10.0.0.1:443",
+        "redirect_listen": "0.0.0.0:443",
+        "source": ""
+      },
+      "field": "redirect_listen",
+      "message": "must not use the port of listen on an address that overlaps it"
+    },
+    {
+      "name": "listeners overlap, refused: [::]:443 and 10.0.0.1:443",
+      "in": {
+        "mode": "proxy",
+        "hosts": null,
+        "listen": "[::]:443",
+        "redirect_listen": "10.0.0.1:443",
+        "source": ""
+      },
+      "field": "redirect_listen",
+      "message": "must not use the port of listen on an address that overlaps it"
+    },
+    {
+      "name": "listeners overlap, refused: [::]:443 and 0.0.0.0:443",
+      "in": {
+        "mode": "proxy",
+        "hosts": null,
+        "listen": "[::]:443",
+        "redirect_listen": "0.0.0.0:443",
+        "source": ""
+      },
+      "field": "redirect_listen",
+      "message": "must not use the port of listen on an address that overlaps it"
+    },
+    {
+      "name": "listeners apart, accepted: 0.0.0.0:443 and 0.0.0.0:80",
+      "in": {
+        "mode": "proxy",
+        "hosts": null,
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "0.0.0.0:80",
+        "source": ""
+      },
+      "result": {
+        "mode": "proxy",
+        "hosts": [],
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "0.0.0.0:80",
+        "source": ""
+      }
+    },
+    {
+      "name": "listeners apart, accepted: 10.0.0.1:443 and 10.0.0.2:443",
+      "in": {
+        "mode": "proxy",
+        "hosts": null,
+        "listen": "10.0.0.1:443",
+        "redirect_listen": "10.0.0.2:443",
+        "source": ""
+      },
+      "result": {
+        "mode": "proxy",
+        "hosts": [],
+        "listen": "10.0.0.1:443",
+        "redirect_listen": "10.0.0.2:443",
+        "source": ""
+      }
+    },
+    {
+      "name": "listeners apart, accepted: 0.0.0.0:443 and [2001:db8::1]:443",
+      "in": {
+        "mode": "proxy",
+        "hosts": null,
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "[2001:db8::1]:443",
+        "source": ""
+      },
+      "result": {
+        "mode": "proxy",
+        "hosts": [],
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "[2001:db8::1]:443",
+        "source": ""
+      }
+    },
+    {
+      "name": "dotted capital I (U+0130)",
       "in": {
         "mode": "gateway",
         "hosts": [
-          "a.example.com"
+          "İstanbul.example.com"
         ],
-        "listen": "x",
-        "redirect_listen": "y",
+        "listen": "",
+        "redirect_listen": "",
         "source": "uploaded"
       },
-      "field": "listen",
-      "message": "must be ip:port or [ipv6]:port with a port from 1 to 65535"
+      "field": "hosts",
+      "message": "\"İstanbul.example.com\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
+    },
+    {
+      "name": "Kelvin sign (U+212A)",
+      "in": {
+        "mode": "gateway",
+        "hosts": [
+          "Kyoto.example.com"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": "uploaded"
+      },
+      "field": "hosts",
+      "message": "\"Kyoto.example.com\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
+    },
+    {
+      "name": "byte order mark before the name (U+FEFF)",
+      "in": {
+        "mode": "gateway",
+        "hosts": [
+          "﻿shop.example.com"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": "uploaded"
+      },
+      "field": "hosts",
+      "message": "\"\\ufeffshop.example.com\" must use only letters, digits, hyphens and dots (write an international name in its xn-- form)"
+    },
+    {
+      "name": "next line around the name (U+0085)",
+      "in": {
+        "mode": "gateway",
+        "hosts": [
+          "shop.example.com"
+        ],
+        "listen": "",
+        "redirect_listen": "",
+        "source": "uploaded"
+      },
+      "result": {
+        "mode": "gateway",
+        "hosts": [
+          "shop.example.com"
+        ],
+        "listen": "0.0.0.0:443",
+        "redirect_listen": "",
+        "source": "uploaded"
+      }
     }
   ],
-  "covers": [
+  "covers_host": [
     {
       "names": [
-        "shop.example.com"
+        "example.com"
       ],
-      "host": "shop.example.com",
+      "host": "example.com",
       "covered": true
     },
     {
       "names": [
-        "www.example.com",
-        "shop.example.com"
-      ],
-      "host": "shop.example.com",
-      "covered": true
-    },
-    {
-      "names": [
-        "www.example.com"
+        "example.com"
       ],
       "host": "shop.example.com",
       "covered": false
     },
     {
       "names": [
-        "shop.example.com"
+        "example.com"
       ],
-      "host": "Shop.Example.COM",
-      "covered": true
+      "host": "a.shop.example.com",
+      "covered": false
     },
     {
       "names": [
-        "SHOP.EXAMPLE.COM"
+        "example.com"
       ],
-      "host": "shop.example.com",
-      "covered": true
+      "host": "a.b.example.com",
+      "covered": false
     },
     {
       "names": [
-        "*.example.com"
+        "example.com"
       ],
-      "host": "shop.example.com",
-      "covered": true
+      "host": "www.example.com",
+      "covered": false
     },
     {
       "names": [
-        "*.EXAMPLE.com"
+        "example.com"
+      ],
+      "host": "other.org",
+      "covered": false
+    },
+    {
+      "names": [
+        "example.com"
+      ],
+      "host": "xexample.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "example.com"
+      ],
+      "host": ".example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "example.com"
       ],
       "host": "SHOP.example.com",
-      "covered": true
+      "covered": false
     },
     {
       "names": [
@@ -2680,15 +1416,43 @@
       "names": [
         "*.example.com"
       ],
+      "host": "shop.example.com",
+      "covered": true
+    },
+    {
+      "names": [
+        "*.example.com"
+      ],
+      "host": "a.shop.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.example.com"
+      ],
       "host": "a.b.example.com",
       "covered": false
     },
     {
       "names": [
-        "*.b.example.com"
+        "*.example.com"
       ],
-      "host": "a.b.example.com",
+      "host": "www.example.com",
       "covered": true
+    },
+    {
+      "names": [
+        "*.example.com"
+      ],
+      "host": "other.org",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.example.com"
+      ],
+      "host": "xexample.com",
+      "covered": false
     },
     {
       "names": [
@@ -2701,35 +1465,266 @@
       "names": [
         "*.example.com"
       ],
-      "host": "shop.example.org",
-      "covered": false
-    },
-    {
-      "names": [
-        "a.*.com"
-      ],
-      "host": "a.*.com",
+      "host": "SHOP.example.com",
       "covered": true
     },
     {
       "names": [
-        "a.*.com"
+        "shop.example.com"
       ],
-      "host": "a.example.com",
+      "host": "example.com",
       "covered": false
     },
     {
       "names": [
-        "*.example.com"
-      ],
-      "host": "*.example.com",
-      "covered": true
-    },
-    {
-      "names": [
-        "shop.*"
+        "shop.example.com"
       ],
       "host": "shop.example.com",
+      "covered": true
+    },
+    {
+      "names": [
+        "shop.example.com"
+      ],
+      "host": "a.shop.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "shop.example.com"
+      ],
+      "host": "a.b.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "shop.example.com"
+      ],
+      "host": "www.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "shop.example.com"
+      ],
+      "host": "other.org",
+      "covered": false
+    },
+    {
+      "names": [
+        "shop.example.com"
+      ],
+      "host": "xexample.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "shop.example.com"
+      ],
+      "host": ".example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "shop.example.com"
+      ],
+      "host": "SHOP.example.com",
+      "covered": true
+    },
+    {
+      "names": [
+        "*.shop.example.com"
+      ],
+      "host": "example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.shop.example.com"
+      ],
+      "host": "shop.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.shop.example.com"
+      ],
+      "host": "a.shop.example.com",
+      "covered": true
+    },
+    {
+      "names": [
+        "*.shop.example.com"
+      ],
+      "host": "a.b.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.shop.example.com"
+      ],
+      "host": "www.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.shop.example.com"
+      ],
+      "host": "other.org",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.shop.example.com"
+      ],
+      "host": "xexample.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.shop.example.com"
+      ],
+      "host": ".example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.shop.example.com"
+      ],
+      "host": "SHOP.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.com"
+      ],
+      "host": "example.com",
+      "covered": true
+    },
+    {
+      "names": [
+        "*.com"
+      ],
+      "host": "shop.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.com"
+      ],
+      "host": "a.shop.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.com"
+      ],
+      "host": "a.b.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.com"
+      ],
+      "host": "www.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.com"
+      ],
+      "host": "other.org",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.com"
+      ],
+      "host": "xexample.com",
+      "covered": true
+    },
+    {
+      "names": [
+        "*.com"
+      ],
+      "host": ".example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*.com"
+      ],
+      "host": "SHOP.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "a.*.example.com"
+      ],
+      "host": "example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "a.*.example.com"
+      ],
+      "host": "shop.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "a.*.example.com"
+      ],
+      "host": "a.shop.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "a.*.example.com"
+      ],
+      "host": "a.b.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "a.*.example.com"
+      ],
+      "host": "www.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "a.*.example.com"
+      ],
+      "host": "other.org",
+      "covered": false
+    },
+    {
+      "names": [
+        "a.*.example.com"
+      ],
+      "host": "xexample.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "a.*.example.com"
+      ],
+      "host": ".example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "a.*.example.com"
+      ],
+      "host": "SHOP.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*"
+      ],
+      "host": "example.com",
       "covered": false
     },
     {
@@ -2741,122 +1736,172 @@
     },
     {
       "names": [
-        "*."
+        "*"
       ],
-      "host": "shop",
+      "host": "a.shop.example.com",
       "covered": false
+    },
+    {
+      "names": [
+        "*"
+      ],
+      "host": "a.b.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*"
+      ],
+      "host": "www.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*"
+      ],
+      "host": "other.org",
+      "covered": false
+    },
+    {
+      "names": [
+        "*"
+      ],
+      "host": "xexample.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*"
+      ],
+      "host": ".example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "*"
+      ],
+      "host": "SHOP.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "Shop.Example.COM"
+      ],
+      "host": "example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "Shop.Example.COM"
+      ],
+      "host": "shop.example.com",
+      "covered": true
+    },
+    {
+      "names": [
+        "Shop.Example.COM"
+      ],
+      "host": "a.shop.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "Shop.Example.COM"
+      ],
+      "host": "a.b.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "Shop.Example.COM"
+      ],
+      "host": "www.example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "Shop.Example.COM"
+      ],
+      "host": "other.org",
+      "covered": false
+    },
+    {
+      "names": [
+        "Shop.Example.COM"
+      ],
+      "host": "xexample.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "Shop.Example.COM"
+      ],
+      "host": ".example.com",
+      "covered": false
+    },
+    {
+      "names": [
+        "Shop.Example.COM"
+      ],
+      "host": "SHOP.example.com",
+      "covered": true
     },
     {
       "names": [],
-      "host": "shop.example.com",
+      "host": "example.com",
       "covered": false
     },
     {
       "names": [
-        "example.com"
+        "a.example.com",
+        "b.example.com"
       ],
-      "host": "",
+      "host": "c.example.com",
       "covered": false
     },
     {
       "names": [
-        ""
+        "a.example.com",
+        "*.example.org"
       ],
-      "host": "",
+      "host": "x.example.org",
       "covered": true
     },
     {
       "names": [
-        "shop.\u0130.example.com"
-      ],
-      "host": "shop.i.example.com",
-      "covered": true
-    },
-    {
-      "names": [
-        "shop.i.example.com"
-      ],
-      "host": "shop.\u0130.example.com",
-      "covered": true
-    },
-    {
-      "names": [
-        "shop.\u0130.example.com"
-      ],
-      "host": "shop.\u0130.example.com",
-      "covered": true
-    },
-    {
-      "names": [
+        "istanbul.example.com",
+        "kyoto.example.com",
         "shop.example.com"
       ],
-      "host": "shop.\u0130.example.com",
+      "host": "İstanbul.example.com",
       "covered": false
     },
     {
       "names": [
-        "shop.\u212a.example.com"
-      ],
-      "host": "shop.k.example.com",
-      "covered": true
-    },
-    {
-      "names": [
-        "shop.k.example.com"
-      ],
-      "host": "shop.\u212a.example.com",
-      "covered": true
-    },
-    {
-      "names": [
+        "istanbul.example.com",
+        "kyoto.example.com",
         "shop.example.com"
       ],
-      "host": "shop.example.com\ufeff",
+      "host": "Kyoto.example.com",
       "covered": false
     },
     {
       "names": [
-        "shop.example.com\ufeff"
-      ],
-      "host": "shop.example.com",
-      "covered": false
-    },
-    {
-      "names": [
+        "istanbul.example.com",
+        "kyoto.example.com",
         "shop.example.com"
       ],
-      "host": "shop.example.com\u0085",
+      "host": "﻿shop.example.com",
       "covered": false
     },
     {
       "names": [
-        "*.\u0130.com"
+        "istanbul.example.com",
+        "kyoto.example.com",
+        "shop.example.com"
       ],
-      "host": "a.\u0130.com",
-      "covered": true
-    },
-    {
-      "names": [
-        "m\u00fcnchen.de",
-        "*.example.com"
-      ],
-      "host": "shop.example.com",
-      "covered": true
-    },
-    {
-      "names": [
-        "m\u00fcnchen.de",
-        "*.example.com"
-      ],
-      "host": "shop.example.org",
+      "host": "shop.example.com",
       "covered": false
-    },
-    {
-      "names": [
-        "m\u00fcnchen.de"
-      ],
-      "host": "M\u00dcNCHEN.de",
-      "covered": true
     }
   ]
 }

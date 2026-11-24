@@ -28,8 +28,9 @@ export interface TLSFieldError {
   message: string;
 }
 
-// Go and JavaScript fold and trim Unicode differently (U+0130, U+FEFF, U+0085), so only ASCII is
-// folded here and a value with any other character goes to the server unjudged.
+// The server folds A to Z only. Go trims every Unicode space (U+0085, U+00A0) and JavaScript's trim
+// differs (U+FEFF), so only ASCII white space is trimmed here and a value with any other character
+// goes to the server unjudged.
 const NON_ASCII = /[^\u0000-\u007f]/;
 const ASCII_SPACE = /^[ \t\n\v\f\r]+|[ \t\n\v\f\r]+$/g;
 
@@ -203,22 +204,14 @@ export function checkTLSFit(settings: Pick<AppTLSInput, 'listen' | 'redirect_lis
   return null;
 }
 
-/**
- * Whether a certificate with these DNS names serves `host` (domain.CertificateCoversHost): a name matches
- * exactly, or a leading "*." matches exactly one label. null when a non-ASCII name leaves it open, since
- * Go may fold such a name into the host.
- */
-export function certificateCoversHost(names: readonly string[], host: string): boolean | null {
+/** Whether a certificate with these DNS names serves `host` (domain.CertificateCoversHost): a name matches exactly, or a leading "*." matches exactly one label. */
+export function certificateCoversHost(names: readonly string[], host: string): boolean {
   const wanted = lowerAscii(host);
-  let open = NON_ASCII.test(wanted);
-  for (const name of names) {
+  const dot = wanted.indexOf('.');
+  return names.some((name) => {
     const have = lowerAscii(name);
-    if (have === wanted) return true;
-    const dot = wanted.indexOf('.');
-    if (have.startsWith('*.') && dot > 0 && wanted.slice(dot + 1) === have.slice(2)) return true;
-    open ||= NON_ASCII.test(have);
-  }
-  return open ? null : false;
+    return have === wanted || (have.startsWith('*.') && dot > 0 && wanted.slice(dot + 1) === have.slice(2));
+  });
 }
 
 // ── Dates ──────────────────────────────────────────────────────────────────
@@ -262,8 +255,8 @@ export function retryUntil(error: ApiError | undefined, now: number): number | n
 }
 
 /**
- * Epoch ms from which a new request is accepted (0: now). The wait a refusal named wins while it runs,
- * since it can be longer than the gap (Let's Encrypt's own limit); then the gap after the last request counts.
+ * Epoch ms from which a new request is accepted (0: now). The wait a refusal named wins while it runs, since
+ * the local requested_at may be stale or measured on another clock; then the gap after the last request counts.
  */
 export function requestOpensAt(requestedAt: string | null | undefined, retryAt: number | null | undefined, now: number): number {
   if (retryAt != null && retryAt > now) return retryAt;
@@ -357,15 +350,20 @@ const KEY_IN_CHAIN = 'This text holds a private key. Put only certificates here 
 const NOT_PEM_TEXT = 'This file is not PEM text. Convert it first (.pfx: openssl pkcs12 -in file.pfx -nodes -nocerts for the key, -nokeys for the chain).';
 const PRIVATE_KEY_BLOCK = /PRIVATE KEY-----/;
 
-/** The text of a chosen file, or why it is not used. A file over its cap is not read; a file that is not UTF-8 (DER, PKCS#12) is not PEM. */
+/**
+ * The text of a chosen file, or why it is not used. A file over its cap is not read; a file that is not UTF-8
+ * (DER, PKCS#12) is not PEM; a chain file that holds a private key is not returned, so the key never reaches the screen.
+ */
 export async function readPemFile(file: File, kind: 'chain' | 'key'): Promise<{ text: string; message?: undefined } | { text?: undefined; message: string }> {
   const cap = kind === 'chain' ? TLS_LIMITS.chainBytes : TLS_LIMITS.keyBytes;
   if (file.size > cap) return { message: `This file is larger than ${cap >> 10} KiB.` };
+  let text: string;
   try {
-    return { text: new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer()) };
+    text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
   } catch {
     return { message: NOT_PEM_TEXT };
   }
+  return kind === 'chain' && PRIVATE_KEY_BLOCK.test(text) ? { message: KEY_IN_CHAIN } : { text };
 }
 
 /** The texts of the codes an upload can be answered with that carry no field. */
