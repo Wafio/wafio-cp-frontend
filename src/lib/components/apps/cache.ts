@@ -3,10 +3,11 @@
  * form model, which saves ask first, the check of a removal, and what the agent counted in words. Pure functions;
  * the section is CacheSection.svelte.
  */
-import type { AppCache, AppCachePurge, AppCacheRule, AppCacheStats, AppDelivery } from '../../api';
+import type { ApiError, AppCache, AppCachePurge, AppCacheRule, AppCacheStats, AppDelivery } from '../../api';
+import { needsConfirmation } from '../../confirm-tiers';
 import { formatBytes, formatDateTime, formatNumber } from '../../format';
 import { bytesFromInput, bytesToInput } from './inputs';
-import { PART_LABEL, tooOld, tooOldText } from './speed';
+import { PART_LABEL, answerOverdue, classifySpeedRefusal, tooOld, tooOldText } from './speed';
 
 const KIB = 1024;
 const MIB = 1024 * KIB;
@@ -70,6 +71,18 @@ export function cacheFieldOf(name: string | undefined): CacheField | null {
 export function ruleFieldOf(field: string | undefined): { index: number; part: 'prefix' | 'action' | 'ttl_s' } | null {
   const match = field ? RULE_FIELD.exec(field) : null;
   return match ? { index: Number(match[1]), part: match[2] as 'prefix' | 'action' | 'ttl_s' } : null;
+}
+
+/** The limits folded under "Advanced limits": a refusal of one of them opens the fold. */
+export const inAdvanced = (field: CacheField): boolean => ['disk_bytes', 'memory_bytes', 'max_object_bytes', 'session_cookies'].includes(field);
+
+export type CacheRefusal = { kind: 'field'; field: CacheField; message: string; advanced: boolean } | { kind: 'too-old' | 'save'; message: string };
+
+/** Where a refused save is said: under the cache field the 400 names, as the agent being too old, or above the buttons. */
+export function classifyCacheRefusal(error: ApiError | undefined): CacheRefusal {
+  const field = cacheFieldOf(error?.field);
+  const refusal = classifySpeedRefusal(error, field ? [field] : [], 'cache', 'Could not save the cache settings.');
+  return refusal.kind === 'field' ? { ...refusal, advanced: inAdvanced(refusal.field) } : refusal;
 }
 
 export interface CacheRuleInput {
@@ -362,6 +375,9 @@ export function cacheConfirmations(stored: AppCache, next: AppCache, usedDiskByt
   return steps;
 }
 
+/** The questions still to ask after the first is answered; null when it was the last and the save runs. */
+export const nextQuestion = (steps: readonly CacheConfirm[]): CacheConfirm[] | null => (steps.length > 1 ? steps.slice(1) : null);
+
 export interface ConfirmText {
   title: string;
   body: string;
@@ -411,7 +427,7 @@ export const RULES_LEAD = 'A rule applies to every path that starts with the tex
 export const RULES_EMPTY = 'No path rules: every path follows the settings above.';
 export const RULE_SIGNED_IN_HINT = 'Only for paths that show the same page to everyone.';
 export const COOKIES_HINT =
-  'Visitors with one of these cookies count as signed in. WAFio already knows the common ones: names with sess in them, such as PHPSESSID and laravel_session, and the WordPress sign-in cookies.';
+  'One name a line. Visitors with one of these cookies count as signed in. WAFio already knows the common ones: names with sess in them, such as PHPSESSID and laravel_session, and the WordPress sign-in cookies.';
 
 export const REMOVE_HINT_URL = 'Every variant of this address goes, compressed or not.';
 export const REMOVE_HINT_PREFIX = 'Everything stored under this path goes, on every host name of the application.';
@@ -426,6 +442,19 @@ export function removalBlockedText(d: AppDelivery): string | null {
   if (!d.agent) return NO_AGENT_TEXT;
   if (tooOld(d, 'cache')) return tooOldText(d.agent.name, PART_LABEL.cache);
   return null;
+}
+
+/** Removing everything asks first; one address or one path does not. */
+export const purgeAsksFirst = (scope: PurgeScope): boolean => scope === 'app' && needsConfirmation('purge-cache-app');
+
+export type PurgeRefusal = { kind: 'field'; message: string } | { kind: 'alert'; message: string; refresh: boolean };
+
+/** Where a refused removal is said: under the address, or above the button (`refresh` when the settings it read are out of date). */
+export function classifyPurgeRefusal(error: ApiError | undefined, agent: string): PurgeRefusal {
+  if (error?.code === 'INVALID_CACHE_PURGE' && error.field === 'url') return { kind: 'field', message: error.error };
+  if (error?.code === 'CACHE_OFF') return { kind: 'alert', message: CACHE_OFF_TEXT, refresh: true };
+  if (error?.code === 'PURGE_QUEUE_FULL') return { kind: 'alert', message: queueFullText(agent), refresh: false };
+  return { kind: 'alert', message: error?.error || 'Could not remove the copies.', refresh: false };
 }
 
 const PURGE_REASON: Record<string, string> = {
@@ -444,9 +473,13 @@ export interface PurgeView {
   tone: 'success' | 'info' | 'warning';
 }
 
-/** One removal as a row: what, who asked, and where it stands. `agent` is the one that serves the application now. */
-export function purgeView(row: AppCachePurge, agent: { name: string; online: boolean } | null): PurgeView {
-  const name = row.agent || agent?.name || 'The WAF agent';
+/**
+ * One removal as a row: what, who asked, and where it stands. `agent` is the one that serves the application now.
+ * A removal that waited past the time an agent gets says so instead of promising seconds.
+ */
+export function purgeView(row: AppCachePurge, agent: { name: string; online: boolean } | null, now: number): PurgeView {
+  const named = row.agent || agent?.name || '';
+  const name = named || 'The WAF agent';
   const view = {
     what: row.scope === 'app' ? 'Everything' : row.scope === 'prefix' ? `Everything under ${row.url}` : row.url,
     address: row.scope === 'url',
@@ -461,6 +494,9 @@ export function purgeView(row: AppCachePurge, agent: { name: string; online: boo
   }
   if (agent && !agent.online) {
     return { ...view, state: `${agent.name} is offline. The copies go when it reconnects; until then it may still send them.`, tone: 'info' };
+  }
+  if (answerOverdue(row.created_at, now)) {
+    return { ...view, state: `No answer from ${named || 'the WAF agent'} yet. Check that it is online.`, tone: 'warning' };
   }
   return { ...view, state: `Removing. ${name} confirms within a few seconds.`, tone: 'info' };
 }

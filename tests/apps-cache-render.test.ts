@@ -112,6 +112,7 @@ describe('Cache section, every part off, with an agent that knows it', () => {
     expect(section).toContain('Bigger answers always come from your application.');
     expect(section).toContain('Session cookie names');
     expect(section).toContain(COOKIES_HINT);
+    expect(COOKIES_HINT.startsWith('One name a line. ')).toBe(true);
     expect(section).toContain('placeholder="shop_session"');
   });
 
@@ -216,12 +217,13 @@ describe('Cache section, the line under the switch', () => {
   test('a refusal shows its reason and says whether the previous settings still run', async () => {
     const refused = async (code: string, running_previous: boolean, detail = '') =>
       cache(await render(cacheOn({}, { status: status({ cache: feature('cache', { state: 'refused', code: code as never, detail, running_previous }) }) })));
-    expect(await refused('disk_too_small', true, 'free 1 GiB')).toContain(
-      'edge-1 did not apply this: the cache disk has less free space than its applications ask for (free 1 GiB), and 5 % of the disk stays free. Lower Disk space or free space on the host. It still runs the previous settings.'
+    expect(await refused('disk_too_small', true, '1073741824 3221225472')).toContain(
+      'edge-1 did not apply this: the cache disk has 1 GiB free, less than the 3 GiB its applications ask for (5 % of the disk stays free). Lower Disk space or free up space on the host. It still runs the previous settings.'
     );
-    expect(await refused('memory_too_small', false)).toContain(
-      "edge-1 did not apply this: hot copies would use more than a quarter of the host's memory. Lower Memory for hot copies. This part stays off until you fix it."
+    expect(await refused('memory_too_small', false, '2147483648')).toContain(
+      "edge-1 did not apply this: hot copies would use more than a quarter of the host's 2 GiB memory. Lower Memory for hot copies. This part stays off until you fix it."
     );
+    expect(await refused('memory_too_small', false)).toContain("edge-1 did not apply this: hot copies would use more than a quarter of the host's memory. Lower Memory for hot copies.");
   });
 
   test('an unusable cache folder is said on the line also while the cache is off', async () => {
@@ -378,6 +380,35 @@ describe('Cache section, removing stored copies', () => {
     expect(block).toContain('edge-1 is offline. The copies go when it reconnects; until then it may still send them.');
   });
 
+  test('a removal that waited past 2 minutes says there is no answer, as a warning, and not that the agent confirms in seconds', async () => {
+    const block = removal(await render(cacheOn({}, { purges: [purge({ created_at: new Date(NOW - 3 * MINUTE).toISOString() })] })));
+    expect(block).toContain('No answer from edge-1 yet. Check that it is online.');
+    expect(block).not.toContain('confirms within a few seconds');
+    expect(block).toMatch(/ui-alert tone-warning[^"]*"/);
+  });
+
+  test('each state of a removal is drawn with the shared alert: removing as a note, removed as success, could not remove and no answer as warnings', async () => {
+    const block = removal(
+      await render(
+        cacheOn({}, {
+          purges: [
+            purge({ id: 'a' }),
+            purge({ id: 'b', state: 'done', agent: 'edge-1', finished_at: new Date(NOW).toISOString() }),
+            purge({ id: 'c', state: 'failed', error: 'invalid', agent: 'edge-1' }),
+            purge({ id: 'd', created_at: new Date(NOW - 5 * MINUTE).toISOString() }),
+          ],
+        })
+      )
+    );
+    const tones = (block.match(/ui-alert tone-(info|success|warning|error)/g) ?? []).map((m) => m.replace('ui-alert tone-', ''));
+    expect(tones).toEqual(['info', 'success', 'warning', 'warning']);
+    // The state is text first: the alert carries a screen-reader prefix and no live role of its own (the list is the live region).
+    expect(block).toContain('>Warning:</span>');
+    expect(block).toContain('>Success:</span>');
+    expect(block).not.toMatch(/<div[^>]*ui-alert[^>]*role=/);
+    expect(block).not.toContain('cs-purge-state');
+  });
+
   test('a removal that is done names the agent, one that failed says why, and a path says what is under it', async () => {
     const block = removal(
       await render(
@@ -407,16 +438,8 @@ describe('Cache section, removing stored copies', () => {
   });
 });
 
-describe('Cache section, the source says what the tests cannot run', () => {
-  const component = readFileSync(new URL('../src/lib/components/apps/CacheSection.svelte', import.meta.url), 'utf8');
-
-  test('each question runs the save only after the last one, and the app name goes into the question of removing everything', () => {
-    expect(component).toContain('if (steps.length > 1) steps = steps.slice(1);');
-    expect(component).toContain('purgeAppConfirmTitle(appName)');
-    expect(component).toContain("needsConfirmation('purge-cache-app')");
-  });
-
-  test('the page passes the application name to the Speed tab', () => {
+describe('Cache section, the page wiring', () => {
+  test('the page passes the application name to the Speed tab, for the question of removing everything', () => {
     const page = readFileSync(new URL('../src/routes/projects/[id]/apps/[appId]/+page.svelte', import.meta.url), 'utf8');
     expect(page).toContain('appName={app.name}');
   });

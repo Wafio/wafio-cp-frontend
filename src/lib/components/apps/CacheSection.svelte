@@ -21,7 +21,6 @@
     CACHE_FIXED,
     CACHE_LEAD,
     CACHE_LIMITS,
-    CACHE_OFF_TEXT,
     CACHE_SWITCH_HINT,
     COOKIES_HINT,
     PURGE_APP_CONFIRM_BODY,
@@ -33,17 +32,20 @@
     RULE_SIGNED_IN_HINT,
     cacheConfirmText,
     cacheConfirmations,
-    cacheFieldOf,
     cacheForm,
     cacheInput,
     cacheNumbers,
     cacheSkipLines,
+    classifyCacheRefusal,
+    classifyPurgeRefusal,
     emptyRule,
+    inAdvanced,
+    nextQuestion,
     normalizeCache,
     normalizePurge,
     purgeAppConfirmTitle,
+    purgeAsksFirst,
     purgeView,
-    queueFullText,
     removalBlockedText,
     ruleFieldOf,
     sameCache,
@@ -53,7 +55,7 @@
     type ConfirmText,
     type PurgeScope,
   } from './cache';
-  import { UNASSIGNED_TEXT, classifySpeedRefusal, partLine, tooOld } from './speed';
+  import { UNASSIGNED_TEXT, partLine, tooOld } from './speed';
 
   let {
     projectId,
@@ -125,8 +127,6 @@
   $effect(() => {
     dirty = formDirty;
   });
-
-  const ADVANCED_FIELDS: readonly string[] = ['disk_bytes', 'memory_bytes', 'max_object_bytes', 'session_cookies'];
 
   function fieldValue(field: CacheField): unknown {
     const rule = ruleFieldOf(field);
@@ -201,11 +201,10 @@
 
   // ── Saving ──────────────────────────────────────────────────────────────
   function refused(error: ApiError | undefined) {
-    const field = cacheFieldOf(error?.field);
-    const refusal = classifySpeedRefusal(error, field ? [field] : [], 'cache', 'Could not save the cache settings.');
+    const refusal = classifyCacheRefusal(error);
     if (refusal.kind === 'field') {
       serverError = { field: refusal.field, message: refusal.message, sent: JSON.stringify(fieldValue(refusal.field)) };
-      if (ADVANCED_FIELDS.includes(refusal.field)) advanced = true;
+      if (refusal.advanced) advanced = true;
     } else {
       saveError = refusal.message;
       // An agent that is too old for it has told the control plane so: read the flags again.
@@ -220,7 +219,7 @@
     saveError = null;
     const result = check;
     if (result.error) {
-      if (ADVANCED_FIELDS.includes(result.error.field)) advanced = true;
+      if (inAdvanced(result.error.field)) advanced = true;
       void focusFormError(sectionEl);
       return;
     }
@@ -231,7 +230,8 @@
 
   /** The last question runs the save; an earlier one passes on to the next. */
   function confirmStep() {
-    if (steps.length > 1) steps = steps.slice(1);
+    const rest = nextQuestion(steps);
+    if (rest) steps = rest;
     else void save();
   }
 
@@ -299,7 +299,7 @@
       void focusFormError(removeEl);
       return;
     }
-    if (scope === 'app' && needsConfirmation('purge-cache-app')) purgeConfirm = true;
+    if (purgeAsksFirst(scope)) purgeConfirm = true;
     else void purge();
   }
 
@@ -313,12 +313,12 @@
     purging = false;
     purgeConfirm = false;
     if (res.error || !res.data) {
-      const error = res.error;
-      if (error?.code === 'INVALID_CACHE_PURGE' && error.field === 'url') purgeRefused = { message: error.error, sent: `${scope}:${address}` };
-      else if (error?.code === 'CACHE_OFF') {
-        purgeFailed = CACHE_OFF_TEXT;
-        void feed.refresh();
-      } else purgeFailed = error?.code === 'PURGE_QUEUE_FULL' ? queueFullText(agentName) : error?.error || 'Could not remove the copies.';
+      const refusal = classifyPurgeRefusal(res.error, agentName);
+      if (refusal.kind === 'field') purgeRefused = { message: refusal.message, sent: `${scope}:${address}` };
+      else {
+        purgeFailed = refusal.message;
+        if (refusal.refresh) void feed.refresh();
+      }
       void focusFormError(removeEl);
       return;
     }
@@ -516,11 +516,11 @@
       {:else}
         <ul class="cs-purges">
           {#each purges as row (row.id)}
-            {@const view = purgeView(row, agent)}
+            {@const view = purgeView(row, agent, feed.now)}
             <li class="cs-purge">
               <p class="cs-purge-what" class:mono={view.address}>{view.what}</p>
               <p class="cs-purge-by">{view.by}, <DateTime value={row.created_at} /></p>
-              <p class="cs-purge-state tone-{view.tone}">{view.state}</p>
+              <Alert compact tone={view.tone} role="none"><p>{view.state}</p></Alert>
             </li>
           {/each}
         </ul>
@@ -611,8 +611,6 @@
   .cs-purge-what { color: var(--text-primary); font-weight: var(--fw-medium); }
   .cs-purge-what.mono { font-family: var(--font-mono); }
   .cs-purge-by { color: var(--text-muted); }
-  .cs-purge-state { color: var(--text-secondary); }
-  .cs-purge-state.tone-warning { color: var(--text-primary); }
 
   @media (max-width: 760px) {
     .cs-actions { flex-direction: column-reverse; align-items: stretch; }

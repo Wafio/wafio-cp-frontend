@@ -3,7 +3,7 @@
 // What the section renders for each state is in apps-cache-render.test.ts.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import type { AppCache, AppCachePurge, AppCacheStats, AppEdgeFeatureState } from '../src/lib/api';
+import type { ApiError, AppCache, AppCachePurge, AppCacheStats, AppEdgeFeatureState } from '../src/lib/api';
 import { formatDateTime } from '../src/lib/format';
 import {
   CACHE_OFF_TEXT,
@@ -17,10 +17,15 @@ import {
   cacheInput,
   cacheNumbers,
   cacheSkipLines,
+  classifyCacheRefusal,
+  classifyPurgeRefusal,
   emptyRule,
+  inAdvanced,
+  nextQuestion,
   normalizeCache,
   normalizePurge,
   purgeAppConfirmTitle,
+  purgeAsksFirst,
   purgeView,
   queueFullText,
   removalBlockedText,
@@ -28,7 +33,7 @@ import {
   sameCache,
   type CacheInput,
 } from '../src/lib/components/apps/cache';
-import { partLine, pollIntervalMs, refusalReason, waitingForAgent } from '../src/lib/components/apps/speed';
+import { NO_ANSWER_AFTER_MS, partLine, pollIntervalMs, refusalReason, waitingForAgent } from '../src/lib/components/apps/speed';
 import { CONFIRM_TIERS, needsConfirmation, tierFor } from '../src/lib/confirm-tiers';
 import { MINUTE, NOW, agent, delivery, feature, status } from './support/delivery-fixtures';
 
@@ -213,6 +218,87 @@ describe('which saves ask first', () => {
   });
 });
 
+describe('the questions of one save', () => {
+  const signedIn = (prefix: string) => keepRule(prefix, { signed_in: true });
+
+  test('come in the order turn off, lower the disk, then each signed-in rule in the order of the rules', () => {
+    const before = stored();
+    const steps = cacheConfirmations(before, stored({ disk_bytes: 100 << 20, rules: [signedIn('/b'), keepRule('/c'), signedIn('/a')] }), 300 << 20);
+    expect(steps).toEqual([
+      { kind: 'shrink-cache', bytes: 100 << 20 },
+      { kind: 'cache-signed-in', prefix: '/b' },
+      { kind: 'cache-signed-in', prefix: '/a' },
+    ]);
+  });
+
+  test('each answer passes on to the next question, and the answer to the last one runs the save', () => {
+    const steps = cacheConfirmations(stored(), stored({ disk_bytes: 100 << 20, rules: [signedIn('/b'), signedIn('/a')] }), 300 << 20);
+    expect(steps).toHaveLength(3);
+    const second = nextQuestion(steps);
+    expect(second).toEqual([{ kind: 'cache-signed-in', prefix: '/b' }, { kind: 'cache-signed-in', prefix: '/a' }]);
+    const third = nextQuestion(second ?? []);
+    expect(third).toEqual([{ kind: 'cache-signed-in', prefix: '/a' }]);
+    expect(nextQuestion(third ?? [])).toBeNull();
+    expect(nextQuestion([])).toBeNull();
+  });
+
+  test('a single question, such as turning off, saves on its first answer', () => {
+    expect(nextQuestion([{ kind: 'disable-cache' }])).toBeNull();
+  });
+
+  test('the text of each question follows the steps, one at a time', () => {
+    const titles = cacheConfirmations(stored(), stored({ rules: [signedIn('/b'), signedIn('/a')] }), null).map((step) => cacheConfirmText(step).title);
+    expect(titles).toEqual(['Keep copies for signed-in visitors under /b?', 'Keep copies for signed-in visitors under /a?']);
+  });
+});
+
+describe('a refused save', () => {
+  const refused = (over: Partial<ApiError>): ApiError => ({ status: 400, error: 'The server says no.', ...over });
+
+  test('a field of the cache goes under it, without the field name the server puts in front', () => {
+    expect(classifyCacheRefusal(refused({ code: 'INVALID_DELIVERY_SETTINGS', field: 'default_ttl_s', error: 'default_ttl_s: Enter a time from 0 seconds to 365 days.' }))).toEqual({
+      kind: 'field',
+      field: 'default_ttl_s',
+      message: 'Enter a time from 0 seconds to 365 days.',
+      advanced: false,
+    });
+    expect(classifyCacheRefusal(refused({ code: 'INVALID_DELIVERY_SETTINGS', field: 'rules[2].ttl_s', error: 'Enter a time from 1 second to 365 days.' }))).toMatchObject({
+      kind: 'field',
+      field: 'rules[2].ttl_s',
+      advanced: false,
+    });
+  });
+
+  test('a limit under Advanced limits opens the fold, the other fields do not', () => {
+    for (const field of ['disk_bytes', 'memory_bytes', 'max_object_bytes', 'session_cookies'] as const) {
+      expect(inAdvanced(field)).toBe(true);
+      expect(classifyCacheRefusal(refused({ code: 'INVALID_DELIVERY_SETTINGS', field, error: 'No.' }))).toMatchObject({ kind: 'field', field, advanced: true });
+    }
+    for (const field of ['default_ttl_s', 'stale_if_error_s', 'rules', 'rules[0].prefix'] as const) expect(inAdvanced(field)).toBe(false);
+  });
+
+  test('a field of another part is not put under a field of the cache', () => {
+    expect(classifyCacheRefusal(refused({ code: 'INVALID_DELIVERY_SETTINGS', field: 'min_bytes', error: 'Enter a size.' }))).toEqual({ kind: 'save', message: 'Enter a size.' });
+  });
+
+  test('an agent that is too old is said as that, and one that cannot run the part is said above the buttons', () => {
+    expect(classifyCacheRefusal(refused({ status: 409, code: 'AGENT_TOO_OLD', agent: 'edge-1', feature: 'cache' }))).toEqual({
+      kind: 'too-old',
+      message: 'edge-1 is too old for the cache. Upgrade it to use this.',
+    });
+    expect(classifyCacheRefusal(refused({ status: 409, code: 'FEATURE_UNSUPPORTED', agent: 'edge-1', parts: ['compression', 'cache'] }))).toEqual({
+      kind: 'save',
+      message: 'edge-1 cannot run compression and the cache of this application. Turn them off first, or upgrade it.',
+    });
+  });
+
+  test('any other answer shows the words of the server, or a sentence when it sent none', () => {
+    expect(classifyCacheRefusal(refused({ status: 413, code: 'BUNDLE_TOO_LARGE', error: 'The configuration is too large.' }))).toEqual({ kind: 'save', message: 'The configuration is too large.' });
+    expect(classifyCacheRefusal(refused({ kind: 'network', error: '' }))).toEqual({ kind: 'save', message: 'Could not save the cache settings.' });
+    expect(classifyCacheRefusal(undefined)).toEqual({ kind: 'save', message: 'Could not save the cache settings.' });
+  });
+});
+
 describe('removals', () => {
   const online = { name: 'edge-1', online: true };
   const row = (over: Partial<AppCachePurge> = {}): AppCachePurge => ({
@@ -234,21 +320,21 @@ describe('removals', () => {
   });
 
   test('a removal that waits says the agent confirms in a few seconds, and when it is offline that the copies go on reconnect', () => {
-    expect(purgeView(row(), online).state).toBe('Removing. edge-1 confirms within a few seconds.');
-    expect(purgeView(row(), { name: 'edge-1', online: false })).toMatchObject({
+    expect(purgeView(row(), online, NOW).state).toBe('Removing. edge-1 confirms within a few seconds.');
+    expect(purgeView(row(), { name: 'edge-1', online: false }, NOW)).toMatchObject({
       state: 'edge-1 is offline. The copies go when it reconnects; until then it may still send them.',
       tone: 'info',
     });
-    expect(purgeView(row(), null).state).toBe('Removing. The WAF agent confirms within a few seconds.');
+    expect(purgeView(row(), null, NOW).state).toBe('Removing. The WAF agent confirms within a few seconds.');
   });
 
   test('a removal that is done names the agent that answered and the time', () => {
     const done = row({ state: 'done', agent: 'edge-2', finished_at: new Date(NOW).toISOString() });
-    expect(purgeView(done, online)).toMatchObject({ state: `Removed on edge-2 at ${formatDateTime(done.finished_at)}.`, tone: 'success' });
+    expect(purgeView(done, online, NOW)).toMatchObject({ state: `Removed on edge-2 at ${formatDateTime(done.finished_at)}.`, tone: 'success' });
   });
 
   test('a removal that failed says why, in words, whatever code the agent gave', () => {
-    const failed = (error: string) => purgeView(row({ state: 'failed', error, agent: 'edge-1' }), online);
+    const failed = (error: string) => purgeView(row({ state: 'failed', error, agent: 'edge-1' }), online, NOW);
     expect(failed('cache_off').state).toBe('edge-1 could not remove them: the cache is off on it.');
     expect(failed('invalid').state).toBe('edge-1 could not remove them: it did not accept the address.');
     expect(failed('expired').state).toBe('edge-1 could not remove them: it did not answer within 7 days.');
@@ -259,9 +345,9 @@ describe('removals', () => {
   });
 
   test('a row says what is removed and who asked, also when that member is gone', () => {
-    expect(purgeView(row(), online)).toMatchObject({ what: '/products/42', address: true, by: 'Asked by Dewi' });
-    expect(purgeView(row({ scope: 'prefix', url: '/blog/' }), online)).toMatchObject({ what: 'Everything under /blog/', address: false });
-    expect(purgeView(row({ scope: 'app', url: '', by: '' }), online)).toMatchObject({ what: 'Everything', by: 'Asked by a former member' });
+    expect(purgeView(row(), online, NOW)).toMatchObject({ what: '/products/42', address: true, by: 'Asked by Dewi' });
+    expect(purgeView(row({ scope: 'prefix', url: '/blog/' }), online, NOW)).toMatchObject({ what: 'Everything under /blog/', address: false });
+    expect(purgeView(row({ scope: 'app', url: '', by: '' }), online, NOW)).toMatchObject({ what: 'Everything', by: 'Asked by a former member' });
   });
 
   test('a full queue names the agent', () => {
@@ -271,11 +357,77 @@ describe('removals', () => {
 
   test('a removal that waits keeps the feed on its fast interval, and a finished one does not', () => {
     const waiting = delivery({ cache: stored(), status: status({ cache: feature('cache') }), purges: [row()] });
-    expect(waitingForAgent(waiting)).toBe(true);
+    expect(waitingForAgent(waiting, NOW)).toBe(true);
     expect(pollIntervalMs(waiting, null, NOW)).toBe(10_000);
     const finished = { ...waiting, purges: [row({ state: 'done', agent: 'edge-1' })] };
-    expect(waitingForAgent(finished)).toBe(false);
+    expect(waitingForAgent(finished, NOW)).toBe(false);
     expect(pollIntervalMs(finished, null, NOW)).toBe(60_000);
+  });
+
+  test('a removal that waited 2 minutes says no answer, as a warning with the wording of the settings line, and is no longer polled for', () => {
+    const at = (age: number) => row({ created_at: new Date(NOW - age).toISOString() });
+    expect(purgeView(at(NO_ANSWER_AFTER_MS - 1), online, NOW).state).toBe('Removing. edge-1 confirms within a few seconds.');
+    expect(purgeView(at(NO_ANSWER_AFTER_MS), online, NOW)).toMatchObject({ state: 'No answer from edge-1 yet. Check that it is online.', tone: 'warning' });
+    expect(purgeView(at(3 * 24 * 60 * MINUTE), online, NOW).state).not.toContain('few seconds');
+    expect(purgeView(at(NO_ANSWER_AFTER_MS), online, NOW).state).toBe(partLine({ delivery: delivery({ cache: stored() }), part: 'cache', inUse: true, now: NOW, waitingSince: NOW - NO_ANSWER_AFTER_MS })?.text);
+    // The agent that answered the row is named; with none known, the wording stays a sentence.
+    expect(purgeView({ ...at(NO_ANSWER_AFTER_MS), agent: 'edge-2' }, online, NOW).state).toBe('No answer from edge-2 yet. Check that it is online.');
+    expect(purgeView(at(NO_ANSWER_AFTER_MS), null, NOW).state).toBe('No answer from the WAF agent yet. Check that it is online.');
+    const stale = delivery({ cache: stored(), status: status({ cache: feature('cache') }), purges: [at(NO_ANSWER_AFTER_MS)] });
+    expect(waitingForAgent(stale, NOW)).toBe(false);
+    expect(pollIntervalMs(stale, null, NOW)).toBe(60_000);
+    expect(waitingForAgent({ ...stale, purges: [at(NO_ANSWER_AFTER_MS - 1)] }, NOW)).toBe(true);
+    // One young row among old ones is still waited for.
+    expect(waitingForAgent({ ...stale, purges: [at(NO_ANSWER_AFTER_MS), { ...at(MINUTE), id: 'r2' }] }, NOW)).toBe(true);
+  });
+
+  test('a removal whose agent is offline keeps saying so however long it waits, and a time that cannot be read is not overdue', () => {
+    const old = row({ created_at: new Date(NOW - 3 * 24 * 60 * MINUTE).toISOString() });
+    expect(purgeView(old, { name: 'edge-1', online: false }, NOW).state).toContain('is offline');
+    expect(purgeView(row({ created_at: 'not a time' }), online, NOW).state).toBe('Removing. edge-1 confirms within a few seconds.');
+  });
+
+  test('a removal that is done or failed keeps its own state however long ago it was asked', () => {
+    const long = new Date(NOW - 3 * 24 * 60 * MINUTE).toISOString();
+    expect(purgeView(row({ state: 'done', created_at: long, agent: 'edge-1' }), online, NOW).tone).toBe('success');
+    expect(purgeView(row({ state: 'failed', error: 'expired', created_at: long, agent: 'edge-1' }), online, NOW).tone).toBe('warning');
+  });
+
+  test('removing everything asks first, one address or one path does not', () => {
+    expect(purgeAsksFirst('app')).toBe(true);
+    expect(purgeAsksFirst('url')).toBe(false);
+    expect(purgeAsksFirst('prefix')).toBe(false);
+  });
+
+  describe('a refused removal', () => {
+    const refused = (over: Partial<ApiError>): ApiError => ({ status: 400, error: 'The server says no.', ...over });
+
+    test('an address the server did not accept goes under the address, in the words of the server', () => {
+      expect(classifyPurgeRefusal(refused({ code: 'INVALID_CACHE_PURGE', field: 'url', error: 'Enter an address that starts with http://, https:// or /.' }), 'edge-1')).toEqual({
+        kind: 'field',
+        message: 'Enter an address that starts with http://, https:// or /.',
+      });
+    });
+
+    test('a refusal of another field is shown above the button, not under the address', () => {
+      expect(classifyPurgeRefusal(refused({ code: 'INVALID_CACHE_PURGE', field: 'scope', error: 'Choose a scope.' }), 'edge-1')).toEqual({ kind: 'alert', message: 'Choose a scope.', refresh: false });
+      expect(classifyPurgeRefusal(refused({ code: 'INVALID_CACHE_PURGE', error: 'Bad.' }), 'edge-1')).toEqual({ kind: 'alert', message: 'Bad.', refresh: false });
+    });
+
+    test('a cache that is off says so and asks for the settings to be read again', () => {
+      expect(classifyPurgeRefusal(refused({ status: 409, code: 'CACHE_OFF' }), 'edge-1')).toEqual({ kind: 'alert', message: CACHE_OFF_TEXT, refresh: true });
+    });
+
+    test('a full queue names the agent, or the WAF agent when none is known', () => {
+      expect(classifyPurgeRefusal(refused({ status: 429, code: 'PURGE_QUEUE_FULL' }), 'edge-1')).toEqual({ kind: 'alert', message: queueFullText('edge-1'), refresh: false });
+      expect(classifyPurgeRefusal(refused({ status: 429, code: 'PURGE_QUEUE_FULL' }), '')).toEqual({ kind: 'alert', message: queueFullText(''), refresh: false });
+    });
+
+    test('any other answer shows the words of the server, or a sentence when it sent none', () => {
+      expect(classifyPurgeRefusal(refused({ status: 500, code: 'INTERNAL', error: 'Something broke.' }), 'edge-1')).toEqual({ kind: 'alert', message: 'Something broke.', refresh: false });
+      expect(classifyPurgeRefusal(refused({ kind: 'network', error: '' }), 'edge-1')).toEqual({ kind: 'alert', message: 'Could not remove the copies.', refresh: false });
+      expect(classifyPurgeRefusal(undefined, 'edge-1')).toEqual({ kind: 'alert', message: 'Could not remove the copies.', refresh: false });
+    });
   });
 });
 
@@ -287,12 +439,28 @@ describe('what the agent says about the cache', () => {
     expect(reasonOf('cache_dir_unusable')).toBe('its cache folder /var/cache/wafio-waf was not usable at start; its log says why. Fix or reinstall, then restart it');
   });
 
-  test('a disk or memory the host cannot give is said with the agent numbers and what to lower', () => {
-    expect(reasonOf('disk_too_small', 'free 1 GiB, asked 3 GiB')).toBe(
-      'the cache disk has less free space than its applications ask for (free 1 GiB, asked 3 GiB), and 5 % of the disk stays free. Lower Disk space or free space on the host'
+  test('a disk the host cannot give says the free space and the space asked for in units, and what to change', () => {
+    expect(reasonOf('disk_too_small', '1073741824 3221225472')).toBe(
+      'the cache disk has 1 GiB free, less than the 3 GiB its applications ask for (5 % of the disk stays free). Lower Disk space or free up space on the host'
     );
-    expect(reasonOf('disk_too_small')).not.toContain('()');
-    expect(reasonOf('memory_too_small', 'host has 2 GiB')).toBe("hot copies would use more than a quarter of the host's memory (host has 2 GiB). Lower Memory for hot copies");
+    expect(reasonOf('disk_too_small', '0 16777216')).toContain('the cache disk has 0 B free, less than the 16 MiB its applications ask for');
+    expect(reasonOf('disk_too_small', '1073741824 3221225472')).not.toContain('1073741824');
+  });
+
+  test('a memory the host cannot give says the memory of the host in units, and what to lower', () => {
+    expect(reasonOf('memory_too_small', '2147483648')).toBe("hot copies would use more than a quarter of the host's 2 GiB memory. Lower Memory for hot copies");
+  });
+
+  test('a detail that is not byte counts is shown as written, and no detail leaves no empty brackets', () => {
+    for (const detail of ['free 1 GiB, asked 3 GiB', '1073741824', '1 2 3', '-1 5', '1.5 2', '1,2 3', '99999999999999999 5']) {
+      expect(reasonOf('disk_too_small', detail)).toBe(
+        `the cache disk has less free space than its applications ask for (${detail}), and 5 % of the disk stays free. Lower Disk space or free up space on the host`
+      );
+    }
+    for (const detail of ['host has 2 GiB', '1 2', '-1', '2.5']) {
+      expect(reasonOf('memory_too_small', detail)).toBe(`hot copies would use more than a quarter of the host's memory (${detail}). Lower Memory for hot copies`);
+    }
+    expect(reasonOf('disk_too_small')).toBe('the cache disk has less free space than its applications ask for, and 5 % of the disk stays free. Lower Disk space or free up space on the host');
     expect(reasonOf('memory_too_small')).toBe("hot copies would use more than a quarter of the host's memory. Lower Memory for hot copies");
   });
 

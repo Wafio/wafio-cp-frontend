@@ -219,6 +219,9 @@ export const NO_ANSWER_AFTER_MS = 2 * 60 * 1000;
 export const POLL_FAST_MS = 10_000;
 export const POLL_SLOW_MS = 60_000;
 
+/** The agent has had its time to answer something started at `since` (an epoch in ms or an ISO time); a time that cannot be read is not overdue. */
+export const answerOverdue = (since: string | number, now: number): boolean => now - (typeof since === 'string' ? Date.parse(since) : since) >= NO_ANSWER_AFTER_MS;
+
 export interface PartLine {
   /** A refusal is a warning, not an error: an error alert takes focus after a failed save, and this line is no failed save. */
   tone: 'success' | 'info' | 'warning';
@@ -239,6 +242,12 @@ function reported(delivery: AppDelivery, part: EdgePart): AppEdgeFeatureState | 
   return status[part];
 }
 
+/** The detail of disk_too_small is two decimal byte counts, "<free> <asked>", and of memory_too_small one, "<total>"; anything else is not read. */
+function byteCounts(detail: string, count: number): number[] | null {
+  const parts = detail.split(' ');
+  return parts.length === count && parts.every((part) => /^\d{1,15}$/.test(part)) ? parts.map(Number) : null;
+}
+
 /** The reason of a refusal, in words; `folder` is the folder the person saved. */
 export function refusalReason(state: Pick<AppEdgeFeatureState, 'code' | 'detail'>, folder: string): string {
   const where = folder || state.detail;
@@ -253,10 +262,18 @@ export function refusalReason(state: Pick<AppEdgeFeatureState, 'code' | 'detail'
       return `${where} holds system or WAFio files`;
     case 'cache_dir_unusable':
       return 'its cache folder /var/cache/wafio-waf was not usable at start; its log says why. Fix or reinstall, then restart it';
-    case 'disk_too_small':
-      return `the cache disk has less free space than its applications ask for${state.detail ? ` (${state.detail})` : ''}, and 5 % of the disk stays free. Lower Disk space or free space on the host`;
-    case 'memory_too_small':
-      return `hot copies would use more than a quarter of the host's memory${state.detail ? ` (${state.detail})` : ''}. Lower Memory for hot copies`;
+    case 'disk_too_small': {
+      const fix = 'Lower Disk space or free up space on the host';
+      const sizes = byteCounts(state.detail, 2);
+      if (sizes) return `the cache disk has ${formatBytes(sizes[0])} free, less than the ${formatBytes(sizes[1])} its applications ask for (5 % of the disk stays free). ${fix}`;
+      return `the cache disk has less free space than its applications ask for${state.detail ? ` (${state.detail})` : ''}, and 5 % of the disk stays free. ${fix}`;
+    }
+    case 'memory_too_small': {
+      const fix = 'Lower Memory for hot copies';
+      const total = byteCounts(state.detail, 1);
+      if (total) return `hot copies would use more than a quarter of the host's ${formatBytes(total[0])} memory. ${fix}`;
+      return `hot copies would use more than a quarter of the host's memory${state.detail ? ` (${state.detail})` : ''}. ${fix}`;
+    }
     case 'invalid':
       return `the settings failed its own checks${state.detail ? ` (${state.detail})` : ''}. Upgrade the agent`;
     default:
@@ -304,23 +321,23 @@ export function partLine(o: PartInput): PartLine | null {
   if (!agent.online) return o.quiet?.includes('offline') ? null : { tone: 'info', text: offlineText(agent.name) };
   if (state?.state === 'applied') return { tone: 'success', text: `In use on ${agent.name}.` };
   if (state) return { tone: 'info', text: `${agent.name} sent a report this dashboard does not know${state.detail ? `: ${state.detail}` : ''}.` };
-  return o.now - o.waitingSince >= NO_ANSWER_AFTER_MS
+  return answerOverdue(o.waitingSince, o.now)
     ? { tone: 'warning', text: `No answer from ${agent.name} yet. Check that it is online.` }
     : { tone: 'info', text: `Saved. Waiting for ${agent.name} to apply it.` };
 }
 
-/** A part of the saved settings is on and its agent has not answered the latest bundle, or a removal waits for its answer. */
-export function waitingForAgent(d: AppDelivery | null): boolean {
+/** A part of the saved settings is on and its agent has not answered the latest bundle, or a removal still waits for its answer (one that waited past its time is no longer waited for). */
+export function waitingForAgent(d: AppDelivery | null, now: number): boolean {
   if (!d?.agent?.online) return false;
   const on: [EdgePart, boolean][] = [['compression', d.compression.enabled], ['static_files', d.static_files.enabled], ['cache', d.cache.enabled]];
-  return on.some(([part, enabled]) => enabled && d.agent?.features[part] !== false && reported(d, part) === null) || d.purges.some((row) => row.state === 'pending');
+  return on.some(([part, enabled]) => enabled && d.agent?.features[part] !== false && reported(d, part) === null) || d.purges.some((row) => row.state === 'pending' && !answerOverdue(row.created_at, now));
 }
 
 /** 10 s while waiting for the agent and for 2 minutes after a save, else 60 s. */
 export function pollIntervalMs(d: AppDelivery | null, lastActionAt: number | null, now: number): number {
   if (!d?.agent) return POLL_SLOW_MS;
   const afterAction = lastActionAt !== null && now - lastActionAt < NO_ANSWER_AFTER_MS;
-  return afterAction || waitingForAgent(d) ? POLL_FAST_MS : POLL_SLOW_MS;
+  return afterAction || waitingForAgent(d, now) ? POLL_FAST_MS : POLL_SLOW_MS;
 }
 
 /** The state after a save: the part as stored, and the generation the agent has to answer. */
