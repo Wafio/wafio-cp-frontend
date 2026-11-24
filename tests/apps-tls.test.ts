@@ -8,13 +8,13 @@ import {
   POLL_FAST_MS,
   POLL_SLOW_MS,
   TLS_LIMITS,
-  TRUST_WARNING,
   backToProxyText,
   canonicalListen,
   certificateCoversHost,
   checkTLSFit,
   chooseMode,
   classifyTLSRefusal,
+  confirmFor,
   createEpoch,
   currentStatus,
   dnsWarningText,
@@ -39,11 +39,14 @@ import {
   savedInGatewayText,
   sendCertificate,
   setRedirect,
+  sourceChangeText,
   sourceSwitchText,
   switchDisabled,
   tlsNotices,
   tlsProblem,
+  trustText,
   waitingSince,
+  withoutDnsHints,
   type CertificateForm,
   type CheckState,
   type TLSCheck,
@@ -343,6 +346,16 @@ describe('poll merge', () => {
   test('a poll without hints on a state without hints changes nothing else', () => {
     const polled = state({ warnings: [soon] });
     expect(mergePoll(state(), polled)).toEqual(polled);
+  });
+
+  test('the page keeps the state without the DNS hints, and every other warning', () => {
+    const dns = { code: 'dns_mismatch' as const, host: 'shop.example.com', resolved: ['203.0.113.7'], agent_addresses: ['203.0.113.9'] };
+    const soon = { code: 'expires_soon' as const, days_left: 3 };
+    const kept = withoutDnsHints(state({ warnings: [dns, soon, { ...dns, host: 'www.example.com' }] }));
+    expect(kept.warnings).toEqual([soon]);
+    expect(kept).toEqual(state({ warnings: [soon] }));
+    // A poll on the state the page kept brings none back.
+    expect(mergePoll(kept, state({ warnings: [] })).warnings).toEqual([]);
   });
 
   test('an edited field stays, the others follow the poll', () => {
@@ -746,6 +759,22 @@ describe('the switch and the notices', () => {
     expect(switchDisabled({ canConfigure: true, busy: true, to: null, supported: true })).toBe(true);
   });
 
+  test('a save asks first for a switch either way and for a source change in Gateway, and for nothing else', () => {
+    const gateway = input({ mode: 'gateway', source: 'acme' });
+    const proxy = input({ mode: 'proxy', source: 'acme' });
+    expect(confirmFor(proxy, { ...proxy, mode: 'gateway' })).toBe('gateway');
+    expect(confirmFor(gateway, { ...gateway, mode: 'proxy' })).toBe('proxy');
+    // A switch asks for the mode, whatever the source does with it.
+    expect(confirmFor(proxy, { ...proxy, mode: 'gateway', source: 'uploaded' })).toBe('gateway');
+    expect(confirmFor(gateway, { ...gateway, source: 'uploaded' })).toBe('source');
+    expect(confirmFor(gateway, { ...gateway, source: '' })).toBe('source');
+    // Behind a proxy a source change is a plain save: the agent does not act on it.
+    expect(confirmFor(proxy, { ...proxy, source: 'uploaded' })).toBeNull();
+    // Hosts and listeners, or no change at all.
+    expect(confirmFor(gateway, { ...gateway, hosts: ['b.example.com'], listen: '0.0.0.0:8443', redirect_listen: '0.0.0.0:80' })).toBeNull();
+    expect(confirmFor(gateway, gateway)).toBeNull();
+  });
+
   test('notices come in a fixed order, and an unsupported agent reads differently in Gateway', () => {
     const base = { assigned: true, mode: 'proxy' as const, supported: true, online: true, canConfigure: true };
     expect(tlsNotices(base)).toEqual([]);
@@ -766,7 +795,16 @@ describe('the switch and the notices', () => {
 });
 
 describe('the checks of a switch to Gateway', () => {
-  const ok = { input: { hosts: ['shop.example.com'], source: 'acme' as const }, certificate: null, supported: true, hostBound: true, trustWithoutList: false, agent: 'edge-1', now: NOW };
+  const ok = {
+    input: { hosts: ['shop.example.com'], source: 'acme' as const },
+    certificate: null,
+    supported: true,
+    hostBound: true,
+    assigned: true,
+    trust: { forwarded: false, list: [] as string[] },
+    agent: 'edge-1',
+    now: NOW,
+  };
   const states = (checks: TLSCheck[]): Record<string, CheckState> => Object.fromEntries(checks.map((c) => [c.id, c.state]));
 
   test('Let\'s Encrypt with everything in place passes every check', () => {
@@ -785,11 +823,24 @@ describe('the checks of a switch to Gateway', () => {
     expect(states(gatewayChecks({ ...ok, supported: null })).agent).toBe('unknown');
   });
 
-  test('forwarded headers on with an empty list are a warning that links Routing and never fail the switch', () => {
-    const checks = gatewayChecks({ ...ok, trustWithoutList: true });
-    expect(checks.find((c) => c.id === 'trust')).toEqual({ id: 'trust', state: 'warning', text: TRUST_WARNING });
-    expect(TRUST_WARNING.startsWith('Forwarded headers are trusted from loopback and the private ranges.')).toBe(true);
+  test('forwarded headers on with an empty list are a warning that names the default ranges and never fail the switch', () => {
+    const checks = gatewayChecks({ ...ok, trust: { forwarded: true, list: [] } });
+    expect(checks.find((c) => c.id === 'trust')).toEqual({ id: 'trust', state: 'warning', text: trustText([]) });
+    expect(trustText([]).startsWith('Forwarded headers are trusted from loopback and the private ranges. In Gateway mode')).toBe(true);
     expect(checks.some((c) => c.state === 'failed')).toBe(false);
+  });
+
+  test('forwarded headers on with a list name the list and give the advice, as a pass', () => {
+    const list = ['127.0.0.1', '10.0.0.0/8'];
+    const trust = gatewayChecks({ ...ok, trust: { forwarded: true, list } }).find((c) => c.id === 'trust');
+    expect(trust).toEqual({ id: 'trust', state: 'passed', text: trustText(list) });
+    expect(trust?.text.startsWith('Forwarded headers are trusted from 127.0.0.1, 10.0.0.0/8. In Gateway mode')).toBe(true);
+    expect(trust?.text).toContain('turn this off on the Routing tab; behind a CDN, keep only its addresses.');
+    expect(trust?.text).not.toContain('private ranges');
+  });
+
+  test('forwarded headers off say so, whatever the list holds', () => {
+    expect(gatewayChecks({ ...ok, trust: { forwarded: false, list: ['127.0.0.1'] } }).find((c) => c.id === 'trust')).toEqual({ id: 'trust', state: 'passed', text: 'Forwarded headers are off.' });
   });
 
   test('an uploaded certificate must exist, be valid now and cover every host name', () => {
@@ -804,6 +855,19 @@ describe('the checks of a switch to Gateway', () => {
     expect(cert({ names: ['other.example.com'] })).toMatchObject({ state: 'failed', text: 'The uploaded certificate does not cover shop.example.com.' });
     const two = gatewayChecks({ ...uploaded, input: { hosts: ['shop.example.com', 'blog.example.com'], source: 'uploaded' }, certificate: certificate() });
     expect(two.find((c) => c.id === 'certificate')?.text).toBe('The uploaded certificate does not cover blog.example.com.');
+  });
+
+  test('what is not known yet: the control plane asks an assigned agent at the switch, and an unassigned app only when one is assigned', () => {
+    const uploaded = { ...ok, input: { hosts: ['shop.example.com'], source: 'uploaded' as const }, certificate: certificate() };
+    const text = (checks: TLSCheck[], id: string) => checks.find((c) => c.id === id)?.text;
+    const waiting = gatewayChecks({ ...uploaded, supported: null, hostBound: null });
+    expect(text(waiting, 'agent')).toBe('It is not known yet whether the WAF agent can serve certificates. The control plane checks again when you switch.');
+    expect(text(waiting, 'bound')).toBe('It is not known yet whether the WAF agent can receive an uploaded key. The control plane checks again when you switch.');
+    const unassigned = gatewayChecks({ ...uploaded, assigned: false, supported: null, hostBound: null });
+    const none = 'No WAF agent is assigned yet. The agent is checked when you assign one on the Assignment tab.';
+    expect(text(unassigned, 'agent')).toBe(none);
+    expect(text(unassigned, 'bound')).toBe(none);
+    expect(states(unassigned)).toMatchObject({ agent: 'unknown', bound: 'unknown' });
   });
 
   test('an uploaded certificate needs an agent with a credential bound to its host; Let\'s Encrypt does not', () => {
@@ -840,6 +904,22 @@ describe('the texts of the dialogs', () => {
     expect(sourceSwitchText('uploaded', { agent: 'edge-1', redirect: true })).toBe('Until edge-1 has the certificate, usually within a minute, HTTPS connections fail, and HTTP visitors get 503.');
     expect(sourceSwitchText('uploaded', { agent: '', redirect: false })).toBe('Until the WAF agent has the certificate, usually within a minute, HTTPS connections fail. Nothing answers on HTTP.');
     expect(sourceSwitchText('uploaded', { agent: 'edge-1', redirect: false })).not.toContain('Subscriber Agreement');
+  });
+
+  test('a source change in Gateway keeps what the agent serves: no failing HTTPS, no 503 unless nothing is served', () => {
+    const agreement = "Switching places the first request: by switching, you accept the Let's Encrypt Subscriber Agreement.";
+    expect(sourceChangeText('acme', { agent: 'edge-1', hasLeaf: true })).toBe(`Requesting a certificate from Let's Encrypt. The current certificate stays in use until then. ${agreement}`);
+    expect(sourceChangeText('acme', { agent: 'edge-1', hasLeaf: false })).toBe(
+      `Requesting a certificate from Let's Encrypt. Until it is issued, HTTPS visitors get a browser warning and a 503 page. ${agreement}`,
+    );
+    expect(sourceChangeText('uploaded', { agent: 'edge-1', hasLeaf: true })).toBe('edge-1 switches to it within about a minute and serves the current certificate until then, if it has one.');
+    expect(sourceChangeText('uploaded', { agent: '', hasLeaf: false })).toBe('The WAF agent switches to it within about a minute and serves the current certificate until then, if it has one.');
+    // Not the texts of a switch: those say HTTPS fails and the redirect answers 503.
+    for (const text of [sourceChangeText('acme', { agent: 'edge-1', hasLeaf: true }), sourceChangeText('uploaded', { agent: 'edge-1', hasLeaf: true })]) {
+      expect(text).not.toContain('connections fail');
+      expect(text).not.toContain('HTTP visitors get 503');
+    }
+    expect(sourceChangeText('uploaded', { agent: 'edge-1', hasLeaf: false })).not.toContain('Subscriber Agreement');
   });
 
   test('the steps outside WAFio name the ports and the agent; the Let\'s Encrypt remark only for Let\'s Encrypt', () => {
@@ -925,6 +1005,23 @@ describe('where a refused save is shown', () => {
     expect(refused({ status: 429, code: 'RATE_LIMITED', error: 'Too many requests' })).toEqual({ kind: 'save', message: 'Too many requests' });
     expect(refused({ status: 400, code: 'INVALID_TLS_SETTINGS', field: 'mode', error: 'mode: must be "proxy" or "gateway"' })).toMatchObject({ kind: 'save' });
     expect(classifyTLSRefusal(undefined, '')).toEqual({ kind: 'save', message: 'Could not save the HTTPS settings.' });
+  });
+});
+
+describe('where the Not saved alert is', () => {
+  const source = readFileSync(new URL('../src/lib/components/apps/AppTLS.svelte', import.meta.url), 'utf8');
+  const alerts = [...source.matchAll(/<Alert[^>]*title="Not saved"[^>]*>/g)];
+
+  test('inside the form that focus looks in after a refused save, ahead of the footer', () => {
+    expect(alerts.length).toBeGreaterThan(0);
+    const first = alerts[0].index!;
+    expect(first).toBeGreaterThan(source.indexOf('class="tls-form" bind:this={root}'));
+    expect(first).toBeLessThan(source.indexOf('class="tls-actions"'));
+  });
+
+  test('with the Routing link in the dialog as well as above the form', () => {
+    expect(alerts).toHaveLength(2);
+    for (const alert of alerts) expect(alert[0]).toContain('actions={routingError ? routingLink : undefined}');
   });
 });
 

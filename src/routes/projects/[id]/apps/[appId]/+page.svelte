@@ -54,6 +54,7 @@
     writeAppRange,
   } from '#lib/components/apps/app-page.js';
   import { APP_STATE_TEXT, appState, routeSummary } from '#lib/components/apps/inventory.js';
+  import { withoutDnsHints } from '#lib/components/apps/tls.js';
   import { usePageDetail } from '#lib/page-meta.svelte.js';
   import {
     agentRouteBodyFrom,
@@ -73,7 +74,8 @@
   let assignment = $state<AppWAFAssignment | null>(null);
   let agents = $state<FleetAgent[]>([]);
   let route = $state<AgentRoute | null>(null);
-  // The HTTPS tab owns its state once it is open; this is what the first render of the tab starts from.
+  // The HTTPS tab owns its state once it is open; this is what the first render of the tab starts from. It holds no
+  // DNS hints: they last until the next save or until the person leaves the tab.
   let tls = $state<AppTLSState | null>(null);
   let loading = $state(true);
   let loadError = $state<ApiError | null>(null);
@@ -402,7 +404,7 @@
           routingHref={appHref(base, projectId, app.id, 'routing')}
           initial={tls ?? undefined}
           bind:dirty={tlsDirty}
-          onchange={(next) => (tls = next)}
+          onchange={(next) => (tls = withoutDnsHints(next))}
         />
       {:else if tab === 'routing'}
         <section class="routing" aria-labelledby="routing-title">

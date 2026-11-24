@@ -293,10 +293,16 @@ export function currentStatus(state: Pick<AppTLSState, 'source' | 'acme' | 'cert
   return state.source === 'uploaded' && status.certificate_id !== null && status.certificate_id === state.certificate?.id ? status : null;
 }
 
+const isDnsHint = (warning: { code: string }) => warning.code === 'dns_mismatch';
+
 /** The state after a poll: the server's own, plus the DNS hints of the last save, which only a save's answer carries. */
 export function mergePoll(current: AppTLSState, polled: AppTLSState): AppTLSState {
-  const dns = (warning: { code: string }) => warning.code === 'dns_mismatch';
-  return { ...polled, warnings: [...polled.warnings.filter((w) => !dns(w)), ...current.warnings.filter(dns)] };
+  return { ...polled, warnings: [...polled.warnings.filter((w) => !isDnsHint(w)), ...current.warnings.filter(isDnsHint)] };
+}
+
+/** The state without the DNS hints: they last until the next save or until the person leaves the tab, so the page keeps none. */
+export function withoutDnsHints(state: AppTLSState): AppTLSState {
+  return { ...state, warnings: state.warnings.filter((w) => !isDnsHint(w)) };
 }
 
 /** A draft after a poll: a field the person changed since `base` stays as typed, the others follow `polled`. */
@@ -420,6 +426,14 @@ export function tlsProblem(input: AppTLSInput, own: OwnListener, toGateway = fal
   return input.mode === 'gateway' ? checkTLSFit(result.settings, own) : null;
 }
 
+/** What a save asks first: a switch of mode either way, or a change of certificate source while in Gateway. Anything else saves at once. */
+export type TLSConfirm = 'gateway' | 'proxy' | 'source';
+
+export function confirmFor(saved: Pick<AppTLSInput, 'mode' | 'source'>, input: Pick<AppTLSInput, 'mode' | 'source'>): TLSConfirm | null {
+  if (input.mode !== saved.mode) return input.mode;
+  return saved.mode === 'gateway' && input.source !== saved.source ? 'source' : null;
+}
+
 /** The Gateway switch needs an agent that serves certificates; `null` (not known) passes. An app already in Gateway stays editable. */
 export function switchDisabled(o: { canConfigure: boolean; busy: boolean; to: TLSMode | null; supported: boolean | null }): boolean {
   return !o.canConfigure || o.busy || (o.to === 'gateway' && o.supported === false);
@@ -487,6 +501,16 @@ export function sourceSwitchText(source: 'acme' | 'uploaded', o: { agent: string
     : `Until ${agentMid(o.agent)} has the certificate, usually within a minute, HTTPS connections fail${http}.`;
 }
 
+/**
+ * A change of source in Gateway. The agent keeps serving the certificate it has until the new one is ready, so the
+ * texts of a switch (HTTPS fails, a browser warning) do not hold: `hasLeaf` says the agent serves one now.
+ */
+export function sourceChangeText(source: 'acme' | 'uploaded', o: { agent: string; hasLeaf: boolean }): string {
+  if (source === 'uploaded') return `${agentStart(o.agent)} switches to it within about a minute and serves the current certificate until then, if it has one.`;
+  const meanwhile = o.hasLeaf ? 'The current certificate stays in use until then.' : 'Until it is issued, HTTPS visitors get a browser warning and a 503 page.';
+  return `Requesting a certificate from Let's Encrypt. ${meanwhile} Switching places the first request: by switching, you accept the Let's Encrypt Subscriber Agreement.`;
+}
+
 /** What the person does outside WAFio for a switch to Gateway. */
 export function gatewaySteps(o: { agent: string; ports: string; source: TLSSource }): string[] {
   return [
@@ -501,8 +525,10 @@ export function backToProxyText(o: { agent: string; own: OwnListener; ports: str
   return `${agentStart(o.agent)} stops serving HTTPS for this application and listens on ${ownAddress(o.own) ?? 'the listen address on the Routing tab'} again, which frees ${o.ports}. Then start the web server in front of it; a load balancer on another machine can be switched first.`;
 }
 
-export const TRUST_WARNING =
-  'Forwarded headers are trusted from loopback and the private ranges. In Gateway mode a load balancer or NAT that hides client addresses, a machine on your network or a container could set any client address. With nothing in front, turn this off on the Routing tab; behind a CDN, keep only its addresses.';
+/** Who may set the client address through forwarded headers: the Routing list, or by default loopback and the private ranges. */
+export function trustText(list: readonly string[]): string {
+  return `Forwarded headers are trusted from ${list.length > 0 ? list.join(', ') : 'loopback and the private ranges'}. In Gateway mode a load balancer or NAT that hides client addresses, a machine on your network or a container could set any client address. With nothing in front, turn this off on the Routing tab; behind a CDN, keep only its addresses.`;
+}
 
 export function savedInGatewayText(agent: string): string {
   return `Saved. ${agentStart(agent)} applies it within about a minute. If it cannot (a port in use, say), it keeps its current settings for all its applications; its log says why.`;
@@ -535,20 +561,27 @@ function certificateCheck(certificate: AppTLSCertificate | null, hosts: readonly
 /**
  * What a switch to Gateway needs: a source, a host name, an agent that serves certificates and, for an uploaded
  * certificate, one that is valid now, covers every host and can reach the agent. A failed check keeps the switch
- * from being confirmed; "not known" and a warning do not, and the server checks again.
+ * from being confirmed; "not known" and a warning do not, and the server checks again (not for an application with
+ * no WAF agent, which is checked when one is assigned).
  */
 export function gatewayChecks(o: {
   input: Pick<AppTLSInput, 'hosts' | 'source'>;
   certificate: AppTLSCertificate | null;
   supported: boolean | null;
   hostBound: boolean | null;
-  /** Forwarded headers are on with no trusted proxy listed. */
-  trustWithoutList: boolean;
+  /** A WAF agent is assigned: only then does the control plane ask it when the switch is saved. */
+  assigned: boolean;
+  /** The Routing settings: whether forwarded headers are on, and the trusted proxies listed (empty: the default ranges). */
+  trust: { forwarded: boolean; list: readonly string[] };
   agent: string;
   now: number;
 }): TLSCheck[] {
   const hosts = [...new Set(o.input.hosts.map(lowerAscii))];
   const source = o.input.source;
+  const notKnown = (what: string) =>
+    o.assigned
+      ? `It is not known yet whether the WAF agent can ${what}. The control plane checks again when you switch.`
+      : 'No WAF agent is assigned yet. The agent is checked when you assign one on the Assignment tab.';
   const checks: TLSCheck[] = [
     source === ''
       ? { id: 'source', state: 'failed', text: 'Choose a certificate source.' }
@@ -559,7 +592,7 @@ export function gatewayChecks(o: {
     o.supported === false
       ? { id: 'agent', state: 'failed', text: unsupportedText(o.agent) }
       : o.supported === null
-        ? { id: 'agent', state: 'unknown', text: 'It is not known yet whether the WAF agent can serve certificates. The control plane checks again when you switch.' }
+        ? { id: 'agent', state: 'unknown', text: notKnown('serve certificates') }
         : { id: 'agent', state: 'passed', text: `${agentStart(o.agent)} can serve certificates.` },
   ];
   if (source === 'uploaded') {
@@ -568,14 +601,15 @@ export function gatewayChecks(o: {
       o.hostBound === false
         ? { id: 'bound', state: 'failed', text: notHostBoundText(o.agent) }
         : o.hostBound === null
-          ? { id: 'bound', state: 'unknown', text: 'It is not known yet whether the WAF agent can receive an uploaded key. The control plane checks again when you switch.' }
+          ? { id: 'bound', state: 'unknown', text: notKnown('receive an uploaded key') }
           : { id: 'bound', state: 'passed', text: `${agentStart(o.agent)} can receive an uploaded key.` },
     );
   }
+  // Only the default ranges are a warning: a list is the person's own choice (right behind a CDN), shown with the advice.
   checks.push(
-    o.trustWithoutList
-      ? { id: 'trust', state: 'warning', text: TRUST_WARNING }
-      : { id: 'trust', state: 'passed', text: 'Forwarded headers are off, or trusted only from your own list.' },
+    o.trust.forwarded
+      ? { id: 'trust', state: o.trust.list.length === 0 ? 'warning' : 'passed', text: trustText(o.trust.list) }
+      : { id: 'trust', state: 'passed', text: 'Forwarded headers are off.' },
   );
   return checks;
 }

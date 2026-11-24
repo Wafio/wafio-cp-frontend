@@ -22,6 +22,7 @@
     backToProxyText,
     chooseMode,
     classifyTLSRefusal,
+    confirmFor,
     createEpoch,
     dnsWarningText,
     formFromTLS,
@@ -37,11 +38,13 @@
     sameTLS,
     savedInGatewayText,
     setRedirect,
+    sourceChangeText,
     sourceSwitchText,
     switchDisabled,
     tlsNotices,
     tlsProblem,
     type CheckState,
+    type TLSConfirm,
     type TLSField,
     type TLSForm,
   } from './tls';
@@ -155,21 +158,25 @@
   /** The refusal is about a Routing setting. */
   let routingError = $state(false);
   let savedInGateway = $state(false);
-  let confirm = $state<'gateway' | 'proxy' | 'source' | null>(null);
+  let confirm = $state<TLSConfirm | null>(null);
+  /** The form as it was before "Switch back" changed its mode: put back when the dialog is cancelled. */
+  let beforeBack: TLSForm | null = null;
   let saving = $state(false);
   let root = $state<HTMLElement>();
 
   const readonly = $derived(!canConfigure);
   const input = $derived(inputFromForm(form));
-  const switching = $derived(loaded && form.mode !== loaded.mode ? form.mode : null);
+  const needed = $derived(loaded ? confirmFor(loaded, input) : null);
+  const switching = $derived(needed === 'gateway' || needed === 'proxy' ? needed : null);
   const own = $derived({ host: routing.listenHost, port: routing.listenPort });
-  const trustWithoutList = $derived(routing.proxy.trustForwarded && trustedProxyList(routing.proxy).length === 0);
+  const trust = $derived({ forwarded: routing.proxy.trustForwarded, list: trustedProxyList(routing.proxy) });
   const problem = $derived(loaded ? tlsProblem(input, own, switching === 'gateway') : null);
   const isDirty = $derived(loaded !== null && !sameTLS(input, loaded));
-  const sourceChange = $derived(loaded?.mode === 'gateway' && input.mode === 'gateway' && input.source !== loaded.source);
+  const hasLeaf = $derived(Boolean(loaded?.status?.leaf_sha256));
   const notices = $derived(tlsNotices({ assigned, mode: stored.mode, supported: loaded?.agent_supported ?? null, online: agentOnline, canConfigure }));
   const locked = $derived(switchDisabled({ canConfigure, busy, to: switching, supported: loaded?.agent_supported ?? null }));
-  const dnsWarnings = $derived((loaded?.warnings ?? []).filter((w) => w.code === 'dns_mismatch'));
+  // The hint is about a switch to Gateway: it means nothing once the app is back behind a proxy.
+  const dnsWarnings = $derived(loaded?.mode === 'gateway' ? loaded.warnings.filter((w) => w.code === 'dns_mismatch') : []);
   const canonical = $derived(normalizeFormats(input).settings);
   const redirectOn = $derived(Boolean(canonical?.redirect_listen));
   const name = $derived(appName || 'this application');
@@ -194,7 +201,7 @@
   // ── Dialogs ─────────────────────────────────────────────────────────────
   const checks = $derived(
     confirm === 'gateway' && loaded
-      ? gatewayChecks({ input, certificate: loaded.certificate, supported: loaded.agent_supported, hostBound: loaded.agent_host_bound, trustWithoutList, agent: agentName, now: Date.now() })
+      ? gatewayChecks({ input, certificate: loaded.certificate, supported: loaded.agent_supported, hostBound: loaded.agent_host_bound, assigned, trust, agent: agentName, now: Date.now() })
       : [],
   );
   const blocked = $derived(checks.some((check) => check.state === 'failed'));
@@ -217,13 +224,12 @@
       void focusFormError(root);
       return;
     }
-    const kind = switching ?? (sourceChange ? 'source' : null);
-    if (kind === null || !needsConfirmation('switch-https-mode')) {
+    if (needed === null || !needsConfirmation('switch-https-mode')) {
       void save();
       return;
     }
     saveError = '';
-    confirm = kind;
+    confirm = needed;
   }
 
   async function save() {
@@ -245,6 +251,7 @@
       return;
     }
     confirm = null;
+    beforeBack = null;
     adopt(res.data, true);
     lastActionAt = Date.now();
     if (res.data.mode === 'gateway') savedInGateway = true;
@@ -256,6 +263,7 @@
     if (refusal.kind === 'field') {
       serverError = { field: refusal.field, message: refusal.message, sent: JSON.stringify(sent[refusal.field]) };
       confirm = null;
+      beforeBack = null;
       void focusFormError(root);
       return;
     }
@@ -275,11 +283,20 @@
     saveError = '';
   }
 
-  /** The DNS hint's way out: the saved settings with the other mode, confirmed like any switch. */
+  /** The DNS hint's way out: the form with the other mode, confirmed like any switch. What was typed stays. */
   function backToProxy() {
     if (!loaded) return;
-    form = { ...formFromTLS(loaded), mode: 'proxy' };
+    beforeBack = form;
+    form = chooseMode(form, 'proxy', stored);
     requestSave();
+    // No dialog opened (a field to fix, or no confirm asked): the form stays as it is.
+    if (confirm === null) beforeBack = null;
+  }
+
+  function cancelConfirm() {
+    confirm = null;
+    if (beforeBack) form = beforeBack;
+    beforeBack = null;
   }
 
   const modeOptions = [
@@ -293,6 +310,10 @@
   const footerNote = $derived(busy ? 'Saving…' : isDirty ? 'Unsaved changes' : '');
   const primaryLabel = $derived(switching === 'gateway' ? 'Switch to Gateway' : switching === 'proxy' ? 'Switch to Behind a proxy' : 'Save changes');
 </script>
+
+{#snippet routingLink()}
+  <Button variant="secondary" size="sm" class="tls-tap" href={routingHref}>Open the Routing tab</Button>
+{/snippet}
 
 <section class="tls" aria-labelledby="{uid}-title">
   <header class="tls-head">
@@ -320,16 +341,13 @@
       <Button variant="secondary" size="sm" class="tls-tap" onclick={backToProxy}>Switch back to Behind a proxy</Button>
     {/snippet}
     {#each dnsWarnings as warning (warning.host)}
-      <Alert tone="warning" message={dnsWarningText(warning, agentName)} actions={canConfigure && loaded.mode === 'gateway' ? switchBack : undefined} />
+      <Alert tone="warning" message={dnsWarningText(warning, agentName)} actions={canConfigure ? switchBack : undefined} />
     {/each}
-    {#snippet routingLink()}
-      <Button variant="secondary" size="sm" class="tls-tap" href={routingHref}>Open the Routing tab</Button>
-    {/snippet}
-    {#if saveError && confirm === null}
-      <Alert tone="error" title="Not saved" message={saveError} actions={routingError ? routingLink : undefined} />
-    {/if}
 
     <div class="tls-form" bind:this={root}>
+      {#if saveError && confirm === null}
+        <Alert tone="error" title="Not saved" message={saveError} actions={routingError ? routingLink : undefined} />
+      {/if}
       <fieldset class="tls-fieldset" disabled={readonly}>
         <ChoiceGroup
           legend="How traffic reaches WAFio"
@@ -420,7 +438,7 @@
   confirmDisabled={blocked}
   loading={busy}
   onconfirm={() => void save()}
-  onclose={() => (confirm = null)}
+  onclose={cancelConfirm}
 >
   {#if confirm}
     {#if confirm === 'gateway'}
@@ -430,7 +448,7 @@
             <Badge tone={CHECK_TONE[check.state]}>{CHECK_LABEL[check.state]}</Badge>
             <span>
               {check.text}
-              {#if check.id === 'trust' && check.state === 'warning'}<a href={routingHref}>Open the Routing tab</a>{/if}
+              {#if check.id === 'trust' && trust.forwarded}<a href={routingHref}>Open the Routing tab</a>{/if}
             </span>
           </li>
         {/each}
@@ -443,10 +461,10 @@
     {#if confirm === 'proxy' && loaded}
       <p>{backToProxyText({ agent: agentName, own, ports: portsText(loaded.listen, loaded.redirect_listen) })}</p>
     {:else if input.source === 'acme' || input.source === 'uploaded'}
-      <p>{sourceSwitchText(input.source, { agent: agentName, redirect: redirectOn })}</p>
+      <p>{confirm === 'source' ? sourceChangeText(input.source, { agent: agentName, hasLeaf }) : sourceSwitchText(input.source, { agent: agentName, redirect: redirectOn })}</p>
     {/if}
     {#if saveError}
-      <Alert tone="error" title="Not saved" message={saveError} />
+      <Alert tone="error" title="Not saved" message={saveError} actions={routingError ? routingLink : undefined} />
     {/if}
   {/if}
 </ConfirmModal>
@@ -457,7 +475,7 @@
   .tls-head p { margin: var(--sp-1) 0 0; font-size: var(--fs-sm); color: var(--text-muted); max-width: 70ch; line-height: 1.5; }
   .tls-notices { display: flex; flex-direction: column; gap: var(--sp-2); }
 
-  .tls-form { min-width: 0; max-width: 46rem; }
+  .tls-form { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; max-width: 46rem; }
   .tls-fieldset { display: flex; flex-direction: column; gap: var(--sp-5); border: 0; padding: 0; margin: 0; min-width: 0; }
   .tls-block { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; padding-top: var(--sp-5); border-top: 1px solid var(--border); }
   .tls-block h3 { margin: 0; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text-primary); }

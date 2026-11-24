@@ -223,6 +223,15 @@ describe('HTTPS tab, the DNS hint of a save', () => {
     expect(html).toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Switch back to Behind a proxy/);
   });
 
+  test('is not shown once the app is behind a proxy again, whatever the state still holds', async () => {
+    expect(await render(state({ warnings: [DNS] }))).not.toContain('resolves to');
+  });
+
+  test('is not kept by the page: the state it hands back to the tab shows no hint', async () => {
+    const { withoutDnsHints } = await import('../src/lib/components/apps/tls');
+    expect(await render(withoutDnsHints(state({ ...GATEWAY, warnings: [DNS] })))).not.toContain('resolves to');
+  });
+
   test('survives a poll: the state after it still shows the hint', async () => {
     const { mergePoll } = await import('../src/lib/components/apps/tls');
     const merged = mergePoll(state({ ...GATEWAY, warnings: [DNS] }), state({ ...GATEWAY, warnings: [] }));
