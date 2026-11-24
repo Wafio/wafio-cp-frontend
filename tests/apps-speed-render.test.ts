@@ -26,7 +26,7 @@ const { default: AppTLS } = await import('../src/lib/components/apps/AppTLS.svel
 const { default: AppRouteForm } = await import('../src/lib/components/apps/AppRouteForm.svelte');
 
 function feed(state: AppDelivery | null, over: Partial<DeliveryFeed> = {}): DeliveryFeed {
-  return { state, loading: false, failed: null, now: NOW, waitingSince: NOW - MINUTE, refresh: async () => {}, saved() {}, acted() {}, ...over };
+  return { state, loading: false, failed: null, now: NOW, waitingSince: NOW - MINUTE, refresh: async () => {}, saved() {}, purged() {}, acted() {}, ...over };
 }
 
 async function render(state: AppDelivery | null, over: Partial<DeliveryFeed> = {}, props: { canConfigure?: boolean } = {}): Promise<string> {
@@ -44,7 +44,7 @@ function part(html: string, from: string, to?: string): string {
   return html.slice(start, to ? html.indexOf(to, start) : undefined);
 }
 const compression = (html: string) => part(html, '>Compression</h3>', '>Files from a folder</h3>');
-const files = (html: string) => part(html, '>Files from a folder</h3>');
+const files = (html: string) => part(html, '>Files from a folder</h3>', '>Cache</h3>');
 const switches = (html: string): string[] => html.match(/<button[^>]*role="switch"[^>]*>/g) ?? [];
 
 describe('Speed tab, before the settings are read', () => {
@@ -74,12 +74,12 @@ describe('Speed tab, before the settings are read', () => {
 });
 
 describe('Speed tab, every part off, with an agent that knows them', () => {
-  test('opens with the intro, then Compression, then Files from a folder, and no cache part yet', async () => {
+  test('opens with the intro, then Compression, then Files from a folder, then Cache', async () => {
     const html = await render(delivery());
     expect(html).toContain('Make this application faster for visitors. Each part can be turned on alone and works in both modes. WAFio checks every request before any of them answers it.');
     expect(html.indexOf(SPEED_INTRO)).toBeLessThan(html.indexOf('>Compression</h3>'));
     expect(html.indexOf('>Compression</h3>')).toBeLessThan(html.indexOf('>Files from a folder</h3>'));
-    expect(html).not.toContain('>Cache</h3>');
+    expect(html.indexOf('>Files from a folder</h3>')).toBeLessThan(html.indexOf('>Cache</h3>'));
   });
 
   test('Compression: the sentence for visitors, the switch with its effect, the fixed line, and its own Save', async () => {
@@ -139,14 +139,14 @@ describe('Speed tab, every part off, with an agent that knows them', () => {
 
   test('nothing is saved yet: both Save buttons are off, and neither line nor note shows', async () => {
     const html = await render(delivery());
-    for (const label of ['Save compression', 'Save files']) expect(html).toMatch(new RegExp(`<button[^>]*disabled[^>]*>(?:(?!</button>)[\\s\\S])*${label}`));
+    for (const label of ['Save compression', 'Save files', 'Save cache']) expect(html).toMatch(new RegExp(`<button[^>]*disabled[^>]*>(?:(?!</button>)[\\s\\S])*${label}`));
     expect(html).not.toContain('Unsaved changes');
     expect(html).not.toContain('class="ui-alert');
   });
 
   test('keeps a region for each line, so a change from waiting to in use is announced', async () => {
     const html = await render(delivery());
-    expect((html.match(/class="part-status[^"]*"[^>]*aria-live="polite"/g) ?? []).length).toBe(2);
+    expect((html.match(/class="part-status[^"]*"[^>]*aria-live="polite"/g) ?? []).length).toBe(3);
   });
 });
 
@@ -168,7 +168,7 @@ describe('Speed tab, a viewer', () => {
     expect(html).toContain(VIEWER_TEXT);
     for (const tag of switches(html)) expect(tag).toContain('disabled');
     expect(html).toMatch(/<fieldset[^>]*sp-fieldset[^>]*disabled/);
-    for (const label of ['Save compression', 'Save files']) expect(html).toMatch(new RegExp(`<button[^>]*disabled[^>]*>(?:(?!</button>)[\\s\\S])*${label}`));
+    for (const label of ['Save compression', 'Save files', 'Save cache']) expect(html).toMatch(new RegExp(`<button[^>]*disabled[^>]*>(?:(?!</button>)[\\s\\S])*${label}`));
   });
 
   test('a member sees no such note', async () => {
@@ -200,7 +200,7 @@ describe('Speed tab, an agent that is too old', () => {
     const html = await render(old({ compression: false, static_files: false }));
     expect(compression(html)).toContain('edge-1 is too old for compression. Upgrade it to use this.');
     expect(files(html)).toContain('edge-1 is too old for files from a folder. Upgrade it to use this.');
-    for (const tag of switches(html)) expect(tag).toContain('disabled');
+    for (const tag of [...switches(compression(html)), ...switches(files(html))]) expect(tag).toContain('disabled');
     expect(compression(html)).toMatch(/<fieldset[^>]*sp-fieldset[^>]*disabled/);
     expect(files(html)).toMatch(/<fieldset[^>]*sp-fieldset[^>]*disabled/);
   });

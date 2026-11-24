@@ -308,17 +308,17 @@ describe('how often to ask', () => {
   });
 
   test('an agent that is offline, or too old for the part, is not waited for', () => {
-    expect(waitingForAgent(delivery({ ...on, generation: 101, agent: agent({ online: false }) }))).toBe(false);
-    expect(waitingForAgent(delivery({ ...on, generation: 101, agent: agent({}, { compression: false }) }))).toBe(false);
-    expect(waitingForAgent(delivery({ ...on, generation: 101 }))).toBe(true);
-    expect(waitingForAgent(delivery({ generation: 101 }))).toBe(false);
+    expect(waitingForAgent(delivery({ ...on, generation: 101, agent: agent({ online: false }) }), NOW)).toBe(false);
+    expect(waitingForAgent(delivery({ ...on, generation: 101, agent: agent({}, { compression: false }) }), NOW)).toBe(false);
+    expect(waitingForAgent(delivery({ ...on, generation: 101 }), NOW)).toBe(true);
+    expect(waitingForAgent(delivery({ generation: 101 }), NOW)).toBe(false);
   });
 
   test('a save puts the part and the generation of the agent into the state', () => {
     const saved = withSaved(delivery({ generation: 100 }), { compression: { enabled: true, min_bytes: 2048 } }, 101);
     expect(saved.compression).toEqual({ enabled: true, min_bytes: 2048 });
     expect(saved.generation).toBe(101);
-    expect(waitingForAgent(saved)).toBe(true);
+    expect(waitingForAgent(saved, NOW)).toBe(true);
     // Without an agent the answer has no generation: the state keeps its own.
     expect(withSaved(delivery({ generation: 100 }), {}, null).generation).toBe(100);
   });

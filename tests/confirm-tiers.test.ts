@@ -13,13 +13,13 @@ import {
 
 describe('confirmation tier table', () => {
   test('typed: destructive, disconnecting or lockout-prone actions', () => {
-    for (const action of ['delete-host', 'delete-app', 'delete-route', 'revoke-host', 'revoke-credential', 'deny-all', 'disable-firewall', 'leave-enforce', 'enable-kill-policy', 'save-kill-policy'] as const) {
+    for (const action of ['delete-host', 'delete-app', 'delete-route', 'revoke-host', 'revoke-credential', 'deny-all', 'disable-firewall', 'leave-enforce', 'enable-kill-policy', 'save-kill-policy', 'cache-signed-in'] as const) {
       expect(tierFor(action)).toBe('typed');
     }
   });
 
   test('simple: enabling allow/block rules and lowering protection', () => {
-    for (const action of ['enable-allow-rule', 'enable-block-rule', 'lower-protection', 'enable-maintenance', 'switch-https-mode', 'delete-certificate', 'change-static-root'] as const) {
+    for (const action of ['enable-allow-rule', 'enable-block-rule', 'lower-protection', 'enable-maintenance', 'switch-https-mode', 'delete-certificate', 'change-static-root', 'disable-cache', 'shrink-cache', 'purge-cache-app'] as const) {
       expect(tierFor(action)).toBe('simple');
     }
   });

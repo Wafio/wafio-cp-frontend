@@ -2228,6 +2228,9 @@ export interface AppDelivery {
 /** Answer of a PUT: the object as stored and the bundle generation it goes out with (null without an agent). */
 export interface AppCompressionSaved { compression: AppCompression; generation: number | null }
 export interface AppStaticFilesSaved { static_files: AppStaticFiles; generation: number | null }
+export interface AppCacheSaved { cache: AppCache; generation: number | null }
+/** What a removal of stored copies names: one address, everything under a path, or everything (`url` is then left out). */
+export interface AppCachePurgeInput { scope: AppCachePurge['scope']; url?: string }
 
 const hasDelivery = (body: unknown): boolean => {
   const value = body as { compression?: unknown; static_files?: unknown; cache?: unknown } | null;
@@ -2252,6 +2255,23 @@ export async function putAppStaticFiles(projectId: string, appId: string, body: 
     `/api/projects/${projectId}/apps/${appId}/delivery/static-files`,
     { method: 'PUT', body: JSON.stringify(body) },
     (value) => typeof (value as { static_files?: unknown } | null)?.static_files === 'object'
+  );
+}
+
+export async function putAppCache(projectId: string, appId: string, body: AppCache) {
+  return api<AppCacheSaved>(
+    `/api/projects/${projectId}/apps/${appId}/delivery/cache`,
+    { method: 'PUT', body: JSON.stringify(body) },
+    (value) => typeof (value as { cache?: unknown } | null)?.cache === 'object'
+  );
+}
+
+/** Queues the removal of stored copies; answers the row (state pending until the agent answers). */
+export async function purgeAppCache(projectId: string, appId: string, body: AppCachePurgeInput) {
+  return api<AppCachePurge>(
+    `/api/projects/${projectId}/apps/${appId}/cache/purge`,
+    { method: 'POST', body: JSON.stringify(body) },
+    (value) => typeof (value as { id?: unknown } | null)?.id === 'string'
   );
 }
 

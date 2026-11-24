@@ -5,7 +5,7 @@
  * answer when a later read fails. Create it while a component initialises.
  */
 import { untrack } from 'svelte';
-import { getAppDelivery, type ApiError, type AppDelivery } from '#lib/api.js';
+import { getAppDelivery, type ApiError, type AppCachePurge, type AppDelivery } from '#lib/api.js';
 import { createPoller } from '#lib/polling.svelte.js';
 import { POLL_SLOW_MS, pollIntervalMs, withSaved } from './speed';
 
@@ -23,6 +23,8 @@ export interface DeliveryFeed {
   refresh(): Promise<void>;
   /** A save answered: the part as stored and the generation the agent has to answer; the feed then reads again. */
   saved(part: Partial<Pick<AppDelivery, 'compression' | 'static_files' | 'cache'>>, generation: number | null): void;
+  /** A removal of stored copies was queued: its row is shown at once (the list keeps the newest 10) and the feed reads again. */
+  purged(row: AppCachePurge): void;
   /** Something that changes what the agent reports was saved elsewhere (the main host name, the path prefix). */
   acted(): void;
 }
@@ -102,6 +104,12 @@ export function createDeliveryFeed(o: { projectId: () => string; appId: () => st
     saved(part, generation) {
       epoch++;
       if (state) take(withSaved(state, part, generation));
+      lastActionAt = Date.now();
+      void poller.trigger();
+    },
+    purged(row) {
+      epoch++;
+      if (state) state = { ...state, purges: [row, ...state.purges.filter((p) => p.id !== row.id)].slice(0, 10) };
       lastActionAt = Date.now();
       void poller.trigger();
     },
