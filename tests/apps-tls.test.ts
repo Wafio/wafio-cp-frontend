@@ -5,13 +5,16 @@ import type { ApiError, ApiResult, AppTLSCertificate, AppTLSCertificateInput, Ap
 import {
   ACME_REQUEST_GAP_MS,
   CERTIFICATE_IN_USE_TEXT,
+  MOVED_UPLOAD_TEXT,
   NO_REPORT_AFTER_MS,
   OWN_LISTENER,
   POLL_FAST_MS,
   POLL_SLOW_MS,
+  REMOVED_AGENT_TEXT,
   REQUEST_TEXT,
   TLS_LIMITS,
   actionErrorText,
+  assignmentNote,
   backToProxyText,
   canonicalListen,
   certificateAlerts,
@@ -48,6 +51,7 @@ import {
   requestAgainText,
   requestOpensAt,
   retryUntil,
+  routingNote,
   sameTLS,
   savedInGatewayText,
   sendCertificate,
@@ -1323,6 +1327,77 @@ describe('the request and the upload', () => {
     expect(actionErrorText(http({ code: 'SOMETHING_ELSE' }), 'edge-1', 'x')).toBe('Server text.');
     expect(actionErrorText(http({ error: '' }), 'edge-1', 'Fallback.')).toBe('Fallback.');
     expect(actionErrorText(undefined, 'edge-1', 'Fallback.')).toBe('Fallback.');
+  });
+});
+
+describe('the notes on the Assignment and Routing tabs and where an agent is removed', () => {
+  const dir = '../src/routes/projects/[id]/';
+  const page = (path: string) => readFileSync(new URL(`${dir}${path}`, import.meta.url), 'utf8');
+  /** The text of the ConfirmModal whose confirm button says `label`. */
+  const dialog = (source: string, label: string) => source.split('<ConfirmModal').find((part) => part.includes(`confirmLabel="${label}"`))?.split('</ConfirmModal>')[0] ?? '';
+
+  test('the Assignment tab warns about the key of an upload and the browser warning of Let\'s Encrypt, in Gateway only', () => {
+    expect(assignmentNote({ mode: 'gateway', source: 'uploaded' })).toBe(
+      'After a move to another WAF agent, or the removal of its agent, upload a new certificate with a new key: the old host may keep a copy of this one.',
+    );
+    expect(assignmentNote({ mode: 'gateway', source: 'uploaded' })).toBe(MOVED_UPLOAD_TEXT);
+    expect(assignmentNote({ mode: 'gateway', source: 'acme' })).toBe('The new agent requests its own certificate; meanwhile visitors get a browser warning.');
+    expect(assignmentNote({ mode: 'proxy', source: 'uploaded' })).toBeNull();
+    expect(assignmentNote({ mode: 'proxy', source: 'acme' })).toBeNull();
+    expect(assignmentNote({ mode: 'gateway', source: '' })).toBeNull();
+    expect(assignmentNote(null)).toBeNull();
+  });
+
+  test('the Routing tab says where the agent serves the application, with the default address when none is set', () => {
+    const gateway = { mode: 'gateway' as const, listen: '10.0.0.5:8443', agent_supported: true };
+    expect(routingNote(gateway, 'edge-1')).toEqual({
+      tone: 'info',
+      text: 'In Gateway mode edge-1 serves this application on 10.0.0.5:8443 (HTTPS tab) and keeps the listen address below reserved, unopened.',
+    });
+    expect(routingNote({ ...gateway, listen: '', agent_supported: null }, '')?.text).toBe(
+      'In Gateway mode the WAF agent serves this application on 0.0.0.0:443 (HTTPS tab) and keeps the listen address below reserved, unopened.',
+    );
+  });
+
+  test('an agent that cannot serve certificates is said to serve plain HTTP at the Routing listen address', () => {
+    const unsupported = routingNote({ mode: 'gateway', listen: '', agent_supported: false }, 'edge-1');
+    expect(unsupported).toEqual({ tone: 'error', text: 'edge-1 no longer serves certificates, so it serves this application in plain HTTP at its Routing listen address.' });
+    expect(unsupported?.text).toBe(noticeText('unsupported-gateway', 'edge-1'));
+  });
+
+  test('behind a proxy, or with no read of the settings, the Routing tab says nothing more', () => {
+    expect(routingNote({ mode: 'proxy', listen: '', agent_supported: true }, 'edge-1')).toBeNull();
+    expect(routingNote({ mode: 'proxy', listen: '', agent_supported: false }, 'edge-1')).toBeNull();
+    expect(routingNote(null, 'edge-1')).toBeNull();
+  });
+
+  test('the application page shows the Routing note and hands its HTTPS read to the Assignment tab', () => {
+    const source = page('apps/[appId]/+page.svelte');
+    expect(source).toContain('routingNote(tls, agent?.name ?? \'\')');
+    expect(source).toMatch(/\{#if gatewayRoutingNote\}\s*<Alert tone=\{gatewayRoutingNote\.tone\} message=\{gatewayRoutingNote\.text\} \/>/);
+    expect(source).toMatch(/<AppAssignment[^>]*\{tls\}/);
+  });
+
+  test('the uploaded card and the Assignment tab share one text', () => {
+    expect(readFileSync(new URL('../src/lib/components/apps/AppTLS.svelte', import.meta.url), 'utf8')).toContain('{MOVED_UPLOAD_TEXT}');
+  });
+
+  test('the text of a removal says the host keeps the key of an uploaded certificate', () => {
+    expect(REMOVED_AGENT_TEXT).toBe('Did a WAF agent here serve an uploaded certificate? Upload a new one for that application: its host keeps a copy of the private key.');
+  });
+
+  test('both confirms that delete an agent carry it', () => {
+    const source = page('waf/+page.svelte');
+    expect(dialog(source, 'Delete agent')).toContain('<p>{REMOVED_AGENT_TEXT}</p>');
+    expect(dialog(source, 'Delete anyway')).toContain('<p>{REMOVED_AGENT_TEXT}</p>');
+  });
+
+  test('the confirms that revoke a host and delete a host carry it, and rotating the key does not', () => {
+    const source = page('hosts/[hostId]/+page.svelte');
+    expect(source.match(/credentials: true/g)).toHaveLength(2);
+    expect(source).toMatch(/case 'revoke': return \{[^\n]*credentials: true/);
+    expect(source).toMatch(/case 'delete': return \{[^\n]*credentials: true/);
+    expect(source).toMatch(/\{#if actionText\.credentials\}[\s\S]*?<p>\{REMOVED_AGENT_TEXT\}<\/p>[\s\S]*?\{\/if\}/);
   });
 });
 

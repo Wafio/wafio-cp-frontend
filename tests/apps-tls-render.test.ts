@@ -6,7 +6,7 @@ import './support/runes';
 import './support/ssr';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import type { AppTLSCertificate, AppTLSState, AppTLSStatus, AppTLSWarning } from '../src/lib/api';
+import type { AppTLSCertificate, AppTLSState, AppTLSStatus, AppTLSWarning, AppWAFAssignment, FleetAgent } from '../src/lib/api';
 import { formatDate } from '../src/lib/format';
 import { renderComponent } from './support/ssr';
 
@@ -20,6 +20,7 @@ Bun.plugin({
 
 const { default: AppTLS } = await import('../src/lib/components/apps/AppTLS.svelte');
 const { default: CertificateUpload } = await import('../src/lib/components/apps/CertificateUpload.svelte');
+const { default: AppAssignment } = await import('../src/lib/components/AppAssignment.svelte');
 
 const DNS: AppTLSWarning = { code: 'dns_mismatch', host: 'shop.example.com', resolved: ['203.0.113.7'], agent_addresses: ['198.51.100.2'] };
 
@@ -636,5 +637,38 @@ describe('the upload dialog', () => {
     const source = readFileSync(new URL('../src/lib/components/apps/CertificateUpload.svelte', import.meta.url), 'utf8');
     expect(source).not.toMatch(/(?<!bind:value=)\{form\.key\}/);
     expect(source).toContain('chosenFileText(form.keyFile)');
+  });
+});
+
+describe('Assignment tab, certificate notes', () => {
+  const agents = [{ id: 'g1', name: 'edge-1', is_online: true } as FleetAgent];
+  const assignment = { agent_id: 'g1', app_id: 'a1', mode: 'block' } as AppWAFAssignment;
+  const props = { projectId: 'p1', appId: 'a1', appName: 'shop-frontend', agents, assignment, canConfigure: true, onchanged: () => {} };
+  const upload = 'After a move to another WAF agent, or the removal of its agent, upload a new certificate with a new key: the old host may keep a copy of this one.';
+  const acme = 'The new agent requests its own certificate; meanwhile visitors get a browser warning.';
+
+  test('Gateway with an uploaded certificate: upload a new one with a new key after a move', async () => {
+    const html = await renderComponent(AppAssignment, { ...props, tls: { mode: 'gateway', source: 'uploaded' } } as never);
+    expect(html).toContain(upload);
+    expect(html).not.toContain(acme);
+  });
+
+  test('Gateway with Let\'s Encrypt: the new agent requests its own', async () => {
+    const html = await renderComponent(AppAssignment, { ...props, tls: { mode: 'gateway', source: 'acme' } } as never);
+    expect(html).toContain(acme);
+    expect(html).not.toContain(upload);
+  });
+
+  test('also with no agent assigned, since the next one will not have the certificate', async () => {
+    const html = await renderComponent(AppAssignment, { ...props, assignment: null, tls: { mode: 'gateway', source: 'uploaded' } } as never);
+    expect(html).toContain(upload);
+  });
+
+  test('Behind a proxy, with no read of the settings or without the prop: neither note', async () => {
+    for (const extra of [{ tls: { mode: 'proxy', source: 'uploaded' } }, { tls: null }, {}]) {
+      const html = await renderComponent(AppAssignment, { ...props, ...extra } as never);
+      expect(html).not.toContain(upload);
+      expect(html).not.toContain(acme);
+    }
   });
 });

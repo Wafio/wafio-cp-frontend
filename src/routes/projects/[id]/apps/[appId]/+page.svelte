@@ -54,7 +54,7 @@
     writeAppRange,
   } from '#lib/components/apps/app-page.js';
   import { APP_STATE_TEXT, appState, routeSummary } from '#lib/components/apps/inventory.js';
-  import { expiryBadge, withoutDnsHints } from '#lib/components/apps/tls.js';
+  import { expiryBadge, routingNote, withoutDnsHints } from '#lib/components/apps/tls.js';
   import { usePageDetail } from '#lib/page-meta.svelte.js';
   import {
     agentRouteBodyFrom,
@@ -145,6 +145,7 @@
 
   const assigned = $derived(Boolean(assignment));
   const agent = $derived(assignment ? agents.find((a) => a.id === assignment?.agent_id) : undefined);
+  const gatewayRoutingNote = $derived(routingNote(tls, agent?.name ?? ''));
   const stateKey = $derived(app ? appState(app, assignment) : 'draft');
   const stateText = $derived(APP_STATE_TEXT[stateKey]);
   const summary = $derived(
@@ -425,6 +426,9 @@
           {#if !ctx.canConfigure}
             <Alert tone="info" message="Read-only: changing the routing needs member or owner access." />
           {/if}
+          {#if gatewayRoutingNote}
+            <Alert tone={gatewayRoutingNote.tone} message={gatewayRoutingNote.text} />
+          {/if}
           {#if proxyWarnings.length}
             <Alert tone="warning" title="Review the client-IP trust settings">
               <ul class="proxy-warnings">
@@ -453,6 +457,7 @@
           {assignment}
           canConfigure={ctx.canConfigure}
           maintenance={Boolean(app.maintenance_enabled)}
+          {tls}
           onchanged={() => load({ silent: true })}
         />
       {/if}

@@ -39,6 +39,7 @@
   import HostLabelsModal from '#lib/components/hosts/HostLabelsModal.svelte';
   import HostConnectGuide from '#lib/components/hosts/HostConnectGuide.svelte';
   import { ENROLL_DEFAULTS, rotatedKeySteps } from '#lib/host-connect.js';
+  import { REMOVED_AGENT_TEXT } from '#lib/components/apps/tls.js';
   import {
     getHost,
     listHostAgents,
@@ -913,6 +914,7 @@
     <p>{actionText.body}</p>
     {#if actionText.credentials}
       <p>Every credential enrolled for this host with its host key is revoked too and its streams are closed. Project-wide credentials made on the Credentials page are not bound to a host and stay valid: revoke them on the Credentials page.</p>
+      <p>{REMOVED_AGENT_TEXT}</p>
     {/if}
     {#if actionError}<Alert tone="error" compact title="Not done" message={actionError} />{/if}
   </div>

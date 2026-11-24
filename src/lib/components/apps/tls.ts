@@ -978,6 +978,27 @@ export const requestAgainText = (opensAt: number): string => `You can request ag
 export const deleteCertificateText = (app: string): string =>
   `Deletes the private key of every certificate uploaded for ${app}. A copy an agent already received is not recalled.`;
 
+/** An uploaded key stays on the host that received it, so a move or a removal of the agent needs a new certificate. */
+export const MOVED_UPLOAD_TEXT = 'After a move to another WAF agent, or the removal of its agent, upload a new certificate with a new key: the old host may keep a copy of this one.';
+
+const MOVED_ACME_TEXT = 'The new agent requests its own certificate; meanwhile visitors get a browser warning.';
+
+/** In the confirms that delete an agent or revoke or delete its host. */
+export const REMOVED_AGENT_TEXT = 'Did a WAF agent here serve an uploaded certificate? Upload a new one for that application: its host keeps a copy of the private key.';
+
+/** The note on the Assignment tab of an application in Gateway; `state` is the page's read of the HTTPS settings. */
+export function assignmentNote(state: Pick<AppTLSState, 'mode' | 'source'> | null): string | null {
+  if (state?.mode !== 'gateway') return null;
+  return state.source === 'uploaded' ? MOVED_UPLOAD_TEXT : state.source === 'acme' ? MOVED_ACME_TEXT : null;
+}
+
+/** The note above the Routing form of an application in Gateway: where the agent serves it, or that it cannot serve HTTPS. */
+export function routingNote(state: Pick<AppTLSState, 'mode' | 'listen' | 'agent_supported'> | null, agent: string): { tone: 'info' | 'error'; text: string } | null {
+  if (state?.mode !== 'gateway') return null;
+  if (state.agent_supported === false) return { tone: 'error', text: noticeText('unsupported-gateway', agent) };
+  return { tone: 'info', text: `In Gateway mode ${agentMid(agent)} serves this application on ${state.listen || DEFAULT_TLS_LISTEN} (HTTPS tab) and keeps the listen address below reserved, unopened.` };
+}
+
 /** What an upload over a source that is not the uploaded one does, in the text of the dialog. */
 export function uploadSourceText(o: { gateway: boolean; agent: string }): string {
   const source = 'This upload becomes the source of this application.';

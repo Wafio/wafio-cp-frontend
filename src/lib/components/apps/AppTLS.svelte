@@ -20,6 +20,7 @@
   import { trustedProxyList, type ProxyForm, type RouteForm } from './route-model';
   import {
     CERTIFICATE_IN_USE_TEXT,
+    MOVED_UPLOAD_TEXT,
     OWN_LISTENER,
     POLL_SLOW_MS,
     REQUEST_TEXT,
@@ -585,7 +586,7 @@
                   <Button variant="secondary" class="tls-tap" disabled={readonly || busy || inGateway} onclick={askDelete}>Delete certificate</Button>
                 </div>
                 {#if inGateway}<p class="tls-hint">{CERTIFICATE_IN_USE_TEXT}</p>{/if}
-                <p class="tls-hint">After a move to another WAF agent, or the removal of its agent, upload a new certificate with a new key: the old host may keep a copy of this one.</p>
+                <p class="tls-hint">{MOVED_UPLOAD_TEXT}</p>
               {:else if card.source === 'acme' && loaded?.certificate}
                 <div class="tls-card-actions">
                   <p class="tls-hint">An uploaded certificate of this application is still stored with its key.</p>

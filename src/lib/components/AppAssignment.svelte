@@ -11,7 +11,7 @@
 -->
 <script lang="ts">
   import { base } from '#lib/paths.js';
-  import { assignAppWAFAgent, unassignAppWAFAgent, type AppWAFAssignment, type FleetAgent } from '#lib/api.js';
+  import { assignAppWAFAgent, unassignAppWAFAgent, type AppTLSState, type AppWAFAssignment, type FleetAgent } from '#lib/api.js';
   import { Alert, Badge, Button, ConfirmModal, DateTime, Field, StatusDot } from '#lib/components/ui/index.js';
   import Select from '#lib/components/ui/Select.svelte';
   import { tierForProtectionMode } from '#lib/confirm-tiers.js';
@@ -19,6 +19,7 @@
   import { toast } from '#lib/stores/toast.js';
   import ProtectionModeSelect from './apps/ProtectionModeSelect.svelte';
   import { MOVE_NOTE } from './apps/maintenance';
+  import { assignmentNote } from './apps/tls';
   import { PROTECTION_MODE_TEXT, type ProtectionMode } from './apps/route-model';
   import { appWriteErrorMessage } from './apps/route-errors';
 
@@ -30,6 +31,7 @@
     assignment,
     canConfigure = false,
     maintenance = false,
+    tls = null,
     onchanged,
   }: {
     projectId: string;
@@ -42,6 +44,8 @@
     canConfigure?: boolean;
     /** Maintenance mode is on for the application: only an agent that supports it can serve it. */
     maintenance?: boolean;
+    /** The HTTPS settings the page read: in Gateway the agent holds the certificate, so a move has a consequence. */
+    tls?: Pick<AppTLSState, 'mode' | 'source'> | null;
     /** Called after a successful assign, move or unassign. */
     onchanged: () => void | Promise<void>;
   } = $props();
@@ -63,6 +67,7 @@
   const target = $derived(agents.find((a) => a.id === selected));
   const changed = $derived(selected !== (assignment?.agent_id ?? '') || (Boolean(assignment) && mode !== assignment?.mode));
   const moving = $derived(Boolean(assignment) && selected !== '' && selected !== assignment?.agent_id);
+  const certificateNote = $derived(assignmentNote(tls));
   const lowering = $derived(Boolean(assignment) && tierForProtectionMode(assignment?.mode ?? 'block', mode) !== 'none');
 
   function submit(event: SubmitEvent) {
@@ -135,6 +140,7 @@
 
   {#if error}<Alert tone="error" message={error} />{/if}
   {#if maintenance}<Alert tone="info" message={MOVE_NOTE} />{/if}
+  {#if certificateNote}<Alert tone="info" message={certificateNote} />{/if}
 
   <form class="asg-form" onsubmit={submit}>
     <fieldset disabled={!canConfigure || saving}>
