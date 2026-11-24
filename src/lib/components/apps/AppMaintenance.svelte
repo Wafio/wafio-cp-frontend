@@ -527,15 +527,22 @@
         </div>
         <div class="mt-stage" bind:clientWidth={stageWidth}>
           <div class="mt-device" style:width="{frame.width * scale}px" style:height="{frame.height * scale}px">
-            <iframe
-              class="mt-frame"
-              title="Maintenance page preview"
-              srcdoc={previewSrc}
-              sandbox="allow-scripts"
-              style:width="{frame.width}px"
-              style:height="{frame.height}px"
-              style:transform="scale({scale})"
-            ></iframe>
+            {#if previewSrc}
+              <!-- A new frame for each page: Chrome can leave an updated srcdoc unpainted in a sandboxed frame. -->
+              {#key previewSrc}
+                <iframe
+                  class="mt-frame"
+                  title="Maintenance page preview"
+                  srcdoc={previewSrc}
+                  sandbox="allow-scripts"
+                  style:width="{frame.width}px"
+                  style:height="{frame.height}px"
+                  style:transform="scale({scale})"
+                ></iframe>
+              {/key}
+            {:else}
+              <p class="mt-placeholder" role="status">Drawing the preview…</p>
+            {/if}
           </div>
         </div>
         <p class="mt-caption">What visitors see, with HTTP status 503. Never cached.</p>
@@ -624,6 +631,7 @@
   .mt-stage { min-width: 0; }
   .mt-device { position: relative; max-width: 100%; margin-inline: auto; overflow: hidden; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-primary); box-sizing: content-box; }
   .mt-frame { position: absolute; top: 0; left: 0; border: 0; transform-origin: top left; background: var(--bg-primary); }
+  .mt-placeholder { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; font-size: var(--fs-sm); color: var(--text-muted); }
   .mt-caption { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); }
 
   .mt-actions {
