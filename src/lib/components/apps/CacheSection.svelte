@@ -22,7 +22,7 @@
     CACHE_LEAD,
     CACHE_LIMITS,
     CACHE_SWITCH_HINT,
-    COOKIES_HINT,
+    COOKIES_IN_CACHE,
     PURGE_APP_CONFIRM_BODY,
     REMOVE_EMPTY,
     REMOVE_HINT_PREFIX,
@@ -140,7 +140,6 @@
       case 'disk_bytes': return form.disk;
       case 'memory_bytes': return form.memory;
       case 'max_object_bytes': return form.object;
-      case 'session_cookies': return form.cookies;
       default: return form.rules.length;
     }
   }
@@ -159,7 +158,6 @@
   const diskError = $derived(shown('disk_bytes'));
   const memoryError = $derived(shown('memory_bytes'));
   const objectError = $derived(shown('max_object_bytes'));
-  const cookiesError = $derived(shown('session_cookies'));
   const rulesError = $derived(shown('rules'));
 
   // ── The line under the part, the numbers, the lock ──────────────────────
@@ -435,13 +433,7 @@
             {/snippet}
           </Field>
         </div>
-        <div onfocusout={() => touch('session_cookies')}>
-          <Field label="Session cookie names" error={cookiesError} hint={COOKIES_HINT}>
-            {#snippet children(c)}
-              <textarea {...c} class="mono" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="shop_session" bind:value={form.cookies}></textarea>
-            {/snippet}
-          </Field>
-        </div>
+        <p class="cs-note">{COOKIES_IN_CACHE}</p>
       </div>
     </details>
   </fieldset>
@@ -565,7 +557,7 @@
   .cs-fixed { margin: var(--sp-1) 0 0; font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.5; max-width: 70ch; }
   .cs-note { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.5; max-width: 70ch; }
   .cs-fieldset { display: flex; flex-direction: column; gap: var(--sp-4); border: 0; padding: 0; margin: 0; min-width: 0; }
-  .cs :global(input.mono), .cs :global(textarea.mono) { font-family: var(--font-mono); font-size: var(--fs-sm); }
+  .cs :global(input.mono) { font-family: var(--font-mono); font-size: var(--fs-sm); }
   .cs-short { max-width: 14rem; }
   .cs-error { margin: 0; font-size: var(--fs-sm); color: var(--danger); }
 
@@ -615,7 +607,7 @@
   @media (max-width: 760px) {
     .cs-actions { flex-direction: column-reverse; align-items: stretch; }
     .cs-dirty { margin-right: 0; text-align: center; }
-    .cs :global(.cs-tap), .cs :global(input[type='text']), .cs :global(textarea), .cs :global(.lifetime-unit button), .cs :global(.cs-select button) { min-height: 44px; }
+    .cs :global(.cs-tap), .cs :global(input[type='text']), .cs :global(.lifetime-unit button), .cs :global(.cs-select button) { min-height: 44px; }
     .cs :global(input[type='checkbox']) { width: 1.5rem; height: 1.5rem; }
     .cs :global(.layout-inline .field-label) { display: inline-flex; align-items: center; min-height: 44px; }
     .cs-short { max-width: none; }

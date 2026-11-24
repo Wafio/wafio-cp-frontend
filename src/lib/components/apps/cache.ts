@@ -74,7 +74,7 @@ export function ruleFieldOf(field: string | undefined): { index: number; part: '
 }
 
 /** The limits folded under "Advanced limits": a refusal of one of them opens the fold. */
-export const inAdvanced = (field: CacheField): boolean => ['disk_bytes', 'memory_bytes', 'max_object_bytes', 'session_cookies'].includes(field);
+export const inAdvanced = (field: CacheField): boolean => ['disk_bytes', 'memory_bytes', 'max_object_bytes'].includes(field);
 
 export type CacheRefusal = { kind: 'field'; field: CacheField; message: string; advanced: boolean } | { kind: 'too-old' | 'save'; message: string };
 
@@ -344,9 +344,23 @@ const canonical = (c: AppCache): string =>
     c.rules.map((r) => [r.prefix, r.action, r.ttl_s, r.signed_in]),
   ]);
 
+/**
+ * The stored cache settings with the cookie names typed (one a line) and nothing else changed, or the refused field.
+ * The names are saved with the cache object, but compression uses them too, so they have their own place on the tab.
+ */
+export function withCookieNames(stored: AppCache, text: string): NormalizedCache {
+  return normalizeCache({ ...stored, session_cookies: text.split('\n') });
+}
+
 /** The same settings once the server's normal form is applied; settings that cannot be read count as different. */
 export function sameCache(form: CacheForm, stored: AppCache): boolean {
   const next = normalizeCache(cacheInput(form)).settings;
+  return next !== undefined && canonical(next) === canonical(stored);
+}
+
+/** The typed cookie names are the stored ones once trimmed and without repeats; names that cannot be read count as different. */
+export function sameCookieNames(stored: AppCache, text: string): boolean {
+  const next = withCookieNames(stored, text).settings;
   return next !== undefined && canonical(next) === canonical(stored);
 }
 
@@ -427,7 +441,10 @@ export const RULES_LEAD = 'A rule applies to every path that starts with the tex
 export const RULES_EMPTY = 'No path rules: every path follows the settings above.';
 export const RULE_SIGNED_IN_HINT = 'Only for paths that show the same page to everyone.';
 export const COOKIES_HINT =
-  'One name a line. Visitors with one of these cookies count as signed in. WAFio already knows the common ones: names with sess in them, such as PHPSESSID and laravel_session, and the WordPress sign-in cookies.';
+  "One name a line. Visitors with one of these cookies count as signed in. WAFio already knows the common ones: names with sess in them, such as PHPSESSID and laravel_session, and the WordPress sign-in cookies. Add your application's own if its session cookie has another name.";
+export const COOKIES_LEAD =
+  'WAFio treats a visitor as signed in when the request carries an Authorization header or a session cookie. Compression leaves their pages uncompressed, and the cache does not keep their answers unless a path rule says so. The names below are used while compression or the cache is on.';
+export const COOKIES_IN_CACHE = 'Which cookies mean a signed-in visitor is set under Signed-in visitors, above.';
 
 export const REMOVE_HINT_URL = 'Every variant of this address goes, compressed or not.';
 export const REMOVE_HINT_PREFIX = 'Everything stored under this path goes, on every host name of the application.';
@@ -440,7 +457,7 @@ export const queueFullText = (agent: string): string => `Too many removals are w
 export function removalBlockedText(d: AppDelivery): string | null {
   if (!d.cache.enabled) return CACHE_OFF_TEXT;
   if (!d.agent) return NO_AGENT_TEXT;
-  if (tooOld(d, 'cache')) return tooOldText(d.agent.name, PART_LABEL.cache);
+  if (tooOld(d, 'cache')) return tooOldText(d.agent.name, PART_LABEL.cache, d.agent.features);
   return null;
 }
 
@@ -496,7 +513,9 @@ export function purgeView(row: AppCachePurge, agent: { name: string; online: boo
     return { ...view, state: `${agent.name} is offline. The copies go when it reconnects; until then it may still send them.`, tone: 'info' };
   }
   if (answerOverdue(row.created_at, now)) {
-    return { ...view, state: `No answer from ${named || 'the WAF agent'} yet. Check that it is online.`, tone: 'warning' };
+    // An agent that is online has been reached, so the hint to check that it is online would name the wrong cause.
+    const state = agent ? `${name} is online but has not confirmed the removal. Its log may say why.` : `No answer from ${named || 'the WAF agent'} yet. Check that it is online.`;
+    return { ...view, state, tone: 'warning' };
   }
   return { ...view, state: `Removing. ${name} confirms within a few seconds.`, tone: 'info' };
 }

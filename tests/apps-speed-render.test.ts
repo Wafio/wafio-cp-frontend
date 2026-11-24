@@ -8,8 +8,9 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { AppDelivery, AppTLSState } from '../src/lib/api';
 import type { DeliveryFeed } from '../src/lib/components/apps/delivery-feed.svelte';
+import { COOKIES_HINT, COOKIES_IN_CACHE, COOKIES_LEAD } from '../src/lib/components/apps/cache';
 import { emptyRouteForm } from '../src/lib/components/apps/route-model';
-import { COMPRESSION_FIXED, COMPRESSION_LIMITS_FIXED, FILES_FIXED, NO_ANSWER_AFTER_MS, SPEED_INTRO, UNASSIGNED_TEXT, VIEWER_TEXT } from '../src/lib/components/apps/speed';
+import { COMPRESSION_FIXED, COMPRESSION_LIMITS_FIXED, FILES_FIXED, NO_ANSWER_AFTER_MS, SPEED_INTRO, UNASSIGNED_TEXT, VIEWER_TEXT, keptFolderText } from '../src/lib/components/apps/speed';
 import { renderComponent } from './support/ssr';
 import { MINUTE, NOW, agent, delivery, feature, status } from './support/delivery-fixtures';
 
@@ -36,6 +37,9 @@ async function render(state: AppDelivery | null, over: Partial<DeliveryFeed> = {
 const COMPRESSION_ON = { compression: { enabled: true, min_bytes: 1024 } };
 const FILES_ON = { static_files: { enabled: true, root: '/var/www/shop/public', missing: 'app' as const, max_age_s: 3600 } };
 const answered = (over = {}) => status({ compression: feature('compression'), static_files: feature('static_files'), ...over });
+const NO_PART = { redirects: false, compression: false, static_files: false, cache: false };
+const FROM_RELEASE = 'Upgrade it to a WAF agent newer than v2.1.1 to use this.';
+const FROM_BUILD = 'Upgrade it to a newer build of the WAF agent to use this.';
 
 /** The part of the page between two headings. */
 function part(html: string, from: string, to?: string): string {
@@ -43,8 +47,9 @@ function part(html: string, from: string, to?: string): string {
   expect(start).toBeGreaterThan(-1);
   return html.slice(start, to ? html.indexOf(to, start) : undefined);
 }
-const compression = (html: string) => part(html, '>Compression</h3>', '>Files from a folder</h3>');
+const compression = (html: string) => part(html, '>Compression</h3>', '>Signed-in visitors</h3>');
 const files = (html: string) => part(html, '>Files from a folder</h3>', '>Cache</h3>');
+const signedIn = (html: string) => part(html, '>Signed-in visitors</h3>', '>Files from a folder</h3>');
 const switches = (html: string): string[] => html.match(/<button[^>]*role="switch"[^>]*>/g) ?? [];
 
 describe('Speed tab, before the settings are read', () => {
@@ -193,16 +198,102 @@ describe('Speed tab, no agent serves the application', () => {
   });
 });
 
+describe('Speed tab, the session cookie names beside Compression', () => {
+  test('sit between Compression and Files, say who counts as signed in, and have their own Save', async () => {
+    const html = await render(delivery());
+    expect(html.indexOf('>Compression</h3>')).toBeLessThan(html.indexOf('>Signed-in visitors</h3>'));
+    expect(html.indexOf('>Signed-in visitors</h3>')).toBeLessThan(html.indexOf('>Files from a folder</h3>'));
+    const section = signedIn(html);
+    expect(section).toContain(COOKIES_LEAD);
+    expect(section).toContain('Authorization header or a session cookie');
+    expect(section).toContain('used while compression or the cache is on');
+    expect(section).toContain('Session cookie names');
+    expect(section).toContain(COOKIES_HINT);
+    expect(COOKIES_HINT.startsWith('One name a line. ')).toBe(true);
+    expect(section).toContain('placeholder="shop_session"');
+    expect(section).toContain('Save cookie names');
+    expect(section).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>)[\s\S])*Save cookie names/);
+    expect(section).not.toContain('Unsaved changes');
+  });
+
+  test('show the saved names one a line, also while compression and the cache are both off', async () => {
+    const stored = delivery().cache;
+    const html = await render(delivery({ cache: { ...stored, session_cookies: ['shop_session', 'cart_id'] } }));
+    expect(signedIn(html)).toContain('shop_session\ncart_id');
+    expect(compression(html)).not.toContain('Waiting for');
+  });
+
+  test('are open to an agent that has compression but not the cache, and a viewer can only read them', async () => {
+    const html = await render(delivery({ agent: agent({}, { cache: false }) }));
+    expect(signedIn(html)).not.toContain('too old');
+    expect(signedIn(html)).not.toMatch(/<textarea[^>]*disabled/);
+    const viewer = await render(delivery(), {}, { canConfigure: false });
+    expect(signedIn(viewer)).toMatch(/<textarea[^>]*disabled/);
+    expect(signedIn(viewer)).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>)[\s\S])*Save cookie names/);
+  });
+
+  test('the fixed line under Compression says where to add a name, and the Cache section points here and has no field of its own', async () => {
+    const html = await render(delivery());
+    expect(compression(html)).toContain('under Signed-in visitors below');
+    expect(part(html, '>Cache</h3>')).toContain(COOKIES_IN_CACHE);
+    expect(part(html, '>Cache</h3>', '>Remove stored copies</h4>')).not.toContain('<textarea');
+  });
+});
+
+describe('Speed tab, a folder with a part of its path named like a system file', () => {
+  const folder = (root: string) => delivery({ static_files: { enabled: true, root, missing: 'app', max_age_s: 0 }, status: answered() });
+
+  test('is warned about under the folder, with the name, before anything is saved', async () => {
+    const section = files(await render(folder('/var/www/private/public')));
+    expect(section).toContain(keptFolderText('private'));
+  });
+
+  test('is warned about in any case, and a folder with no such part is not', async () => {
+    expect(files(await render(folder('/srv/Profile/site')))).toContain(keptFolderText('Profile'));
+    expect(files(await render(folder('/var/www/shop/public')))).not.toContain('will not use this folder');
+    expect(files(await render(delivery()))).not.toContain('will not use this folder');
+  });
+
+  test('the line under Files names the kept names and what a request for one gets', async () => {
+    const section = files(await render(delivery()));
+    expect(section).toContain('such as profile, network, group, hosts, security, private, credentials or systemd');
+    expect(section).toContain('Those requests go to your application, or get Not found if you chose that.');
+  });
+
+  test('a folder the agent refused for the name says the name, not that it holds system files', async () => {
+    const refused = delivery({
+      static_files: { enabled: true, root: '/var/www/private/public', missing: 'app', max_age_s: 0 },
+      status: answered({ static_files: feature('static_files', { state: 'refused', code: 'root_forbidden', detail: '/var/www/private/public' }) }),
+    });
+    const section = files(await render(refused));
+    expect(section).toContain('/var/www/private/public has a part named private, a name the agent never serves from a folder.');
+    expect(section).not.toContain('holds system or WAFio files');
+  });
+});
+
 describe('Speed tab, an agent that is too old', () => {
   const old = (features: object, over: Partial<AppDelivery> = {}) => delivery({ agent: agent({}, features), ...over });
 
   test('a part that is off cannot be switched on, and says which part and what to do', async () => {
-    const html = await render(old({ compression: false, static_files: false }));
-    expect(compression(html)).toContain('edge-1 is too old for compression. Upgrade it to use this.');
-    expect(files(html)).toContain('edge-1 is too old for files from a folder. Upgrade it to use this.');
+    const html = await render(old(NO_PART));
+    expect(compression(html)).toContain(`edge-1 is too old for compression. ${FROM_RELEASE}`);
+    expect(files(html)).toContain(`edge-1 is too old for files from a folder. ${FROM_RELEASE}`);
     for (const tag of [...switches(compression(html)), ...switches(files(html))]) expect(tag).toContain('disabled');
     expect(compression(html)).toMatch(/<fieldset[^>]*sp-fieldset[^>]*disabled/);
     expect(files(html)).toMatch(/<fieldset[^>]*sp-fieldset[^>]*disabled/);
+  });
+
+  test('a build from between releases, with the folder but not the cache, is sent to a newer build and not to a release', async () => {
+    const html = await render(old({ cache: false }));
+    expect(part(html, '>Cache</h3>')).toContain(`edge-1 is too old for the cache. ${FROM_BUILD}`);
+    expect(part(html, '>Cache</h3>')).not.toContain('v2.1.1');
+    expect(compression(html)).not.toContain('too old');
+    expect(files(html)).not.toContain('too old');
+  });
+
+  test('an agent that has the folder and the cache is not told it is too old for either', async () => {
+    const html = await render(old({}));
+    expect(html).not.toContain('too old');
   });
 
   test('only the part it is too old for is locked', async () => {
@@ -214,7 +305,7 @@ describe('Speed tab, an agent that is too old', () => {
 
   test('a part that is already on can still be turned off', async () => {
     const html = await render(old({ compression: false }, COMPRESSION_ON));
-    expect(compression(html)).toContain('edge-1 is too old for compression. Upgrade it to use this.');
+    expect(compression(html)).toContain(`edge-1 is too old for compression. ${FROM_BUILD}`);
     expect(switches(compression(html))[0]).toContain('aria-checked="true"');
     expect(switches(compression(html))[0]).not.toContain('disabled');
     expect(compression(html)).not.toContain('Waiting for');
@@ -234,11 +325,12 @@ describe('Speed tab, after a save', () => {
     expect(files(html)).not.toContain('Waiting for');
   });
 
-  test('two minutes later it says there is no answer and to check that the agent is online', async () => {
+  test('two minutes later it says the online agent has not confirmed, and that it may have refused the configuration', async () => {
     const waiting = delivery({ ...COMPRESSION_ON, generation: 101, status: answered() });
     expect(compression(await render(waiting, { waitingSince: NOW - NO_ANSWER_AFTER_MS + 1000 }))).toContain('Saved. Waiting for edge-1 to apply it.');
     const html = await render(waiting, { waitingSince: NOW - NO_ANSWER_AFTER_MS });
-    expect(compression(html)).toContain('No answer from edge-1 yet. Check that it is online.');
+    expect(compression(html)).toContain('edge-1 is online but has not confirmed the latest configuration. It may have refused it; its log says why.');
+    expect(compression(html)).not.toContain('Check that it is online');
     expect(compression(html)).not.toContain('Waiting for');
   });
 
@@ -432,7 +524,7 @@ describe('the status line on the Gateway and Routing tabs', () => {
 
   test('an agent that is too old for it locks the list when none is saved, and says so', async () => {
     const html = await gateway(tls(), delivery({ agent: agent({}, { redirects: false }) }));
-    expect(html).toContain('edge-1 is too old for the main host name. Upgrade it to use this.');
+    expect(html).toContain(`edge-1 is too old for the main host name. ${FROM_BUILD}`);
     const select = /<button[^>]*role="combobox"[^>]*>/.exec(html);
     expect(select).not.toBeNull();
     expect(select![0]).toContain('disabled');
@@ -440,7 +532,7 @@ describe('the status line on the Gateway and Routing tabs', () => {
 
   test('a saved main host name can still be cleared when the agent is too old', async () => {
     const html = await gateway(tls({ canonical_host: 'shop.example.com' }), delivery({ agent: agent({}, { redirects: false }) }));
-    expect(html).toContain('edge-1 is too old for the main host name. Upgrade it to use this.');
+    expect(html).toContain(`edge-1 is too old for the main host name. ${FROM_BUILD}`);
     const select = /<button[^>]*role="combobox"[^>]*>/.exec(html);
     expect(select![0]).not.toContain('disabled');
   });
@@ -509,7 +601,7 @@ describe('the status line on the Gateway and Routing tabs', () => {
   });
 
   test('Routing locks the field for an agent that is too old, with the text; a saved prefix stays editable', async () => {
-    const text = { tone: 'warning' as const, text: 'edge-1 is too old for the path prefix. Upgrade it to use this.' };
+    const text = { tone: 'warning' as const, text: `edge-1 is too old for the path prefix. ${FROM_RELEASE}` };
     const locked = await routing('', { prefixLocked: true, prefixLine: text });
     expect(/<input[^>]*placeholder="\/shop"[^>]*>/.exec(locked)![0]).toContain('disabled');
     expect(locked).toContain(text.text);

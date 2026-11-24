@@ -8,8 +8,12 @@ import { appWriteErrorMessage } from '../src/lib/components/apps/route-errors';
 import { checkStripPathPrefix } from '../src/lib/components/apps/route-model';
 import { lifetimeFromParts, lifetimeParts } from '../src/lib/components/apps/inputs';
 import { normalizeTLS } from '../src/lib/components/apps/tls';
+import { KEPT_NAMES, keptSegment } from '../src/lib/components/apps/kept-names';
 import {
+  AGENT_WITH_PARTS,
   BYTES_MESSAGE,
+  COMPRESSION_FIXED,
+  FILES_FIXED,
   FORBIDDEN_ROOTS,
   NO_ANSWER_AFTER_MS,
   POLL_FAST_MS,
@@ -21,6 +25,8 @@ import {
   compressionForm,
   compressionInput,
   compressionNumbers,
+  keptFolderText,
+  noAnswerText,
   normalizeCompression,
   normalizeStaticFiles,
   partLine,
@@ -52,6 +58,11 @@ interface Cases {
 }
 const backend = JSON.parse(readFileSync(new URL('./fixtures/backend/delivery-checks.json', import.meta.url), 'utf8')) as Cases;
 const NON_ASCII = /[^\u0000-\u007f]/;
+
+// An agent from a release before the parts says Hello without any of them; one from a build between has some.
+const NO_PART = { redirects: false, compression: false, static_files: false, cache: false } as const;
+const FROM_RELEASE = 'Upgrade it to a WAF agent newer than v2.1.1 to use this.';
+const FROM_BUILD = 'Upgrade it to a newer build of the WAF agent to use this.';
 
 describe('control plane parity', () => {
   test('every case of the compression checks gets the stored form or the refusal of the server', () => {
@@ -206,13 +217,21 @@ describe('the line under a part', () => {
   });
 
   test('an agent that is too old for the part says so, also while the part is off', () => {
-    const old = delivery({ agent: agent({}, { compression: false }) });
-    expect(partLine(base({ delivery: old, inUse: false }))).toEqual({ tone: 'warning', text: 'edge-1 is too old for compression. Upgrade it to use this.' });
-    expect(partLine(base({ delivery: delivery({ ...on, agent: agent({}, { compression: false }) }) }))?.text).toBe('edge-1 is too old for compression. Upgrade it to use this.');
-    expect(partLine(base({ delivery: old, inUse: false, part: 'redirects', label: 'the path prefix' }))).toBeNull();
-    expect(partLine(base({ delivery: delivery({ agent: agent({}, { redirects: false }) }), inUse: false, part: 'redirects', label: 'the path prefix' }))?.text).toBe(
-      'edge-1 is too old for the path prefix. Upgrade it to use this.',
+    const old = delivery({ agent: agent({}, NO_PART) });
+    expect(partLine(base({ delivery: old, inUse: false }))).toEqual({ tone: 'warning', text: `edge-1 is too old for compression. ${FROM_RELEASE}` });
+    expect(partLine(base({ delivery: delivery({ ...on, agent: agent({}, NO_PART) }) }))?.text).toBe(`edge-1 is too old for compression. ${FROM_RELEASE}`);
+    expect(partLine(base({ delivery: delivery({ agent: agent({}, { compression: true }) }), inUse: false, part: 'redirects', label: 'the path prefix' }))).toBeNull();
+    expect(partLine(base({ delivery: delivery({ agent: agent({}, NO_PART) }), inUse: false, part: 'redirects', label: 'the path prefix' }))?.text).toBe(
+      `edge-1 is too old for the path prefix. ${FROM_RELEASE}`,
     );
+  });
+
+  test('an agent that has other parts but not this one is a build from between releases and is not sent to a release number', () => {
+    const between = delivery({ agent: agent({}, { cache: false }) });
+    expect(partLine(base({ delivery: between, inUse: false, part: 'cache' }))).toEqual({ tone: 'warning', text: `edge-1 is too old for the cache. ${FROM_BUILD}` });
+    // Parts it never reported do not count as parts it has.
+    const unknown = delivery({ agent: agent({}, { redirects: null, compression: null, static_files: null, cache: false }) });
+    expect(partLine(base({ delivery: unknown, inUse: false, part: 'cache' }))?.text).toBe(`edge-1 is too old for the cache. ${FROM_RELEASE}`);
   });
 
   test('an agent that never said which parts it applies is not too old', () => {
@@ -230,9 +249,19 @@ describe('the line under a part', () => {
 
   test('after 2 minutes without an answer it says so', () => {
     const waiting = delivery({ ...on, generation: 101, status: answered() });
-    const text = 'No answer from edge-1 yet. Check that it is online.';
+    const text = 'edge-1 is online but has not confirmed the latest configuration. It may have refused it; its log says why.';
     expect(partLine(base({ delivery: waiting, waitingSince: NOW - NO_ANSWER_AFTER_MS + 1 }))?.text).toBe('Saved. Waiting for edge-1 to apply it.');
     expect(partLine(base({ delivery: waiting, waitingSince: NOW - NO_ANSWER_AFTER_MS }))).toEqual({ tone: 'warning', text });
+    expect(noAnswerText('edge-1')).toBe(text);
+  });
+
+  test('the late line does not tell an admin to check that an online agent is online', () => {
+    const waiting = delivery({ ...on, generation: 101, status: answered() });
+    const late = partLine(base({ delivery: waiting, waitingSince: NOW - 10 * MINUTE }))?.text ?? '';
+    expect(late).not.toContain('Check that it is online');
+    // An agent that is offline has its own line, never this one.
+    const offline = delivery({ ...on, generation: 101, status: answered(), agent: agent({ online: false }) });
+    expect(partLine(base({ delivery: offline, waitingSince: NOW - 10 * MINUTE }))?.text).toBe('edge-1 is offline. Saved settings apply when it reconnects.');
   });
 
   test('an offline agent says its settings apply when it reconnects, unless the panel says that elsewhere', () => {
@@ -283,11 +312,58 @@ describe('the reasons of a refusal', () => {
     expect(reason('root_missing', '/gone', '')).toBe('/gone does not exist on its host');
   });
 
+  test('a folder refused for a part of its path named like a system file says that, not that it holds system files', () => {
+    expect(reason('root_forbidden', '', '/srv/Private/site')).toBe('/srv/Private/site has a part named Private, a name the agent never serves from a folder');
+    expect(reason('root_forbidden', '/srv/network/site', '')).toBe('/srv/network/site has a part named network, a name the agent never serves from a folder');
+    // A folder the control plane refuses too keeps the old reason, and so does a path with no such part.
+    expect(reason('root_forbidden', '', '/etc/private')).toBe('/etc/private holds system or WAFio files');
+    expect(reason('root_forbidden', '', '/srv/privateer')).toBe('/srv/privateer holds system or WAFio files');
+  });
+
   test('invalid names the detail when there is one; any other code gives its detail or says there is none', () => {
     expect(reason('invalid', 'root 7')).toBe('the settings failed its own checks (root 7). Upgrade the agent');
     expect(reason('invalid')).toBe('the settings failed its own checks. Upgrade the agent');
     expect(reason('unknown', 'disk is full')).toBe('disk is full');
     expect(reason('unknown')).toBe('it gave no reason');
+  });
+});
+
+describe('the names that are never served from a folder', () => {
+  const kept = JSON.parse(readFileSync(new URL('./fixtures/backend/trace-keep-names.json', import.meta.url), 'utf8')) as Record<string, number>;
+
+  test('the dashboard knows every name of the control plane list, and no other', () => {
+    expect(KEPT_NAMES.length).toBe(66);
+    expect([...KEPT_NAMES]).toEqual(Object.keys(kept).sort());
+  });
+
+  test('the fixed line under Files names examples that are on the list', () => {
+    const examples = ['profile', 'network', 'group', 'hosts', 'security', 'private', 'credentials', 'systemd'];
+    for (const name of examples) {
+      expect(FILES_FIXED).toContain(name);
+      expect(KEPT_NAMES).toContain(name);
+    }
+    expect(FILES_FIXED).toContain('go to your application, or get Not found if you chose that');
+  });
+
+  test('a folder whose path has one of them as a whole part is found, in any case; a part that only contains one is not', () => {
+    expect(keptSegment('/var/www/private/public')).toBe('private');
+    expect(keptSegment('/srv/Profile')).toBe('Profile');
+    expect(keptSegment('/home/u/.aws/site')).toBe('.aws');
+    expect(keptSegment('/srv/privateer/profiles/cron.d2')).toBeNull();
+    expect(keptSegment('/var/www/shop/public')).toBeNull();
+    expect(keptSegment('')).toBeNull();
+  });
+
+  test('the warning names the part and says what to do', () => {
+    expect(keptFolderText('private')).toBe('The WAF agent will not use this folder: its path has a part named private, and names like that are never served. Choose a folder whose path has no such part.');
+  });
+});
+
+describe('the fixed line under Compression', () => {
+  test('says who counts as signed in and where to add a session cookie name', () => {
+    expect(COMPRESSION_FIXED).toContain('Pages for signed-in visitors are sent uncompressed');
+    expect(COMPRESSION_FIXED).toContain('Authorization header or a common session cookie');
+    expect(COMPRESSION_FIXED).toContain('under Signed-in visitors below');
   });
 });
 
@@ -326,8 +402,15 @@ describe('how often to ask', () => {
 
 describe('the texts of the refusals', () => {
   test('too old says which part and what to do', () => {
-    expect(tooOldText('edge-1', 'files from a folder')).toBe('edge-1 is too old for files from a folder. Upgrade it to use this.');
-    expect(tooOldText('', 'compression')).toBe('The WAF agent is too old for compression. Upgrade it to use this.');
+    expect(tooOldText('edge-1', 'files from a folder')).toBe(`edge-1 is too old for files from a folder. ${FROM_RELEASE}`);
+    expect(tooOldText('', 'compression')).toBe(`The WAF agent is too old for compression. ${FROM_RELEASE}`);
+    expect(tooOldText('edge-1', 'the cache', agent({}, { cache: false }).features)).toBe(`edge-1 is too old for the cache. ${FROM_BUILD}`);
+    expect(tooOldText('edge-1', 'the cache', agent({}, NO_PART).features)).toBe(`edge-1 is too old for the cache. ${FROM_RELEASE}`);
+  });
+
+  test('the release is named in one place, and it is the last release without any part', () => {
+    expect(AGENT_WITH_PARTS).toBe('newer than v2.1.1');
+    expect(FROM_RELEASE).toContain(AGENT_WITH_PARTS);
   });
 
   test('a move to an agent that cannot run the parts lists them', () => {
@@ -339,8 +422,8 @@ describe('the texts of the refusals', () => {
   });
 
   test('agentRefusalText knows the two codes and nothing else', () => {
-    expect(agentRefusalText({ code: 'AGENT_TOO_OLD', agent: 'edge-1', feature: 'static_files' })).toBe('edge-1 is too old for files from a folder. Upgrade it to use this.');
-    expect(agentRefusalText({ code: 'AGENT_TOO_OLD', agent: 'edge-1', feature: 'redirects' }, 'the path prefix')).toBe('edge-1 is too old for the path prefix. Upgrade it to use this.');
+    expect(agentRefusalText({ code: 'AGENT_TOO_OLD', agent: 'edge-1', feature: 'static_files' })).toBe(`edge-1 is too old for files from a folder. ${FROM_RELEASE}`);
+    expect(agentRefusalText({ code: 'AGENT_TOO_OLD', agent: 'edge-1', feature: 'redirects' }, 'the path prefix')).toBe(`edge-1 is too old for the path prefix. ${FROM_RELEASE}`);
     expect(agentRefusalText({ code: 'FEATURE_UNSUPPORTED', agent: 'edge-1', parts: ['cache'] })).toBe('edge-1 cannot run the cache of this application. Turn them off first, or upgrade it.');
     expect(agentRefusalText({ code: 'CONFLICT' })).toBeNull();
     expect(agentRefusalText(undefined)).toBeNull();
@@ -350,7 +433,7 @@ describe('the texts of the refusals', () => {
     expect(appWriteErrorMessage({ code: 'FEATURE_UNSUPPORTED', error: 'The WAF agent "edge-1" cannot run x', agent: 'edge-1', parts: ['compression', 'cache'] }, 'Could not save the assignment.')).toBe(
       'edge-1 cannot run compression and the cache of this application. Turn them off first, or upgrade it.',
     );
-    expect(appWriteErrorMessage({ code: 'AGENT_TOO_OLD', error: 'x', agent: 'edge-1', feature: 'redirects' }, 'Could not save the routing.')).toBe('edge-1 is too old for the path prefix. Upgrade it to use this.');
+    expect(appWriteErrorMessage({ code: 'AGENT_TOO_OLD', error: 'x', agent: 'edge-1', feature: 'redirects' }, 'Could not save the routing.')).toBe(`edge-1 is too old for the path prefix. ${FROM_RELEASE}`);
     expect(appWriteErrorMessage({ code: 'BUNDLE_TOO_LARGE', error: 'The configuration is too large.' }, 'Could not save.')).toBe('The configuration is too large.');
   });
 
@@ -360,7 +443,7 @@ describe('the texts of the refusals', () => {
     expect(refuse({ code: 'INVALID_DELIVERY_SETTINGS', field: 'min_bytes', error: BYTES_MESSAGE })).toEqual({ kind: 'field', field: 'min_bytes', message: BYTES_MESSAGE });
     expect(refuse({ code: 'INVALID_DELIVERY_SETTINGS', field: 'min_bytes', error: `min_bytes: ${BYTES_MESSAGE}` }).message).toBe(BYTES_MESSAGE);
     expect(refuse({ code: 'INVALID_DELIVERY_SETTINGS', field: 'rules[0].prefix', error: 'Enter a path.' })).toEqual({ kind: 'save', message: 'Enter a path.' });
-    expect(refuse({ code: 'AGENT_TOO_OLD', agent: 'edge-1', feature: 'compression' })).toEqual({ kind: 'too-old', message: 'edge-1 is too old for compression. Upgrade it to use this.' });
+    expect(refuse({ code: 'AGENT_TOO_OLD', agent: 'edge-1', feature: 'compression' })).toEqual({ kind: 'too-old', message: `edge-1 is too old for compression. ${FROM_RELEASE}` });
     expect(refuse({ code: 'BUNDLE_TOO_LARGE', error: 'Too large.' })).toEqual({ kind: 'save', message: 'Too large.' });
     expect(classifySpeedRefusal({ error: '', kind: 'network' } as ApiError, fields, 'compression', 'Could not save compression.')).toEqual({ kind: 'save', message: 'Could not save compression.' });
   });

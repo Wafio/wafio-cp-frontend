@@ -8,7 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { AppCache, AppCachePurge, AppCacheStats, AppDelivery } from '../src/lib/api';
 import type { DeliveryFeed } from '../src/lib/components/apps/delivery-feed.svelte';
-import { CACHE_FIXED, CACHE_LEAD, CACHE_OFF_TEXT, CACHE_SWITCH_HINT, COOKIES_HINT, NO_AGENT_TEXT, RULES_EMPTY, RULES_LEAD } from '../src/lib/components/apps/cache';
+import { CACHE_FIXED, CACHE_LEAD, CACHE_OFF_TEXT, CACHE_SWITCH_HINT, COOKIES_IN_CACHE, NO_AGENT_TEXT, RULES_EMPTY, RULES_LEAD } from '../src/lib/components/apps/cache';
 import { VIEWER_TEXT } from '../src/lib/components/apps/speed';
 import { renderComponent } from './support/ssr';
 import { MINUTE, NOW, agent, delivery, feature, status } from './support/delivery-fixtures';
@@ -110,10 +110,10 @@ describe('Cache section, every part off, with an agent that knows it', () => {
     expect(section).toContain("The most this application's copies may use on disk. When it is full, WAFio removes the least used copies first.");
     expect(section).toContain("Small copies asked for often are also kept in the agent's memory. 0 keeps them on disk only.");
     expect(section).toContain('Bigger answers always come from your application.');
-    expect(section).toContain('Session cookie names');
-    expect(section).toContain(COOKIES_HINT);
-    expect(COOKIES_HINT.startsWith('One name a line. ')).toBe(true);
-    expect(section).toContain('placeholder="shop_session"');
+    // The session cookie names are not here: compression uses them too, so they sit beside it.
+    expect(section).not.toContain('Session cookie names');
+    expect(section).not.toContain('<textarea');
+    expect(section).toContain(COOKIES_IN_CACHE);
   });
 
   test('shows the line about X-Cache, a Save that waits for a change, and no numbers or reasons while it is off', async () => {
@@ -147,7 +147,8 @@ describe('Cache section, what is saved is shown', () => {
     expect(section).toContain('value="2 GiB"');
     expect(section).toContain('value="0"');
     expect(section).toContain('value="4 MiB"');
-    expect(section).toContain('shop_session\ncart_id');
+    // The names stay in the settings the cache sends back, and show in the part that edits them.
+    expect(part(html, '>Signed-in visitors</h3>', '>Files from a folder</h3>')).toContain('shop_session\ncart_id');
   });
 
   test('stored path rules show each path, what it does, the time and the signed-in case', async () => {
@@ -280,17 +281,18 @@ describe('Cache section, the numbers and why answers were not kept', () => {
 
 describe('Cache section, an agent that is too old', () => {
   const old = (over: Partial<AppDelivery> = {}) => delivery({ agent: agent({}, { cache: false }), ...over });
+  const FROM_BUILD = 'Upgrade it to a newer build of the WAF agent to use this.';
 
   test('a cache that is off cannot be switched on, and says which part and what to do', async () => {
     const section = cache(await render(old()));
-    expect(section).toContain('edge-1 is too old for the cache. Upgrade it to use this.');
+    expect(section).toContain(`edge-1 is too old for the cache. ${FROM_BUILD}`);
     expect(switches(section)[0]).toContain('disabled');
     expect(disabledFieldset(section)).toBe(true);
   });
 
   test('a cache that is on can still be turned off', async () => {
     const section = cache(await render(old({ cache: ON })));
-    expect(section).toContain('edge-1 is too old for the cache. Upgrade it to use this.');
+    expect(section).toContain(`edge-1 is too old for the cache. ${FROM_BUILD}`);
     expect(switches(section)[0]).toContain('aria-checked="true"');
     expect(switches(section)[0]).not.toContain('disabled');
     expect(section).not.toContain('Waiting for');
@@ -298,7 +300,7 @@ describe('Cache section, an agent that is too old', () => {
 
   test('stored copies cannot be removed from it', async () => {
     const html = await render(old({ cache: ON }));
-    expect(removal(html)).toContain('edge-1 is too old for the cache. Upgrade it to use this.');
+    expect(removal(html)).toContain(`edge-1 is too old for the cache. ${FROM_BUILD}`);
     expect(disabledFieldset(removal(html))).toBe(true);
   });
 
@@ -306,6 +308,13 @@ describe('Cache section, an agent that is too old', () => {
     const section = cache(await render(delivery({ agent: agent({}, { cache: null }) })));
     expect(section).not.toContain('too old');
     expect(switches(section)[0]).not.toContain('disabled');
+  });
+});
+
+describe('Cache section, an agent from a release before every part', () => {
+  test('is sent to the release that brings the cache', async () => {
+    const none = delivery({ agent: agent({}, { redirects: false, compression: false, static_files: false, cache: false }) });
+    expect(cache(await render(none))).toContain('edge-1 is too old for the cache. Upgrade it to a WAF agent newer than v2.1.1 to use this.');
   });
 });
 
@@ -380,9 +389,10 @@ describe('Cache section, removing stored copies', () => {
     expect(block).toContain('edge-1 is offline. The copies go when it reconnects; until then it may still send them.');
   });
 
-  test('a removal that waited past 2 minutes says there is no answer, as a warning, and not that the agent confirms in seconds', async () => {
+  test('a removal that waited past 2 minutes says the online agent has not confirmed it, as a warning, and not that the agent confirms in seconds', async () => {
     const block = removal(await render(cacheOn({}, { purges: [purge({ created_at: new Date(NOW - 3 * MINUTE).toISOString() })] })));
-    expect(block).toContain('No answer from edge-1 yet. Check that it is online.');
+    expect(block).toContain('edge-1 is online but has not confirmed the removal. Its log may say why.');
+    expect(block).not.toContain('Check that it is online');
     expect(block).not.toContain('confirms within a few seconds');
     expect(block).toMatch(/ui-alert tone-warning[^"]*"/);
   });
