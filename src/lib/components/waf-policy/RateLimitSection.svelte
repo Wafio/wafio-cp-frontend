@@ -3,9 +3,11 @@
   flood limit (l7_flood). Both key clients by the same key fields.
 -->
 <script lang="ts">
+  import Alert from '#lib/components/ui/Alert.svelte';
   import Field from '#lib/components/ui/Field.svelte';
   import { formatDuration } from '#lib/format.js';
   import { KEY_FIELDS } from '#lib/validation.js';
+  import ChoiceGroup from './ChoiceGroup.svelte';
   import PolicySection from './PolicySection.svelte';
   import Switch from '#lib/components/ui/Switch.svelte';
   import { fieldId } from './validate';
@@ -15,6 +17,10 @@
 
   const bp = $derived(form.draft.blockPolicy);
   const flood = $derived(form.draft.flood);
+  const TARGETS = [
+    { value: 'waf', label: 'WAFio only', description: 'The client gets 403 from WAFio on this application until the block ends. Its other traffic to the server, SSH included, is untouched.' },
+    { value: 'kernel', label: 'WAFio and the server firewall', description: "The host agent also drops every packet from the client's address, on every port, SSH included, until the block ends. Needs the host agent on the same server. Behind a CDN or a load balancer on another machine only the WAFio block applies." }
+  ];
   const KEY_HINT = `Comma-separated: ${KEY_FIELDS.join(', ')}, or header:Header-Name.`;
   const duration = (seconds: number | null) => (typeof seconds === 'number' && seconds > 0 ? formatDuration(seconds, 's') : '');
 </script>
@@ -35,6 +41,14 @@
       {#snippet children(c)}<input {...c} type="text" spellcheck="false" placeholder="remote_addr, user_agent" bind:value={form.draft.blockPolicy.keyFields} disabled={readonly} />{/snippet}
     </Field>
   </div>
+  <div class="wp-gap-top">
+    <ChoiceGroup legend="Where the block applies" name="wp-block-target" options={TARGETS} bind:value={form.draft.blockPolicy.target} error={form.error('blockPolicy.target')} disabled={readonly || !bp.enabled} columns={2} />
+  </div>
+  {#if bp.target === 'kernel'}
+    <div class="wp-gap-top">
+      <Alert tone="warning" compact>Test attacks from an address you do not use to manage the server: a blocked address loses SSH until the block ends.</Alert>
+    </div>
+  {/if}
 
   <h4 class="wp-subhead">HTTP flood</h4>
   <Switch bind:checked={form.draft.flood.enabled} id={fieldId('flood.enabled')} disabled={readonly}
