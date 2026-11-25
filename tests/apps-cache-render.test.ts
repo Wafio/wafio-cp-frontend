@@ -331,7 +331,7 @@ describe('Cache section, an agent that is too old', () => {
 describe('Cache section, an agent from a release before every part', () => {
   test('is sent to the release that brings the cache', async () => {
     const none = delivery({ agent: agent({}, { redirects: false, compression: false, static_files: false, cache: false }) });
-    expect(cache(await render(none))).toContain('edge-1 is too old for the cache. Upgrade it to a WAF agent newer than v2.1.1 to use this.');
+    expect(cache(await render(none))).toContain('edge-1 is too old for the cache. Upgrade it to a WAF agent v2.2.0 or newer to use this.');
   });
 });
 

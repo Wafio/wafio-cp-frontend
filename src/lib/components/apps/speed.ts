@@ -214,10 +214,9 @@ export const PART_LABEL: Record<EdgePart, string> = {
 const agentName = (agent: string): string => agent || 'The WAF agent';
 
 /**
- * Which WAF agent has the parts of the Speed tab. Every release up to v2.1.1 lacks them all; the release that brings
- * them replaces this phrase with its own number ('v2.2.0 or newer').
+ * Which WAF agent has the parts of the Speed tab: v2.2.0 brought them, every release up to v2.1.1 lacks them all.
  */
-export const AGENT_WITH_PARTS = 'newer than v2.1.1';
+export const AGENT_WITH_PARTS = 'v2.2.0 or newer';
 
 /**
  * The agent said Hello without the part. One that already has another part is a build from between the releases, so

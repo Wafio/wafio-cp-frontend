@@ -1553,7 +1553,7 @@ describe('main host name', () => {
     });
     expect(classifyTLSRefusal({ error: 'x', code: 'AGENT_TOO_OLD', agent: 'edge-1', feature: 'redirects' }, 'edge-1')).toEqual({
       kind: 'too-old',
-      message: 'edge-1 is too old for the main host name. Upgrade it to a WAF agent newer than v2.1.1 to use this.',
+      message: 'edge-1 is too old for the main host name. Upgrade it to a WAF agent v2.2.0 or newer to use this.',
     });
   });
 });

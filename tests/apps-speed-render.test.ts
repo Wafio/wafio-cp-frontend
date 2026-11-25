@@ -38,7 +38,7 @@ const COMPRESSION_ON = { compression: { enabled: true, min_bytes: 1024 } };
 const FILES_ON = { static_files: { enabled: true, root: '/var/www/shop/public', missing: 'app' as const, max_age_s: 3600 } };
 const answered = (over = {}) => status({ compression: feature('compression'), static_files: feature('static_files'), ...over });
 const NO_PART = { redirects: false, compression: false, static_files: false, cache: false };
-const FROM_RELEASE = 'Upgrade it to a WAF agent newer than v2.1.1 to use this.';
+const FROM_RELEASE = 'Upgrade it to a WAF agent v2.2.0 or newer to use this.';
 const FROM_BUILD = 'Upgrade it to a newer build of the WAF agent to use this.';
 
 /** The part of the page between two headings. */
@@ -296,7 +296,7 @@ describe('Speed tab, an agent that is too old', () => {
   test('a build from between releases, with the folder but not the cache, is sent to a newer build and not to a release', async () => {
     const html = await render(old({ cache: false }));
     expect(part(html, '>Cache</h3>')).toContain(`edge-1 is too old for the cache. ${FROM_BUILD}`);
-    expect(part(html, '>Cache</h3>')).not.toContain('v2.1.1');
+    expect(part(html, '>Cache</h3>')).not.toContain('v2.2.0');
     expect(compression(html)).not.toContain('too old');
     expect(files(html)).not.toContain('too old');
   });

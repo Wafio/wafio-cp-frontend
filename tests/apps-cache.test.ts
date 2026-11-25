@@ -293,7 +293,7 @@ describe('a refused save', () => {
   test('an agent that is too old is said as that, and one that cannot run the part is said above the buttons', () => {
     expect(classifyCacheRefusal(refused({ status: 409, code: 'AGENT_TOO_OLD', agent: 'edge-1', feature: 'cache' }))).toEqual({
       kind: 'too-old',
-      message: 'edge-1 is too old for the cache. Upgrade it to a WAF agent newer than v2.1.1 to use this.',
+      message: 'edge-1 is too old for the cache. Upgrade it to a WAF agent v2.2.0 or newer to use this.',
     });
     expect(classifyCacheRefusal(refused({ status: 409, code: 'FEATURE_UNSUPPORTED', agent: 'edge-1', parts: ['compression', 'cache'] }))).toEqual({
       kind: 'save',
@@ -356,7 +356,7 @@ describe('removals', () => {
     expect(removalBlockedText({ ...on, agent: null })).toBe(NO_AGENT_TEXT);
     expect(removalBlockedText({ ...on, agent: agent({}, { cache: false }) })).toBe('edge-1 is too old for the cache. Upgrade it to a newer build of the WAF agent to use this.');
     expect(removalBlockedText({ ...on, agent: agent({}, { redirects: false, compression: false, static_files: false, cache: false }) })).toBe(
-      'edge-1 is too old for the cache. Upgrade it to a WAF agent newer than v2.1.1 to use this.',
+      'edge-1 is too old for the cache. Upgrade it to a WAF agent v2.2.0 or newer to use this.',
     );
     expect(removalBlockedText({ ...on, agent: agent({}, { cache: null }) })).toBeNull();
   });

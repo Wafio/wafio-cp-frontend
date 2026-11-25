@@ -63,7 +63,7 @@ const NON_ASCII = /[^\u0000-\u007f]/;
 
 // An agent from a release before the parts says Hello without any of them; one from a build between has some.
 const NO_PART = { redirects: false, compression: false, static_files: false, cache: false } as const;
-const FROM_RELEASE = 'Upgrade it to a WAF agent newer than v2.1.1 to use this.';
+const FROM_RELEASE = 'Upgrade it to a WAF agent v2.2.0 or newer to use this.';
 const FROM_BUILD = 'Upgrade it to a newer build of the WAF agent to use this.';
 
 describe('control plane parity', () => {
@@ -488,7 +488,7 @@ describe('the texts of the refusals', () => {
   });
 
   test('the release is named in one place, and it is the last release without any part', () => {
-    expect(AGENT_WITH_PARTS).toBe('newer than v2.1.1');
+    expect(AGENT_WITH_PARTS).toBe('v2.2.0 or newer');
     expect(FROM_RELEASE).toContain(AGENT_WITH_PARTS);
   });
 
