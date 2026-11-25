@@ -179,6 +179,36 @@
       }
     },
     {
+      "name": "a name that only holds a kept one",
+      "in": {
+        "enabled": true,
+        "root": "/var/www/my-private/privates",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "result": {
+        "enabled": true,
+        "root": "/var/www/my-private/privates",
+        "missing": "app",
+        "max_age_s": 0
+      }
+    },
+    {
+      "name": "a kept name under /home is the agent's to refuse",
+      "in": {
+        "enabled": true,
+        "root": "/home/deploy/private/site",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "result": {
+        "enabled": true,
+        "root": "/home/deploy/private/site",
+        "missing": "app",
+        "max_age_s": 0
+      }
+    },
+    {
       "name": "365 days",
       "in": {
         "enabled": false,
@@ -302,6 +332,94 @@
       },
       "field": "root",
       "message": "Enter a full path that starts with /, such as /var/www/shop/public, without . or .. parts."
+    },
+    {
+      "name": "the root folder",
+      "in": {
+        "enabled": true,
+        "root": "/",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "This folder holds system or WAFio files. Choose the folder of your site's files."
+    },
+    {
+      "name": "a system folder",
+      "in": {
+        "enabled": true,
+        "root": "/etc/nginx/html",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "This folder holds system or WAFio files. Choose the folder of your site's files."
+    },
+    {
+      "name": "a folder above a system folder",
+      "in": {
+        "enabled": true,
+        "root": "/var/lib",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "This folder holds system or WAFio files. Choose the folder of your site's files."
+    },
+    {
+      "name": "a kept name in the folder",
+      "in": {
+        "enabled": true,
+        "root": "/srv/private/site",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "This folder holds system or WAFio files. Choose the folder of your site's files."
+    },
+    {
+      "name": "a kept name as the last segment",
+      "in": {
+        "enabled": true,
+        "root": "/var/www/network",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "This folder holds system or WAFio files. Choose the folder of your site's files."
+    },
+    {
+      "name": "a kept name in any case",
+      "in": {
+        "enabled": true,
+        "root": "/var/www/Network/public",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "This folder holds system or WAFio files. Choose the folder of your site's files."
+    },
+    {
+      "name": "a kept name that starts with a dot",
+      "in": {
+        "enabled": true,
+        "root": "/srv/.aws/site",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "This folder holds system or WAFio files. Choose the folder of your site's files."
+    },
+    {
+      "name": "a kept name while off",
+      "in": {
+        "enabled": false,
+        "root": "/srv/private/site",
+        "missing": "",
+        "max_age_s": 0
+      },
+      "field": "root",
+      "message": "This folder holds system or WAFio files. Choose the folder of your site's files."
     },
     {
       "name": "missing is one of two values",

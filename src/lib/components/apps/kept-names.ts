@@ -2,7 +2,8 @@
  * The path names the WAF agent never serves from a folder: a request with a part of that name is not answered from
  * the folder, and a folder with such a part in its path is refused. They are the names the host agent always reports
  * when a file of that name is opened (system files and folders such as shadow, private, profile or network).
- * A copy of tests/fixtures/backend/trace-keep-names.json, which a test compares; lower case, matched in any case.
+ * A copy of tests/fixtures/backend/trace-keep-names.json, which a test compares; lower case, matched in any case
+ * (the letters A to Z only, as the control plane and the agent do).
  */
 export const KEPT_NAMES: readonly string[] = [
   '.aws', '.azure', '.bash_login', '.bash_profile', '.bashrc', '.docker', '.profile', '.zprofile', '.zshenv',
@@ -18,7 +19,10 @@ export const KEPT_NAMES: readonly string[] = [
 
 const KEPT = new Set(KEPT_NAMES);
 
+// toLowerCase would also fold the Kelvin sign into k and find names the control plane and the agent do not.
+const lowerAscii = (value: string): string => value.replace(/[A-Z]/g, (c) => c.toLowerCase());
+
 /** The first part of the folder path that is one of these names, as written, or null. */
 export function keptSegment(root: string): string | null {
-  return root.split('/').find((segment) => KEPT.has(segment.toLowerCase())) ?? null;
+  return root.split('/').find((segment) => KEPT.has(lowerAscii(segment))) ?? null;
 }

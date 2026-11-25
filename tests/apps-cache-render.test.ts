@@ -8,7 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { AppCache, AppCachePurge, AppCacheStats, AppDelivery } from '../src/lib/api';
 import type { DeliveryFeed } from '../src/lib/components/apps/delivery-feed.svelte';
-import { CACHE_FIXED, CACHE_LEAD, CACHE_OFF_TEXT, CACHE_SWITCH_HINT, COOKIES_IN_CACHE, NO_AGENT_TEXT, RULES_EMPTY, RULES_LEAD } from '../src/lib/components/apps/cache';
+import { CACHE_FIXED, CACHE_LEAD, CACHE_OFF_TEXT, CACHE_SWITCH_HINT, COOKIES_IN_CACHE, FOLDER_NOT_COUNTED, NO_AGENT_TEXT, RULES_COOKIES, RULES_EMPTY, RULES_LEAD, RULE_SIGNED_IN_HINT } from '../src/lib/components/apps/cache';
 import { VIEWER_TEXT } from '../src/lib/components/apps/speed';
 import { renderComponent } from './support/ssr';
 import { MINUTE, NOW, agent, delivery, feature, status } from './support/delivery-fixtures';
@@ -67,8 +67,9 @@ describe('Cache section, every part off, with an agent that knows it', () => {
     expect(section).toContain('Keep copies of answers');
     expect(section).toContain(CACHE_SWITCH_HINT);
     expect(CACHE_SWITCH_HINT).toBe(
-      'WAFio checks every request first, so a blocked request never gets a copy. It never keeps answers that set cookies, or that your application marks private or no-store. For visitors who send cookies it keeps only answers marked public, and files and paths you add a rule for. Signed-in visitors need a rule.'
+      'WAFio checks every request first, so a blocked request never gets a copy. It never keeps answers that set cookies, or that your application marks private or no-store. A signed-in visitor always gets a fresh answer from your application, never a stored copy. For a visitor who sends some other cookie, such as an analytics cookie, WAFio keeps an answer only when your application marks it public (Cache-Control: public or s-maxage) or it is an image, font, video, sound, style or script file.'
     );
+    expect(section).not.toContain('Signed-in visitors need a rule');
     expect(switches(section)).toHaveLength(1);
     expect(switches(section)[0]).toContain('aria-checked="false"');
     expect(switches(section)[0]).not.toContain('disabled');
@@ -90,6 +91,7 @@ describe('Cache section, every part off, with an agent that knows it', () => {
     const section = cache(await render(delivery()));
     expect(section).toContain('Path rules');
     expect(section).toContain(RULES_LEAD);
+    expect(section).toContain(RULES_COOKIES);
     expect(section).toContain(RULES_EMPTY);
     expect(RULES_EMPTY).toBe('No path rules: every path follows the settings above.');
     expect(section).toContain('Add a path rule');
@@ -171,8 +173,11 @@ describe('Cache section, what is saved is shown', () => {
     expect((section.match(/Never keep/g) ?? []).length).toBe(1);
     // A rule that never keeps has no time and no signed-in case to set.
     expect((section.match(/>Keep for\s*<\/label>/g) ?? []).length).toBe(2);
-    expect((section.match(/Also for signed-in visitors/g) ?? []).length).toBe(2);
-    expect(section).toContain('Only for paths that show the same page to everyone.');
+    expect((section.replace(RULES_COOKIES, '').match(/Also for signed-in visitors/g) ?? []).length).toBe(2);
+    expect(section).toContain(RULE_SIGNED_IN_HINT);
+    expect(section).not.toContain('Only for paths that show the same page to everyone.');
+    // The sentence about cookies stands once, above the rules, not once a rule.
+    expect((section.match(/A rule shares its copies between all visitors\./g) ?? []).length).toBe(1);
     expect((section.match(/type="checkbox"[^>]*checked|checked[^>]*type="checkbox"/g) ?? []).length).toBe(1);
     expect(section).toContain('3 of 50 rules');
     expect((section.match(/Delete rule/g) ?? []).length).toBeGreaterThanOrEqual(3);
@@ -272,10 +277,22 @@ describe('Cache section, the numbers and why answers were not kept', () => {
       )
     );
     expect(section).toContain('Most answers do not say how long they may be kept, so WAFio did not keep them (200). Add a path rule, or have your application send Cache-Control: public, max-age=600.');
-    expect(section).toContain('Not kept because they were private or for a signed-in visitor: 6.');
+    expect(section).toContain('Not kept because the answer was private, or the visitor sent a cookie and the answer was not marked public: 6.');
+    expect(section).not.toContain('private or for a signed-in visitor');
     expect(section).toContain('Not kept because your application sent them in pieces, without a size: 3.');
     expect(section).toContain('Not kept because they were over 8 MiB: 2.');
-    expect(section).toContain('Not checked against the cache (the request had a body, or its rule only logs or monitors): 40.');
+    expect(section).toContain(
+      'Not checked against the cache (a signed-in visitor, a request with a body or a method other than GET and HEAD, a path under a "Never keep" rule, or a request that WAFio only logs or monitors): 40.'
+    );
+    expect(section).not.toContain('the request had a body, or its rule only logs');
+  });
+
+  test('says the folder is not in the numbers when files come from a folder, and nothing about it otherwise', async () => {
+    const folder = { enabled: true, root: '/var/www/shop/public', missing: 'app' as const, max_age_s: 0 };
+    expect(cache(await render(cacheOn({}, { cache_stats: stats(), static_files: folder })))).toContain(FOLDER_NOT_COUNTED);
+    expect(cache(await render(cacheOn({}, { cache_stats: stats() })))).not.toContain(FOLDER_NOT_COUNTED);
+    // No numbers, no note under them.
+    expect(cache(await render(cacheOn({}, { static_files: folder })))).not.toContain(FOLDER_NOT_COUNTED);
   });
 });
 

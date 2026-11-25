@@ -20,7 +20,6 @@
   import PartStatus from './PartStatus.svelte';
   import SignedInCookies from './SignedInCookies.svelte';
   import type { DeliveryFeed } from './delivery-feed.svelte.js';
-  import { keptSegment } from './kept-names';
   import { mergeEdits } from './tls';
   import {
     COMPRESSION_FIXED,
@@ -34,7 +33,7 @@
     compressionForm,
     compressionInput,
     compressionNumbers,
-    keptFolderText,
+    folderNotes,
     loadErrorText,
     normalizeCompression,
     normalizeStaticFiles,
@@ -162,8 +161,8 @@
   const numbers = $derived(storedCompression.enabled ? compressionNumbers(delivery?.compression_stats ?? null) : []);
   const noNumbers = $derived(storedCompression.enabled && numbers.length === 0 && compressionLine?.tone === 'success');
   const whoseHost = $derived(agentName ? `${agentName}'s host` : "the WAF agent's host");
-  // The agent refuses a folder whose path passes a name it never serves (the control plane does not), so the person hears it before saving.
-  const keptName = $derived(keptSegment(files.root.trim()));
+  // A folder whose path passes a name the agent never serves is refused by the check outside /home; the note says which name, and is the only word for a folder under /home.
+  const folderNote = $derived(folderNotes(files.root, rootError));
 
   // ── Saving ──────────────────────────────────────────────────────────────
   function touch(field: CompressionField | StaticFilesField) {
@@ -340,7 +339,7 @@
         <div onfocusout={() => touch('root')}>
           <Field
             label="Folder"
-            error={rootError}
+            error={folderNote.error}
             hint={`The full path on ${whoseHost}. The user wafio must be able to read it; folders under /home are hidden from the agent.`}
           >
             {#snippet children(c)}
@@ -348,8 +347,8 @@
             {/snippet}
           </Field>
         </div>
-        {#if keptName}
-          <Alert compact tone="warning" message={keptFolderText(keptName)} />
+        {#if folderNote.warning}
+          <Alert compact tone="warning" message={folderNote.warning} />
         {/if}
         <ChoiceGroup legend="When a file is not in the folder" name="{uid}-missing" options={missingOptions} bind:value={files.missing} columns={2} disabled={readonly || filesOld} error={missingError} />
         <p class="sp-fixed">{FILES_FIXED}</p>

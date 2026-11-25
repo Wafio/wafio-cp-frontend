@@ -23,10 +23,12 @@
     CACHE_LIMITS,
     CACHE_SWITCH_HINT,
     COOKIES_IN_CACHE,
+    FOLDER_NOT_COUNTED,
     PURGE_APP_CONFIRM_BODY,
     REMOVE_EMPTY,
     REMOVE_HINT_PREFIX,
     REMOVE_HINT_URL,
+    RULES_COOKIES,
     RULES_EMPTY,
     RULES_LEAD,
     RULE_SIGNED_IN_HINT,
@@ -169,6 +171,8 @@
   const numbers = $derived(stored.enabled ? cacheNumbers(delivery?.cache_stats ?? null, limits) : []);
   const skips = $derived(stored.enabled ? cacheSkipLines(delivery?.cache_stats ?? null, limits) : []);
   const noNumbers = $derived(stored.enabled && numbers.length === 0 && line?.tone === 'success');
+  // The folder's answers carry X-Cache: BYPASS but are no part of the agent's counts: say so where the counts are read.
+  const folderOn = $derived(delivery?.static_files.enabled === true);
   const note = $derived(busy ? 'Saving…' : formDirty ? 'Unsaved changes' : '');
 
   // ── Rules ───────────────────────────────────────────────────────────────
@@ -357,9 +361,10 @@
       </Field>
     </div>
 
-    <fieldset class="cs-rules" bind:this={rulesEl} aria-describedby="{uid}-rules-lead">
+    <fieldset class="cs-rules" bind:this={rulesEl} aria-describedby="{uid}-rules-lead {uid}-rules-cookies">
       <legend>Path rules</legend>
       <p class="cs-note" id="{uid}-rules-lead">{RULES_LEAD}</p>
+      <p class="cs-note" id="{uid}-rules-cookies">{RULES_COOKIES}</p>
       {#if form.rules.length === 0}
         <p class="cs-note">{RULES_EMPTY}</p>
       {:else}
@@ -442,6 +447,7 @@
   {#if numbers.length > 0}
     <div class="cs-numbers" aria-live="polite">
       {#each numbers as text (text)}<p>{text}</p>{/each}
+      {#if folderOn}<p class="cs-numbers-note">{FOLDER_NOT_COUNTED}</p>{/if}
     </div>
   {:else if noNumbers}
     <p class="cs-numbers">No numbers from {agentName} yet.</p>
@@ -588,6 +594,7 @@
   .cs :global(.part-status:empty) { margin-top: calc(var(--sp-3) * -1); }
   .cs-numbers { display: flex; flex-direction: column; gap: var(--sp-1); margin: 0; font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.5; }
   .cs-numbers p { margin: 0; }
+  .cs-numbers .cs-numbers-note { color: var(--text-muted); }
   .cs-skips { margin: 0; padding-left: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.5; max-width: 70ch; }
   .cs-confirm { margin: 0; color: var(--text-secondary); line-height: 1.5; }
 
