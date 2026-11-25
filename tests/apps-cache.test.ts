@@ -216,7 +216,7 @@ describe('which saves ask first', () => {
     });
     expect(cacheConfirmText({ kind: 'cache-signed-in', prefix: '/docs' })).toEqual({
       title: 'Keep copies for signed-in visitors under /docs?',
-      body: 'Under this path, visitors who are signed in, and visitors who send other cookies, are then answered from stored copies and add to them, and everyone gets the same copy. If these pages show a name, a cart or an account, other people see it.',
+      body: 'Under this path, visitors who are signed in are then answered from stored copies too, and answers made for them and for visitors with other cookies are kept as well. Everyone gets the same copy. If these pages show a name, a cart or an account, other people see it.',
       confirmLabel: 'Keep for signed-in visitors',
       tone: 'danger',
       requireText: '/docs',
@@ -626,7 +626,7 @@ describe('the numbers in words', () => {
 });
 
 describe('the texts about signed-in visitors, session cookies and path rules', () => {
-  const OLD = ['Signed-in visitors need a rule', 'unless a path rule says so', 'it keeps only answers marked public, and files and paths you add a rule for', 'Only for paths that show the same page to everyone.'];
+  const OLD = ['On its own it does not cover visitors with cookies', 'Signed-in visitors need a rule', 'unless a path rule says so', 'it keeps only answers marked public, and files and paths you add a rule for', 'Only for paths that show the same page to everyone.'];
   const texts = { CACHE_SWITCH_HINT, COOKIES_LEAD, COOKIES_HINT, RULES_COOKIES, RULE_SIGNED_IN_HINT };
 
   test('say that a signed-in visitor skips the cache and only a rule with "Also for signed-in visitors" changes that', () => {
@@ -645,16 +645,21 @@ describe('the texts about signed-in visitors, session cookies and path rules', (
     expect(CACHE_SWITCH_HINT).toContain('Cache-Control: public or s-maxage');
   });
 
-  test('say next to the rule form that a rule alone does not cover visitors with cookies', () => {
-    expect(RULES_COOKIES.startsWith('A rule shares its copies between all visitors.')).toBe(true);
-    expect(RULES_COOKIES).toContain('On its own it does not cover visitors with cookies');
-    expect(RULES_COOKIES).toContain('Only "Also for signed-in visitors" covers both on that path.');
-    expect(RULE_SIGNED_IN_HINT).toContain('Also covers visitors who are signed in or send other cookies.');
+  test('say next to the rule form what a rule does for visitors with cookies', () => {
+    expect(RULES_COOKIES).toContain('A rule sends its copies to every visitor who is not signed in, with cookies or without.');
+    expect(RULES_COOKIES).toContain('"Also for signed-in visitors" lifts both limits on that path.');
+    expect(RULE_SIGNED_IN_HINT).toContain('Signed-in visitors get stored copies too');
     expect(RULE_SIGNED_IN_HINT).toContain('Only tick it for paths that show the same page to everyone.');
   });
 
+  test('say that a visitor with another cookie still gets the stored copies, as only what is kept is limited', () => {
+    expect(CACHE_SWITCH_HINT).toContain('gets the same stored copies as everyone');
+    expect(COOKIES_LEAD).toContain('they get stored copies like everyone');
+    expect(CACHE_SWITCH_HINT).toContain('unless a path rule has "Also for signed-in visitors"');
+  });
+
   test('tell the admin that a session cookie WAFio does not know counts as an ordinary one', () => {
-    expect(COOKIES_HINT).toContain('a session cookie that WAFio does not know counts as an ordinary cookie, so its visitor is not recognised as signed in');
+    expect(COOKIES_HINT).toContain('a session cookie that WAFio does not know counts as an ordinary cookie, so its visitor is not recognised as signed in and gets the same stored pages as everyone');
   });
 
   test('keep none of the phrases of the old rule', () => {

@@ -420,7 +420,7 @@ export function cacheConfirmText(step: CacheConfirm): ConfirmText {
     case 'cache-signed-in':
       return {
         title: `Keep copies for signed-in visitors under ${step.prefix}?`,
-        body: 'Under this path, visitors who are signed in, and visitors who send other cookies, are then answered from stored copies and add to them, and everyone gets the same copy. If these pages show a name, a cart or an account, other people see it.',
+        body: 'Under this path, visitors who are signed in are then answered from stored copies too, and answers made for them and for visitors with other cookies are kept as well. Everyone gets the same copy. If these pages show a name, a cart or an account, other people see it.',
         confirmLabel: 'Keep for signed-in visitors',
         tone: 'danger',
         requireText: step.prefix,
@@ -435,20 +435,20 @@ export const PURGE_APP_CONFIRM_BODY = 'The next requests go to your application 
 
 export const CACHE_LEAD = 'Pages and files that are the same for every visitor are kept for a while and sent at once, without waiting for your application.';
 export const CACHE_SWITCH_HINT =
-  'WAFio checks every request first, so a blocked request never gets a copy. It never keeps answers that set cookies, or that your application marks private or no-store. A signed-in visitor always gets a fresh answer from your application, never a stored copy. For a visitor who sends some other cookie, such as an analytics cookie, WAFio keeps an answer only when your application marks it public (Cache-Control: public or s-maxage) or it is an image, font, video, sound, style or script file.';
+  'WAFio checks every request first, so a blocked request never gets a copy. It never keeps answers that set cookies, or that your application marks private or no-store. A signed-in visitor always gets a fresh answer from your application, never a stored copy, unless a path rule has "Also for signed-in visitors". A visitor who sends some other cookie, such as an analytics cookie, gets the same stored copies as everyone, but WAFio keeps an answer made for them only when your application marks it public (Cache-Control: public or s-maxage) or it is an image, font, video, sound, style or script file.';
 export const CACHE_FIXED = "Each answer carries X-Cache: HIT, MISS, BYPASS or STALE, which your browser's developer tools show.";
 /** Shown with the numbers while files come from a folder: they carry BYPASS too, but the agent leaves them out of the counts. */
 export const FOLDER_NOT_COUNTED = 'Files that WAFio serves from your folder carry X-Cache: BYPASS too, but they are not counted in these numbers.';
 export const RULES_LEAD = 'A rule applies to every path that starts with the text you enter. When several match, the longest one wins.';
 export const RULES_COOKIES =
-  'A rule shares its copies between all visitors. On its own it does not cover visitors with cookies: a signed-in visitor still gets a fresh answer from your application, and for a visitor who sends another kind of cookie WAFio still keeps only answers marked public and image, font, video, sound, style and script files. Only "Also for signed-in visitors" covers both on that path.';
+  'A rule sends its copies to every visitor who is not signed in, with cookies or without. A signed-in visitor still gets a fresh answer from your application. An answer made for a visitor who sends another kind of cookie is still kept only when it is marked public or is an image, font, video, sound, style or script file. "Also for signed-in visitors" lifts both limits on that path.';
 export const RULES_EMPTY = 'No path rules: every path follows the settings above.';
 export const RULE_SIGNED_IN_HINT =
-  'Also covers visitors who are signed in or send other cookies. Only tick it for paths that show the same page to everyone.';
+  'Signed-in visitors get stored copies too, and answers made for visitors with cookies are kept. Only tick it for paths that show the same page to everyone.';
 export const COOKIES_HINT =
-  "One name a line. Visitors with one of these cookies count as signed in. WAFio already knows the common ones: names with sess in them, such as PHPSESSID and laravel_session, and the WordPress sign-in cookies. Add your application's own if its session cookie has another name: a session cookie that WAFio does not know counts as an ordinary cookie, so its visitor is not recognised as signed in.";
+  "One name a line. Visitors with one of these cookies count as signed in. WAFio already knows the common ones: names with sess in them, such as PHPSESSID and laravel_session, and the WordPress sign-in cookies. Add your application's own if its session cookie has another name: a session cookie that WAFio does not know counts as an ordinary cookie, so its visitor is not recognised as signed in and gets the same stored pages as everyone.";
 export const COOKIES_LEAD =
-  'WAFio treats a visitor as signed in when the request carries an Authorization header, a user name in the address, or a session cookie. Compression leaves their pages uncompressed. The cache never answers them from a stored copy and never stores their answers: they always get a fresh answer from your application, marked X-Cache: BYPASS, unless a path rule has "Also for signed-in visitors". A visitor with a cookie of another kind, such as analytics or consent, is not signed in, but WAFio keeps an answer for them only when it is marked public or is an image, font, video, sound, style or script file. The names below are used while compression or the cache is on.';
+  'WAFio treats a visitor as signed in when the request carries an Authorization header, a user name in the address, or a session cookie. Compression leaves their pages uncompressed. The cache never answers them from a stored copy and never stores their answers: they always get a fresh answer from your application, marked X-Cache: BYPASS, unless a path rule has "Also for signed-in visitors". A visitor with a cookie of another kind, such as analytics or consent, is not signed in: they get stored copies like everyone, but WAFio keeps an answer made for them only when it is marked public or is an image, font, video, sound, style or script file. The names below are used while compression or the cache is on.';
 export const COOKIES_IN_CACHE = 'Which cookies mean a signed-in visitor is set under Signed-in visitors, above.';
 
 export const REMOVE_HINT_URL = 'Every variant of this address goes, compressed or not.';
