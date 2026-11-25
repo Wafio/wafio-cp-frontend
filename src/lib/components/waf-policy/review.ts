@@ -80,6 +80,7 @@ const FIELDS: FieldDef[] = [
   { path: 'blockPolicy.afterN', label: 'Block after (blocked requests)', section: 'rate-limits', get: (d) => d.blockPolicy.afterN, show: plain },
   { path: 'blockPolicy.durationSec', label: 'Block duration', section: 'rate-limits', get: (d) => d.blockPolicy.durationSec, show: seconds },
   { path: 'blockPolicy.keyFields', label: 'Repeat-offender client key', section: 'rate-limits', get: (d) => d.blockPolicy.keyFields, kind: 'list', list: { commas: true } },
+  { path: 'blockPolicy.target', label: 'Where the block applies', section: 'rate-limits', get: (d) => d.blockPolicy.target, show: (v) => (v === 'kernel' ? 'WAFio and the server firewall' : v === 'waf' ? 'WAFio only' : plain(v)) },
   { path: 'flood.enabled', label: 'HTTP flood limit', section: 'rate-limits', get: (d) => d.flood.enabled, show: onOff },
   { path: 'flood.maxRequests', label: 'Flood: maximum requests', section: 'rate-limits', get: (d) => d.flood.maxRequests, show: plain },
   { path: 'flood.windowSec', label: 'Flood: period', section: 'rate-limits', get: (d) => d.flood.windowSec, show: seconds },

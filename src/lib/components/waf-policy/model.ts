@@ -377,7 +377,8 @@ export interface PolicyDraft {
   engines: { inspectionOff: boolean; scanAllHeaders: boolean; recordWeakDetections: boolean };
   semantic: Record<SemanticKey, SemanticDraft>;
   geo: { allowIps: string; blockIps: string; allowCountries: string; blockCountries: string };
-  blockPolicy: { enabled: boolean; afterN: NumInput; durationSec: NumInput; keyFields: string };
+  /** target: "waf" (default, also when the key is absent) or "kernel"; any other stored text is kept so validation names it. */
+  blockPolicy: { enabled: boolean; afterN: NumInput; durationSec: NumInput; keyFields: string; target: string };
   flood: { enabled: boolean; maxRequests: NumInput; windowSec: NumInput; keyFields: string; allowIps: string };
   /** request_body_limit in bytes; null = no limit. */
   bodyLimit: NumInput;
@@ -854,7 +855,8 @@ export function draftFromRules(rules: Json | null | undefined): PolicyDraft {
       enabled: bp.enabled !== false,
       afterN: num(bp.block_after_n_blocks, 20),
       durationSec: num(bp.block_duration_sec, 60),
-      keyFields: keyFields(bp, 'remote_addr, user_agent')
+      keyFields: keyFields(bp, 'remote_addr, user_agent'),
+      target: str(bp.target) || 'waf'
     },
     flood: {
       enabled: l7.enabled === true,
@@ -967,6 +969,7 @@ export function rulesFromDraft(draft: PolicyDraft, original: Json | null | undef
   const orig = obj(original);
   const origSp = obj(orig.semantic_policies);
   const origBot = obj(orig.bot_protection);
+  const origBlockTarget = obj(orig.block_policy).target;
 
   const semanticPolicies: Json = {
     // Off saves `inspection_off`; on saves nothing. Either way the two keys of a v1 document go.
@@ -1091,7 +1094,9 @@ export function rulesFromDraft(draft: PolicyDraft, original: Json | null | undef
       enabled: draft.blockPolicy.enabled,
       block_after_n_blocks: n(draft.blockPolicy.afterN, 20),
       block_duration_sec: n(draft.blockPolicy.durationSec, 60),
-      key_fields: splitLines(draft.blockPolicy.keyFields, { commas: true })
+      key_fields: splitLines(draft.blockPolicy.keyFields, { commas: true }),
+      // Absent and "" mean WAFio only: an untouched policy keeps the spelling it had.
+      target: draft.blockPolicy.target === 'waf' && !origBlockTarget ? origBlockTarget : draft.blockPolicy.target
     },
     request_body_limit: bodyLimit,
     content_scan: {

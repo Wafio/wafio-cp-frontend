@@ -115,7 +115,8 @@
         "user_agent"
       ],
       "block_duration_sec": 3600,
-      "block_after_n_blocks": 100
+      "block_after_n_blocks": 100,
+      "target": "waf"
     },
     "request_body_limit": "5M"
   }
