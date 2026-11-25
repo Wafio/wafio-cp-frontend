@@ -67,8 +67,18 @@ export type NormalizedStaticFiles = { settings: AppStaticFiles; error?: undefine
 export const FORBIDDEN_ROOTS: readonly string[] = ['/etc', '/root', '/proc', '/sys', '/dev', '/run', '/boot', '/usr', '/var/lib/wafio-waf-agent', '/var/cache/wafio-waf'];
 
 /** The folder is `/`, is or is below a forbidden folder, or is above one. */
-export function staticRootForbidden(root: string): boolean {
+export function systemFolder(root: string): boolean {
   return root === '/' || FORBIDDEN_ROOTS.some((forbidden) => root === forbidden || root.startsWith(`${forbidden}/`) || forbidden.startsWith(`${root}/`));
+}
+
+/**
+ * A system folder, or a path with a part named like a system file (see kept-names.ts). Under /home the agent refuses
+ * the folder first, as unreadable, so the control plane leaves it to the agent and so does this check.
+ */
+export function staticRootForbidden(root: string): boolean {
+  if (systemFolder(root)) return true;
+  if (root === '/home' || root.startsWith('/home/')) return false;
+  return keptSegment(root) !== null;
 }
 
 /** An absolute path of at most 1,024 bytes with no empty, . or .. segment and no control character. */
@@ -172,6 +182,23 @@ export const COMPRESSION_FIXED =
 export const keptFolderText = (name: string): string =>
   `The WAF agent will not use this folder: its path has a part named ${name}, and names like that are never served. Choose a folder whose path has no such part.`;
 
+/** The error under the folder when the check refuses it for the name; short, so that it stays on one line beside its icon. */
+export const keptFolderError = (name: string): string => `This path has a part named ${name}, which is never served. Choose another folder.`;
+
+/**
+ * What is said under the Folder field. A folder refused for a name in its path is told with that name in place of the
+ * general sentence (which would send the person looking for system files); a folder with such a name that is not refused
+ * yet (not left yet, or under /home, which the check leaves to the agent) gets a warning with the longer explanation. A system folder
+ * keeps the general sentence.
+ */
+export function folderNotes(root: string, error: string | undefined): { error: string | undefined; warning: string | null } {
+  const path = root.trim();
+  const name = keptSegment(path);
+  if (name === null || systemFolder(path)) return { error, warning: null };
+  if (error === ROOT_FORBIDDEN_MESSAGE) return { error: keptFolderError(name), warning: null };
+  return { error, warning: keptFolderText(name) };
+}
+
 export const COMPRESSION_LIMITS_FIXED = 'Answers over 8 MiB, and answers your application streams without a length, are not compressed.';
 export const FILES_FIXED =
   'Never served from the folder: folder listings, hidden files (names that start with a dot, except .well-known), PHP files, symbolic links, and any path with a part named like a system file or folder, such as profile, network, group, hosts, security, private, credentials or systemd. Those requests go to your application, or get Not found if you chose that. Visitors can resume large downloads.';
@@ -270,19 +297,25 @@ function byteCounts(detail: string, count: number): number[] | null {
   return parts.length === count && parts.every((part) => /^\d{1,15}$/.test(part)) ? parts.map(Number) : null;
 }
 
+/** What the agent writes after the folder when the disk under it did not answer within its 3 seconds. */
+const NO_DISK_ANSWER = ' (no answer from the disk)';
+
 /** The reason of a refusal, in words; `folder` is the folder the person saved. */
 export function refusalReason(state: Pick<AppEdgeFeatureState, 'code' | 'detail'>, folder: string): string {
-  const where = folder || state.detail;
+  const stuck = state.code === 'root_unreadable' && state.detail.endsWith(NO_DISK_ANSWER);
+  const where = folder || (stuck ? state.detail.slice(0, -NO_DISK_ANSWER.length) : state.detail);
   switch (state.code) {
     case 'root_missing':
       return `${where} does not exist on its host`;
     case 'root_not_directory':
       return `${where} is a file, not a folder`;
     case 'root_unreadable':
+      // A stuck disk is no permission problem: a network mount whose server is down answers nothing.
+      if (stuck) return `the disk under ${where} did not answer within 3 seconds. If it is a network mount, check that its server is up`;
       return `it cannot read ${where}. It runs as the user wafio, and its service hides /home, /root and /run/user`;
     case 'root_forbidden': {
       // A folder under /etc or the like holds system files; a path that only passes a folder named like one is refused for the name.
-      const name = staticRootForbidden(where) ? null : keptSegment(where);
+      const name = systemFolder(where) ? null : keptSegment(where);
       return name === null ? `${where} holds system or WAFio files` : `${where} has a part named ${name}, a name the agent never serves from a folder`;
     }
     case 'cache_dir_unusable':

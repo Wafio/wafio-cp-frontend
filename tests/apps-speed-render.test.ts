@@ -205,7 +205,12 @@ describe('Speed tab, the session cookie names beside Compression', () => {
     expect(html.indexOf('>Signed-in visitors</h3>')).toBeLessThan(html.indexOf('>Files from a folder</h3>'));
     const section = signedIn(html);
     expect(section).toContain(COOKIES_LEAD);
-    expect(section).toContain('Authorization header or a session cookie');
+    expect(section).toContain('an Authorization header, a user name in the address, or a session cookie');
+    // The cache skips them, and a path rule needs "Also for signed-in visitors" to cover them.
+    expect(section).toContain('never answers them from a stored copy and never stores their answers');
+    expect(section).toContain('unless a path rule has "Also for signed-in visitors"');
+    expect(section).toContain('a cookie of another kind, such as analytics or consent, is not signed in');
+    expect(section).not.toContain('unless a path rule says so');
     expect(section).toContain('used while compression or the cache is on');
     expect(section).toContain('Session cookie names');
     expect(section).toContain(COOKIES_HINT);
@@ -252,6 +257,11 @@ describe('Speed tab, a folder with a part of its path named like a system file',
     expect(files(await render(folder('/srv/Profile/site')))).toContain(keptFolderText('Profile'));
     expect(files(await render(folder('/var/www/shop/public')))).not.toContain('will not use this folder');
     expect(files(await render(delivery()))).not.toContain('will not use this folder');
+  });
+
+  test('under /home it is warned about too, since the check leaves that folder to the agent', async () => {
+    const section = files(await render(folder('/home/deploy/private/site')));
+    expect(section).toContain(keptFolderText('private'));
   });
 
   test('the line under Files names the kept names and what a request for one gets', async () => {
@@ -356,6 +366,17 @@ describe('Speed tab, after a save', () => {
 describe('Speed tab, the agent refused it', () => {
   const refused = (code: string, over = {}, detail = '') =>
     delivery({ ...FILES_ON, status: answered({ static_files: feature('static_files', { state: 'refused', code: code as never, detail, ...over }) }) });
+
+  test('a disk that did not answer is said as that, with the folder and the 3 seconds, and not as a hidden /home', async () => {
+    const stuck = delivery({
+      ...FILES_ON,
+      static_files: { enabled: true, root: '/mnt/nfs/site', missing: 'app', max_age_s: 0 },
+      status: answered({ static_files: feature('static_files', { state: 'refused', code: 'root_unreadable', detail: '/mnt/nfs/site (no answer from the disk)' }) }),
+    });
+    const section = files(await render(stuck));
+    expect(section).toContain('edge-1 did not apply this: the disk under /mnt/nfs/site did not answer within 3 seconds. If it is a network mount, check that its server is up.');
+    expect(section).not.toContain('It runs as the user wafio');
+  });
 
   test('a folder that is missing, is a file, cannot be read or holds system files: each with its reason', async () => {
     const text: Record<string, string> = {

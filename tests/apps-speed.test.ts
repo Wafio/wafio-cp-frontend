@@ -25,6 +25,8 @@ import {
   compressionForm,
   compressionInput,
   compressionNumbers,
+  folderNotes,
+  keptFolderError,
   keptFolderText,
   noAnswerText,
   normalizeCompression,
@@ -76,7 +78,7 @@ describe('control plane parity', () => {
 
   test('every ASCII case of the files checks gets the stored form or the refusal of the server', () => {
     const judged = backend.static_files.filter((c) => !NON_ASCII.test(JSON.stringify(c.in)));
-    expect(judged.length).toBeGreaterThanOrEqual(20);
+    expect(judged.length).toBeGreaterThanOrEqual(30);
     for (const c of judged) {
       const got = normalizeStaticFiles(c.in);
       if (c.result) expect({ name: c.name, got: got.settings, error: got.error }).toEqual({ name: c.name, got: c.result, error: undefined });
@@ -113,6 +115,12 @@ describe('control plane parity', () => {
       '/var/lib/wafio-waf-agent': true, '/var/lib/wafio-waf-agent/tls': true, '/var/cache/wafio-waf': true, '/var/cache/wafio-waf/app/ab': true,
       '/var/www': false, '/var/www/shop/public': false, '/srv/www': false, '/home/deploy/site': false, '/opt/site/public': false,
       '/var/lib/wafio-waf-agent2': false, '/var/lib/other': false, '/etcetera': false, '/usr2': false, '/rootfs': false,
+      // A part of the path named like a system file is refused, in any case; a part that only holds one is not; /home is the agent's.
+      '/srv/private/site': true, '/var/www/network': true, '/var/www/Network/public': true, '/srv/PRIVATE': true, '/srv/.aws/site': true,
+      '/srv/sudoers.d': true, '/var/www/my-private/privates': false, '/srv/privateer': false, '/srv/cron.d2': false,
+      '/home/deploy/private/site': false, '/home/private': false, '/home': false, '/homes/private': true,
+      // The Kelvin sign is not folded into k, as the control plane does not fold it: this is not ssh_host_rsa_key.
+      '/srv/ssh_host_rsa_\u212Aey': false,
     };
     for (const [root, want] of Object.entries(table)) expect({ root, got: staticRootForbidden(root) }).toEqual({ root, got: want });
     expect(FORBIDDEN_ROOTS).toHaveLength(10);
@@ -122,6 +130,61 @@ describe('control plane parity', () => {
     expect(normalizeStaticFiles({ enabled: true, root: '/etc/nginx', missing: '', max_age_s: 0 }).error).toEqual({ field: 'root', message: ROOT_FORBIDDEN_MESSAGE });
     expect(normalizeStaticFiles({ enabled: false, root: '/usr/share', missing: '', max_age_s: 0 }).error).toEqual({ field: 'root', message: ROOT_FORBIDDEN_MESSAGE });
     expect(normalizeStaticFiles({ enabled: true, root: 'var/www', missing: '', max_age_s: 0 }).error).toEqual({ field: 'root', message: ROOT_INVALID_MESSAGE });
+  });
+});
+
+describe('a folder with a part of its path named like a system file', () => {
+  const normalize = (root: string, enabled = true) => normalizeStaticFiles({ enabled, root, missing: '', max_age_s: 0 });
+
+  test('is refused with the sentence for forbidden folders under the folder field, the switch on or off', () => {
+    for (const root of ['/srv/private/site', '/var/www/Network/public', '/srv/.aws/site']) {
+      expect({ root, error: normalize(root).error }).toEqual({ root, error: { field: 'root', message: ROOT_FORBIDDEN_MESSAGE } });
+      expect({ root, error: normalize(root, false).error }).toEqual({ root, error: { field: 'root', message: ROOT_FORBIDDEN_MESSAGE } });
+    }
+  });
+
+  test('is taken under /home, which the agent answers first, and when the name is only a part of another name', () => {
+    expect(normalize('/home/deploy/private/site').error).toBeUndefined();
+    expect(normalize('/var/www/my-private/privates').error).toBeUndefined();
+  });
+
+  test('is found with the letters A to Z folded and no other character', () => {
+    expect(keptSegment('/srv/PRIVATE/x')).toBe('PRIVATE');
+    expect(keptSegment('/srv/ssh_host_rsa_\u212Aey')).toBeNull();
+    expect(normalize('/srv/ssh_host_rsa_\u212Aey').error).toBeUndefined();
+  });
+
+  test('keeps the older reason for a system folder, and names the part for the rest', () => {
+    expect(refusalReason({ code: 'root_forbidden', detail: '' }, '/etc/private')).toBe('/etc/private holds system or WAFio files');
+    expect(refusalReason({ code: 'root_forbidden', detail: '' }, '/srv/private/site')).toBe('/srv/private/site has a part named private, a name the agent never serves from a folder');
+  });
+});
+
+describe('what is said under the Folder field for a name that is never served', () => {
+  const kept = keptFolderText('private');
+
+  test('a folder not refused yet gets the warning, and once it is refused the error names the part, once', () => {
+    expect(folderNotes('/srv/private/site', undefined)).toEqual({ error: undefined, warning: kept });
+    expect(folderNotes('/srv/private/site', ROOT_FORBIDDEN_MESSAGE)).toEqual({ error: keptFolderError('private'), warning: null });
+    expect(keptFolderError('private')).toBe('This path has a part named private, which is never served. Choose another folder.');
+  });
+
+  test('a folder under /home, which the check leaves to the agent, keeps the warning', () => {
+    expect(folderNotes('/home/deploy/private/site', undefined)).toEqual({ error: undefined, warning: kept });
+  });
+
+  test('a system folder keeps the general sentence and no warning, and a folder with no such part says nothing', () => {
+    expect(folderNotes('/etc/private', ROOT_FORBIDDEN_MESSAGE)).toEqual({ error: ROOT_FORBIDDEN_MESSAGE, warning: null });
+    expect(folderNotes('/var/www/shop/public', undefined)).toEqual({ error: undefined, warning: null });
+    expect(folderNotes('', ROOT_INVALID_MESSAGE)).toEqual({ error: ROOT_INVALID_MESSAGE, warning: null });
+  });
+
+  test('another refusal of a folder with such a part is said as it is, with the warning beside it', () => {
+    expect(folderNotes('/srv/private//site', ROOT_INVALID_MESSAGE)).toEqual({ error: ROOT_INVALID_MESSAGE, warning: kept });
+  });
+
+  test('the folder is read as typed, in any case and with spaces around it', () => {
+    expect(folderNotes('  /srv/PRIVATE/site ', ROOT_FORBIDDEN_MESSAGE).error).toBe(keptFolderError('PRIVATE'));
   });
 });
 
@@ -310,6 +373,22 @@ describe('the reasons of a refusal', () => {
 
   test('fall back to what the agent said about the folder when none was saved', () => {
     expect(reason('root_missing', '/gone', '')).toBe('/gone does not exist on its host');
+  });
+
+  test('a disk that did not answer is said as that, not as a permission problem', () => {
+    const stuck = 'the disk under /mnt/nfs/site did not answer within 3 seconds. If it is a network mount, check that its server is up';
+    expect(reason('root_unreadable', '/mnt/nfs/site (no answer from the disk)', '/mnt/nfs/site')).toBe(stuck);
+    // With no folder saved the folder comes from the detail, without the agent's note.
+    expect(reason('root_unreadable', '/mnt/nfs/site (no answer from the disk)', '')).toBe(stuck);
+    expect(stuck).not.toContain('wafio');
+    expect(stuck).not.toContain('/home');
+  });
+
+  test('a folder that cannot be read keeps the permission reason, whatever its detail, and the note means nothing for another code', () => {
+    const permission = 'it cannot read /srv/shop. It runs as the user wafio, and its service hides /home, /root and /run/user';
+    expect(reason('root_unreadable', '/srv/shop')).toBe(permission);
+    expect(reason('root_unreadable', 'no answer from the disk')).toBe(permission);
+    expect(reason('root_missing', '/gone (no answer from the disk)', '')).toBe('/gone (no answer from the disk) does not exist on its host');
   });
 
   test('a folder refused for a part of its path named like a system file says that, not that it holds system files', () => {

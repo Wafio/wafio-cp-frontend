@@ -7,9 +7,15 @@ import type { ApiError, AppCache, AppCachePurge, AppCacheStats, AppEdgeFeatureSt
 import { formatDateTime } from '../src/lib/format';
 import {
   CACHE_OFF_TEXT,
+  CACHE_SWITCH_HINT,
+  COOKIES_HINT,
+  COOKIES_LEAD,
   COOKIES_MESSAGE,
   DISK_MESSAGE,
+  FOLDER_NOT_COUNTED,
   NO_AGENT_TEXT,
+  RULES_COOKIES,
+  RULE_SIGNED_IN_HINT,
   cacheConfirmText,
   cacheConfirmations,
   cacheFieldOf,
@@ -210,7 +216,7 @@ describe('which saves ask first', () => {
     });
     expect(cacheConfirmText({ kind: 'cache-signed-in', prefix: '/docs' })).toEqual({
       title: 'Keep copies for signed-in visitors under /docs?',
-      body: 'Everyone, signed in or not, gets the same copy. If these pages show a name, a cart or an account, other people see it.',
+      body: 'Under this path, visitors who are signed in, and visitors who send other cookies, are then answered from stored copies and add to them, and everyone gets the same copy. If these pages show a name, a cart or an account, other people see it.',
       confirmLabel: 'Keep for signed-in visitors',
       tone: 'danger',
       requireText: '/docs',
@@ -588,7 +594,7 @@ describe('the numbers in words', () => {
     expect(lines[0]).toBe(
       'Most answers do not say how long they may be kept, so WAFio did not keep them (100). Add a path rule, or have your application send Cache-Control: public, max-age=600.'
     );
-    expect(lines).toContain('Not kept because they were private or for a signed-in visitor: 10.');
+    expect(lines).toContain('Not kept because the answer was private, or the visitor sent a cookie and the answer was not marked public: 10.');
   });
 
   test('does not say it when only a minority had no lifetime, or exactly half', () => {
@@ -602,7 +608,60 @@ describe('the numbers in words', () => {
       'Not kept because your application sent them in pieces, without a size: 4.',
       'Not kept because they were over 8 MiB: 2.',
       "Not kept because the host's disk was almost full: 1.",
-      'Not checked against the cache (the request had a body, or its rule only logs or monitors): 12.',
+      'Not checked against the cache (a signed-in visitor, a request with a body or a method other than GET and HEAD, a path under a "Never keep" rule, or a request that WAFio only logs or monitors): 12.',
     ]);
+  });
+
+  test('the private line is about private answers and visitors with cookies, and never blames a signed-in visitor', () => {
+    const line = cacheSkipLines(stats({ skipped_private: 3 }), limits)[0];
+    expect(line).toContain('the visitor sent a cookie and the answer was not marked public');
+    expect(line).not.toContain('signed-in');
+  });
+
+  test('the line for requests not checked names every kind that counts there, a signed-in visitor first', () => {
+    const line = cacheSkipLines(stats({ bypass: 5 }), limits)[0];
+    for (const kind of ['a signed-in visitor', 'a request with a body', 'a method other than GET and HEAD', 'a path under a "Never keep" rule', 'only logs or monitors']) expect(line).toContain(kind);
+    expect(line).not.toContain('its rule only logs');
+  });
+});
+
+describe('the texts about signed-in visitors, session cookies and path rules', () => {
+  const OLD = ['Signed-in visitors need a rule', 'unless a path rule says so', 'it keeps only answers marked public, and files and paths you add a rule for', 'Only for paths that show the same page to everyone.'];
+  const texts = { CACHE_SWITCH_HINT, COOKIES_LEAD, COOKIES_HINT, RULES_COOKIES, RULE_SIGNED_IN_HINT };
+
+  test('say that a signed-in visitor skips the cache and only a rule with "Also for signed-in visitors" changes that', () => {
+    for (const text of [CACHE_SWITCH_HINT, COOKIES_LEAD, RULES_COOKIES]) expect(text).toContain('fresh answer from your application');
+    expect(COOKIES_LEAD).toContain('never answers them from a stored copy and never stores their answers');
+    expect(COOKIES_LEAD).toContain('X-Cache: BYPASS');
+    expect(COOKIES_LEAD).toContain('unless a path rule has "Also for signed-in visitors"');
+    expect(COOKIES_LEAD).toContain('an Authorization header, a user name in the address, or a session cookie');
+  });
+
+  test('say that a visitor with another cookie is kept for only when the answer is public or the file is of a kind kept by default', () => {
+    for (const text of [CACHE_SWITCH_HINT, COOKIES_LEAD, RULES_COOKIES]) {
+      expect(text).toMatch(/(?:marked|marks it) public/);
+      expect(text).toMatch(/image, font, video, sound, style(?: and|,| or) script/);
+    }
+    expect(CACHE_SWITCH_HINT).toContain('Cache-Control: public or s-maxage');
+  });
+
+  test('say next to the rule form that a rule alone does not cover visitors with cookies', () => {
+    expect(RULES_COOKIES.startsWith('A rule shares its copies between all visitors.')).toBe(true);
+    expect(RULES_COOKIES).toContain('On its own it does not cover visitors with cookies');
+    expect(RULES_COOKIES).toContain('Only "Also for signed-in visitors" covers both on that path.');
+    expect(RULE_SIGNED_IN_HINT).toContain('Also covers visitors who are signed in or send other cookies.');
+    expect(RULE_SIGNED_IN_HINT).toContain('Only tick it for paths that show the same page to everyone.');
+  });
+
+  test('tell the admin that a session cookie WAFio does not know counts as an ordinary one', () => {
+    expect(COOKIES_HINT).toContain('a session cookie that WAFio does not know counts as an ordinary cookie, so its visitor is not recognised as signed in');
+  });
+
+  test('keep none of the phrases of the old rule', () => {
+    for (const [name, text] of Object.entries(texts)) for (const old of OLD) expect({ name, old, found: text.includes(old) }).toEqual({ name, old, found: false });
+  });
+
+  test('say that files from a folder are not in the numbers', () => {
+    expect(FOLDER_NOT_COUNTED).toBe('Files that WAFio serves from your folder carry X-Cache: BYPASS too, but they are not counted in these numbers.');
   });
 });
