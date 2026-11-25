@@ -21,18 +21,24 @@
   import DurationInput from './DurationInput.svelte';
   import ByteSizeInput from './ByteSizeInput.svelte';
   import HeaderRulesEditor from './HeaderRulesEditor.svelte';
+  import PartStatus from './PartStatus.svelte';
   import ProtectionModeSelect from './ProtectionModeSelect.svelte';
+  import type { PartLine } from './speed';
   import Select from '#lib/components/ui/Select.svelte';
   import {
+    CLOUDFLARE_CONFIRM_TEXT,
     DEFAULT_FCGI_INDEX,
     PROXY_DEFAULTS,
     PROXY_LIMITS,
     cloneRouteForm,
+    cloudflareHint,
     hasProxyErrors,
     listenLabel,
     proxyErrorField,
+    replacesTrust,
     routeErrorList,
     validateRouteForm,
+    withCloudflare,
     type HostHeaderMode,
     type RouteErrors,
     type RouteField,
@@ -49,6 +55,8 @@
     creating = false,
     disabled = false,
     hiddenHeaderValues = false,
+    prefixLine = null,
+    prefixLocked = false,
     dirty = $bindable(false),
     onsubmit,
     oncancel = undefined,
@@ -70,6 +78,10 @@
     disabled?: boolean;
     /** Viewer read: header values were blanked by the server; show them as hidden. */
     hiddenHeaderValues?: boolean;
+    /** What the agent says about the path prefix (the Routing tab of an assigned application). */
+    prefixLine?: PartLine | null;
+    /** The agent is too old for a path prefix and none is saved: the field cannot be filled in. */
+    prefixLocked?: boolean;
     dirty?: boolean;
     /** Saves the form; resolves to an error message, or nothing on success. */
     onsubmit: (form: RouteForm) => Promise<string | null | void>;
@@ -88,8 +100,15 @@
   let submitted = $state(false);
   let saving = $state(false);
   let submitError = $state('');
-  let advancedOpen = $state(false);
+  // The path prefix sits in the folded proxy settings: a saved one, or one its agent could not take (the line can
+  // arrive after the first read), opens them. Once open they stay as the person leaves them.
+  let advancedOpen = $state(untrack(() => initial.proxy.stripPathPrefix !== '' || prefixLine?.tone === 'warning'));
+  const prefixWarns = $derived(prefixLine?.tone === 'warning');
+  $effect(() => {
+    if (prefixWarns) advancedOpen = true;
+  });
   let confirmLowerOpen = $state(false);
+  let confirmCloudflareOpen = $state(false);
   /** Field errors from a 400 INVALID_PROXY_CONFIG; cleared when the field changes. */
   let serverErrors = $state<RouteErrors>({});
   let serverErrorsFor = '';
@@ -127,6 +146,17 @@
     if (form.upstreamType === type) return;
     form.upstreamType = type;
     if (type === 'fcgi' && !form.fcgiIndex) form.fcgiIndex = DEFAULT_FCGI_INDEX;
+  }
+
+  function askCloudflare() {
+    if (replacesTrust(form.proxy)) confirmCloudflareOpen = true;
+    else useCloudflare();
+  }
+
+  /** Replaces the list with Cloudflare's addresses and loopback and trusts forwarded headers; saved with the form like any edit. */
+  function useCloudflare() {
+    form.proxy = withCloudflare(form.proxy);
+    confirmCloudflareOpen = false;
   }
 
   function parseWhole(text: string): number | null {
@@ -268,6 +298,13 @@
             <Field label="Index file" id={fid('fcgiIndex')} error={shown.fcgiIndex} hint={`Default: ${DEFAULT_FCGI_INDEX}.`}>
               {#snippet children(c)}<input {...c} type="text" class="mono" autocomplete="off" placeholder={DEFAULT_FCGI_INDEX} bind:value={form.fcgiIndex} />{/snippet}
             </Field>
+            <div class="span-full">
+              <Switch
+                bind:checked={form.fcgiKeepConn}
+                label="Keep FastCGI connections open between requests"
+                hint="Same as nginx fastcgi_keep_conn. Off, the agent opens a new connection to PHP-FPM for each request. Turn it on only if PHP is at least 8.2.36, 8.3.37, 8.4.28 or 8.5.13 for its 8.2, 8.3, 8.4 or 8.5 series; 8.1 and older are not fixed. Unfixed PHP-FPM can run part of a request body as a second request (CVE-2026-129289). Agents released before this option ignore it and keep connections open."
+              />
+            </div>
           {/if}
         </div>
       </section>
@@ -306,7 +343,7 @@
     <details class="advanced" bind:open={advancedOpen}>
       <summary>
         Proxy settings
-        <span class="advanced-summary">Timeouts, size limits, Host header, forwarded headers, header rules, path encoding</span>
+        <span class="advanced-summary">Timeouts, size limits, Host header, path prefix, forwarded headers, header rules, path encoding</span>
       </summary>
       <div class="advanced-body">
         <section class="advanced-group" aria-labelledby={`${uid}-timeouts`}>
@@ -384,6 +421,19 @@
               </Field>
             {/if}
             <div class="span-full">
+              <Field
+                label="Remove path prefix"
+                id={fid('proxy.stripPathPrefix')}
+                error={shown['proxy.stripPathPrefix']}
+                hint="For an application that lives under a path. With /shop, a visit to /shop/cart reaches the application as /cart, and any other path, such as /admin, gets Not found. WAFio still checks and logs the full path. Links the application writes must include /shop."
+              >
+                {#snippet children(c)}
+                  <input {...c} type="text" class="mono" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="/shop" disabled={prefixLocked} bind:value={form.proxy.stripPathPrefix} />
+                {/snippet}
+              </Field>
+              <PartStatus line={prefixLine} />
+            </div>
+            <div class="span-full">
               <Switch bind:checked={form.proxy.trustForwarded} label="Trust X-Forwarded-For and X-Real-IP" hint="Turn on only when a load balancer or proxy sits in front of the agent. Off, the client IP comes from the TCP connection, so a client cannot spoof its address for IP rules, bans and rate limits." />
             </div>
             <div class="span-full">
@@ -408,6 +458,10 @@
                   ></textarea>
                 {/snippet}
               </Field>
+              <div class="cloudflare">
+                <Button variant="secondary" onclick={askCloudflare}>Use Cloudflare's addresses</Button>
+                <p class="route-note">{cloudflareHint()}</p>
+              </div>
             </div>
             <div class="span-full" data-field="proxy.reqHeaders" id={fid('proxy.reqHeaders')}>
               <HeaderRulesEditor bind:rules={form.proxy.reqHeaders} legend="Request headers" hint="Changes applied to requests before they reach the upstream." error={shown['proxy.reqHeaders']} hiddenValues={hiddenHeaderValues} />
@@ -451,6 +505,17 @@
   <p class="confirm-text">In Monitor mode every request is forwarded to the application. Attacks are logged but not blocked until you switch back to Block.</p>
 </ConfirmModal>
 
+<ConfirmModal
+  open={confirmCloudflareOpen}
+  tone="warning"
+  title="Replace the trusted proxies?"
+  confirmLabel="Replace with Cloudflare's addresses"
+  onconfirm={useCloudflare}
+  onclose={() => (confirmCloudflareOpen = false)}
+>
+  <p class="confirm-text">{CLOUDFLARE_CONFIRM_TEXT}</p>
+</ConfirmModal>
+
 <style>
   .route-form { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; width: 100%; max-width: 60rem; container-type: inline-size; }
   .route-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-5); }
@@ -477,6 +542,7 @@
     resize: vertical;
   }
   .proxies:disabled { background: var(--bg-tertiary); color: var(--text-muted); }
+  .cloudflare { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); margin-top: var(--sp-3); }
   .route-error-list { margin: var(--sp-1) 0 0; padding-left: var(--sp-5); font-size: var(--fs-sm); }
   .route-error-list a { color: inherit; text-decoration: underline; }
 
@@ -489,6 +555,7 @@
   .segmented label:has(input:focus-visible) { outline: var(--ring-width) solid var(--ring-color); outline-offset: -2px; }
   .segmented input { position: absolute; opacity: 0; pointer-events: none; }
 
+  .route-form :global(.part-status:not(:empty)) { margin-top: var(--sp-2); }
   .route-note { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.5; }
 
   .advanced { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-secondary); }
@@ -516,6 +583,7 @@
 
   @media (max-width: 760px) {
     .route-grid { grid-template-columns: minmax(0, 1fr); }
+    .cloudflare :global(.btn) { min-height: 44px; }
     .route-actions { flex-direction: column-reverse; align-items: stretch; }
     .route-dirty { margin-right: 0; text-align: center; }
   }

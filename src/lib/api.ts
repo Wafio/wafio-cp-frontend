@@ -77,6 +77,18 @@ export interface ApiError {
   matched?: number;
   /** 400 VALIDATION_FAILED / 409 SMTP_SETTINGS_MANAGED: the request field it names. */
   field?: string;
+  /** 400 INVALID_CERTIFICATE: why the upload was refused (bad_pem, key_mismatch, ...). */
+  reason?: string;
+  /** 400 INVALID_CERTIFICATE (names_do_not_cover), 409 CERTIFICATE_DOES_NOT_COVER: the host the certificate misses. */
+  host?: string;
+  /** 409 ACME_REQUEST_TOO_SOON: seconds until a new request is accepted. */
+  retry_after?: number;
+  /** 409 AGENT_TOO_OLD: the part the agent cannot apply (redirects, compression, static_files, cache). */
+  feature?: string;
+  /** 409 AGENT_TOO_OLD, FEATURE_UNSUPPORTED: the name of the WAF agent. */
+  agent?: string;
+  /** 409 FEATURE_UNSUPPORTED: the parts the agent cannot run. */
+  parts?: string[];
 }
 
 /**
@@ -313,6 +325,12 @@ export async function api<T>(
           : undefined,
         matched: typeof body?.matched === 'number' ? body.matched : undefined,
         field: typeof body?.field === 'string' ? body.field : undefined,
+        reason: typeof body?.reason === 'string' ? body.reason : undefined,
+        host: typeof body?.host === 'string' ? body.host : undefined,
+        retry_after: typeof body?.retry_after === 'number' ? body.retry_after : undefined,
+        feature: typeof body?.feature === 'string' ? body.feature : undefined,
+        agent: typeof body?.agent === 'string' ? body.agent : undefined,
+        parts: Array.isArray(body?.parts) ? body.parts.filter((part: unknown): part is string => typeof part === 'string') : undefined,
       },
     };
   }
@@ -1815,6 +1833,8 @@ export interface ProxyConfig {
   trusted_proxies?: string[] | null;
   /** Reject paths with invalid percent-encoding (400); missing/null = true. */
   reject_invalid_path_encoding?: boolean | null;
+  /** A path the application lives under; it is removed before the request reaches the application. Absent = none. */
+  strip_path_prefix?: string;
   /** Keys added by newer control planes (e.g. trusted_proxies) pass through untouched. */
   [key: string]: unknown;
 }
@@ -1845,6 +1865,8 @@ export interface App {
   /** FastCGI upstream settings ('' when unused; absent from older control planes). */
   fcgi_doc_root?: string;
   fcgi_index?: string;
+  /** Keep the FastCGI connection open between requests (absent from older control planes: off). */
+  fcgi_keep_conn?: boolean;
   /** Maintenance mode is on: the serving agent answers with the maintenance page (absent from older control planes). */
   maintenance_enabled?: boolean;
   created_at: string;
@@ -1860,6 +1882,8 @@ export interface AppUpdateBody {
   /** Each FastCGI field is optional and patched on its own: absent keeps the stored value; an empty fcgi_index means index.php. */
   fcgi_doc_root?: string;
   fcgi_index?: string;
+  /** Absent keeps the stored value. */
+  fcgi_keep_conn?: boolean;
   proxy_config?: ProxyConfig;
 }
 
@@ -1938,6 +1962,316 @@ export async function putAppMaintenance(projectId: string, appId: string, body: 
     `/api/projects/${projectId}/apps/${appId}/maintenance`,
     { method: 'PUT', body: JSON.stringify(body) },
     hasMaintenance
+  );
+}
+
+// ── HTTPS (per application) ─────────────────────────────────────────────
+
+export type TLSMode = 'proxy' | 'gateway';
+export type TLSSource = '' | 'acme' | 'uploaded';
+
+/** The saved TLS settings: PUT …/apps/:appId/tls takes exactly these. */
+export interface AppTLSInput {
+  mode: TLSMode;
+  hosts: string[];
+  /** Empty means 0.0.0.0:443. */
+  listen: string;
+  /** '' = no redirect listener. */
+  redirect_listen: string;
+  /** Required in gateway mode. */
+  source: TLSSource;
+  /** The main host name, one of `hosts`; '' or absent = no redirect. A save replaces it: leaving it out clears it. */
+  canonical_host?: string;
+}
+
+/** The uploaded certificate without its chain and key; the answer of POST …/tls/certificate too. */
+export interface AppTLSCertificate {
+  id: string;
+  source: 'uploaded';
+  names: string[];
+  issuer: string;
+  not_before: string;
+  not_after: string;
+  /** Whole days until not_after, rounded down: 0 on the last day, negative once expired. */
+  days_left: number;
+  leaf_sha256: string;
+  key_type: string;
+  trusted: boolean;
+  created_at: string;
+}
+
+/** The last ACME request; a new id asks the agent to order now. */
+export interface AppTLSACMERequest {
+  request_id: string;
+  requested_at: string | null;
+}
+
+/** Why the agent refused an uploaded certificate or could not install it ('' for any other text). */
+export type AppTLSErrorCode =
+  | 'bad_pem' | 'too_large' | 'key_mismatch' | 'leaf_mismatch' | 'unsupported_key'
+  | 'write_failed' | 'invalid_ack' | 'key_unreadable';
+
+/** What the agent last reported about the certificate it serves. */
+export interface AppTLSStatus {
+  agent_id: string;
+  source: 'acme' | 'uploaded';
+  state: 'pending' | 'active' | 'failed' | 'missing';
+  /** The uploaded certificate the report is about; null for acme. */
+  certificate_id: string | null;
+  leaf_sha256: string;
+  /** For failed, cleaned of control characters; show it as plain text. */
+  error: string;
+  /** Set for uploaded and failed only; absent from control planes that do not classify the text. */
+  error_code?: AppTLSErrorCode | '';
+  next_attempt_at: string | null;
+  request_id: string;
+  received_at: string;
+  names: string[];
+  issuer: string;
+  not_before: string | null;
+  not_after: string | null;
+}
+
+export interface AppTLSWarning {
+  code: 'not_trusted' | 'expires_soon' | 'dns_mismatch';
+  /** dns_mismatch only: the host, what it resolves to and what the agent host reports. */
+  host?: string;
+  resolved?: string[];
+  agent_addresses?: string[];
+  /** expires_soon only. */
+  days_left?: number;
+  not_after?: string;
+}
+
+/** Answer of GET and PUT …/apps/:appId/tls and of POST …/tls/acme. dns_mismatch warnings come with a PUT only. */
+export interface AppTLSState extends AppTLSInput {
+  certificate: AppTLSCertificate | null;
+  acme: AppTLSACMERequest | null;
+  status: AppTLSStatus | null;
+  /** The serving agent says it serves certificates: false = it does not, null = no agent or it never said. */
+  agent_supported: boolean | null;
+  /** The agent has a credential bound to its host, which an uploaded key needs; null = no agent. */
+  agent_host_bound: boolean | null;
+  warnings: AppTLSWarning[];
+}
+
+/** POST body of …/tls/certificate. */
+export interface AppTLSCertificateInput {
+  chain_pem: string;
+  key_pem: string;
+}
+
+const hasTLSState = (body: unknown): boolean => {
+  const value = body as { mode?: unknown; hosts?: unknown } | null;
+  return typeof value?.mode === 'string' && Array.isArray(value.hosts);
+};
+
+export async function getAppTLS(projectId: string, appId: string) {
+  return api<AppTLSState>(`/api/projects/${projectId}/apps/${appId}/tls`, {}, hasTLSState);
+}
+
+export async function putAppTLS(projectId: string, appId: string, body: AppTLSInput) {
+  return api<AppTLSState>(
+    `/api/projects/${projectId}/apps/${appId}/tls`,
+    { method: 'PUT', body: JSON.stringify(body) },
+    hasTLSState
+  );
+}
+
+/** Asks the agent to order a certificate now, or to try again. */
+export async function requestAppACME(projectId: string, appId: string) {
+  return api<AppTLSState>(`/api/projects/${projectId}/apps/${appId}/tls/acme`, { method: 'POST' }, hasTLSState);
+}
+
+export async function uploadAppCertificate(projectId: string, appId: string, body: AppTLSCertificateInput) {
+  return api<AppTLSCertificate>(
+    `/api/projects/${projectId}/apps/${appId}/tls/certificate`,
+    { method: 'POST', body: JSON.stringify(body) },
+    (value) => typeof (value as { id?: unknown } | null)?.id === 'string'
+  );
+}
+
+/** Removes the private keys of every uploaded certificate of the application. */
+export async function deleteAppCertificate(projectId: string, appId: string) {
+  return api<{ deleted: boolean }>(
+    `/api/projects/${projectId}/apps/${appId}/tls/certificate`,
+    { method: 'DELETE' },
+    (value) => typeof (value as { deleted?: unknown } | null)?.deleted === 'boolean'
+  );
+}
+
+// ── Speed (per application): compression, files from a folder, cache ────
+
+export type EdgePart = 'redirects' | 'compression' | 'static_files' | 'cache';
+export type StaticMissing = 'app' | 'not_found';
+
+export interface AppCompression {
+  enabled: boolean;
+  /** Smallest answer that is compressed, in bytes (0 to 1 MiB). */
+  min_bytes: number;
+}
+
+export interface AppStaticFiles {
+  enabled: boolean;
+  /** An absolute folder on the host of the agent; '' until one is chosen. */
+  root: string;
+  missing: StaticMissing;
+  /** Browser cache time of a served file in seconds; 0 sets none. */
+  max_age_s: number;
+}
+
+export interface AppCacheRule {
+  prefix: string;
+  action: 'cache' | 'bypass';
+  ttl_s: number;
+  signed_in: boolean;
+}
+
+export interface AppCache {
+  enabled: boolean;
+  default_ttl_s: number;
+  stale_if_error_s: number;
+  disk_bytes: number;
+  memory_bytes: number;
+  max_object_bytes: number;
+  session_cookies: string[];
+  rules: AppCacheRule[];
+}
+
+export type EdgeRefusalCode =
+  | '' | 'invalid' | 'root_missing' | 'root_not_directory' | 'root_unreadable' | 'root_forbidden'
+  | 'cache_dir_unusable' | 'disk_too_small' | 'memory_too_small' | 'unknown';
+
+/** What the agent reported about one part. `detail` came from the agent: show it as text, never as markup. */
+export interface AppEdgeFeatureState {
+  feature: EdgePart | 'unknown';
+  state: 'applied' | 'refused' | 'unknown';
+  code: EdgeRefusalCode;
+  detail: string;
+  /** For refused: the agent keeps the part it applied before (true), or the part is off (false). */
+  running_previous: boolean;
+}
+
+export interface AppDeliveryAgent {
+  id: string;
+  name: string;
+  online: boolean;
+  /** true = it applies the part; false = it said Hello without it, so it is older than the part; null = it never said. */
+  features: Record<EdgePart, boolean | null>;
+}
+
+export interface AppDeliveryStatus {
+  agent_id: string;
+  /** The bundle generation the report answers; below `AppDelivery.generation` the agent has not answered the latest bundle. */
+  generation: number;
+  received_at: string;
+  redirects: AppEdgeFeatureState | null;
+  compression: AppEdgeFeatureState | null;
+  static_files: AppEdgeFeatureState | null;
+  cache: AppEdgeFeatureState | null;
+}
+
+export interface AppCompressionStats {
+  responses: number;
+  skipped_streamed: number;
+  bytes_saved: number;
+}
+
+export interface AppCacheStats {
+  requests: number;
+  hits_memory: number;
+  hits_disk: number;
+  misses: number;
+  bypass: number;
+  stale: number;
+  stored: number;
+  skipped_no_lifetime: number;
+  skipped_private: number;
+  skipped_too_large: number;
+  skipped_streamed: number;
+  skipped_disk_full: number;
+  evictions: number;
+  corrupt: number;
+  disk_bytes: number;
+  memory_bytes: number;
+  objects: number;
+}
+
+export interface AppCachePurge {
+  id: string;
+  scope: 'url' | 'prefix' | 'app';
+  url: string;
+  state: 'pending' | 'done' | 'failed';
+  error: string;
+  by: string;
+  agent: string;
+  created_at: string;
+  finished_at: string | null;
+}
+
+/** Answer of GET …/apps/:appId/delivery. */
+export interface AppDelivery {
+  compression: AppCompression;
+  static_files: AppStaticFiles;
+  cache: AppCache;
+  /** The WAF agent that serves the application; null when none does. */
+  agent: AppDeliveryAgent | null;
+  /** The bundle generation of that agent; null when none serves the application. */
+  generation: number | null;
+  /** Its last report; null until it reported. */
+  status: AppDeliveryStatus | null;
+  cache_stats: AppCacheStats | null;
+  compression_stats: AppCompressionStats | null;
+  purges: AppCachePurge[];
+}
+
+/** Answer of a PUT: the object as stored and the bundle generation it goes out with (null without an agent). */
+export interface AppCompressionSaved { compression: AppCompression; generation: number | null }
+export interface AppStaticFilesSaved { static_files: AppStaticFiles; generation: number | null }
+export interface AppCacheSaved { cache: AppCache; generation: number | null }
+/** What a removal of stored copies names: one address, everything under a path, or everything (`url` is then left out). */
+export interface AppCachePurgeInput { scope: AppCachePurge['scope']; url?: string }
+
+const hasDelivery = (body: unknown): boolean => {
+  const value = body as { compression?: unknown; static_files?: unknown; cache?: unknown } | null;
+  return [value?.compression, value?.static_files, value?.cache].every((part) => part !== null && typeof part === 'object');
+};
+
+export async function getAppDelivery(projectId: string, appId: string) {
+  return api<AppDelivery>(`/api/projects/${projectId}/apps/${appId}/delivery`, {}, hasDelivery);
+}
+
+/** PUT bodies are the whole object: a left-out number takes its default, an explicit 0 is kept. */
+export async function putAppCompression(projectId: string, appId: string, body: AppCompression) {
+  return api<AppCompressionSaved>(
+    `/api/projects/${projectId}/apps/${appId}/delivery/compression`,
+    { method: 'PUT', body: JSON.stringify(body) },
+    (value) => typeof (value as { compression?: unknown } | null)?.compression === 'object'
+  );
+}
+
+export async function putAppStaticFiles(projectId: string, appId: string, body: AppStaticFiles) {
+  return api<AppStaticFilesSaved>(
+    `/api/projects/${projectId}/apps/${appId}/delivery/static-files`,
+    { method: 'PUT', body: JSON.stringify(body) },
+    (value) => typeof (value as { static_files?: unknown } | null)?.static_files === 'object'
+  );
+}
+
+export async function putAppCache(projectId: string, appId: string, body: AppCache) {
+  return api<AppCacheSaved>(
+    `/api/projects/${projectId}/apps/${appId}/delivery/cache`,
+    { method: 'PUT', body: JSON.stringify(body) },
+    (value) => typeof (value as { cache?: unknown } | null)?.cache === 'object'
+  );
+}
+
+/** Queues the removal of stored copies; answers the row (state pending until the agent answers). */
+export async function purgeAppCache(projectId: string, appId: string, body: AppCachePurgeInput) {
+  return api<AppCachePurge>(
+    `/api/projects/${projectId}/apps/${appId}/cache/purge`,
+    { method: 'POST', body: JSON.stringify(body) },
+    (value) => typeof (value as { id?: unknown } | null)?.id === 'string'
   );
 }
 
@@ -2506,6 +2840,7 @@ export interface AgentRoute {
   body_limit_bytes?: number;
   fcgi_doc_root?: string;
   fcgi_index?: string;
+  fcgi_keep_conn?: boolean;
   // Per-app reverse-proxy config (migration 000061).
   proxy_config?: ProxyConfig;
   /** Read-only: present when proxy_config needs attention. */

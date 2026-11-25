@@ -26,6 +26,7 @@ export const DETECTION_FIELDS: ReadonlyArray<{ value: string; label: string }> =
   { value: 'category', label: 'Category' },
   { value: 'severity', label: 'Severity level (0 info – 4 critical)' },
   { value: 'filename', label: 'File path' },
+  { value: 'args', label: 'Rename destination (args)' },
   { value: 'addr', label: 'Network address' },
   { value: 'port', label: 'Port' },
   { value: 'uid', label: 'User ID (uid)' },
@@ -172,6 +173,12 @@ export function draftToBody(draft: DetectionRuleDraft): RuleDraftResult {
       conditionErrors[index] = error instanceof Error ? error.message : 'Invalid value.';
     }
   });
+  // The server refuses an args condition without event_name eq rename (DetectionRule.Validate).
+  if (Object.keys(conditionErrors).length === 0 && !conditions.some((c) => c.field === 'event_name' && c.op === 'eq' && c.value === 'rename')) {
+    draft.conditions.forEach((condition, index) => {
+      if (condition.field === 'args') conditionErrors[index] = 'A condition on the rename destination needs the condition Event (syscall) name equals rename.';
+    });
+  }
   if (Object.keys(conditionErrors).length > 0) return { error: 'Fix the highlighted conditions.', conditionErrors };
   const body: Omit<CreateDetectionRuleBody, 'host_id'> = {
     name,

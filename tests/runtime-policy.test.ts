@@ -17,7 +17,7 @@ import {
   traceConfigSaveTier,
   validatePolicyDraft,
 } from '../src/lib/components/runtime/policy';
-import { compatibleOp, draftFromRule, draftToBody, emptyRuleDraft, formatConditions, opsForField } from '../src/lib/components/runtime/detection';
+import { DETECTION_FIELDS, compatibleOp, draftFromRule, draftToBody, emptyRuleDraft, formatConditions, opsForField } from '../src/lib/components/runtime/detection';
 
 function event(over: Partial<TraceEvent> = {}): TraceEvent {
   return {
@@ -271,6 +271,43 @@ describe('detection rule drafts', () => {
     expect(opsForField('is_container').map((o) => o.value)).toEqual(['eq', 'neq']);
     expect(compatibleOp('port', 'contains')).toBe('eq');
     expect(compatibleOp('comm', 'glob')).toBe('glob');
+    expect(DETECTION_FIELDS.find((f) => f.value === 'args')?.label).toBe('Rename destination (args)');
+    expect(opsForField('args').map((o) => o.value)).toEqual(opsForField('filename').map((o) => o.value));
+    expect(opsForField('args').map((o) => o.value)).toContain('starts_with');
+  });
+
+  test('an args condition needs event_name equals rename (DetectionRule.Validate)', () => {
+    const rename = { field: 'event_name', op: 'eq', value: 'rename' };
+    const args = { field: 'args', op: 'starts_with', value: '/etc/cron.d/' };
+    const refused = 'A condition on the rename destination needs the condition Event (syscall) name equals rename.';
+    const build = (conditions: { field: string; op: string; value: string }[]) => draftToBody({ ...emptyRuleDraft(), name: 'x', conditions });
+
+    const ok = build([rename, args]);
+    expect(ok.conditionErrors).toEqual({});
+    expect(ok.body?.conditions).toEqual([
+      { field: 'event_name', op: 'eq', value: 'rename' },
+      { field: 'args', op: 'starts_with', value: '/etc/cron.d/' },
+    ]);
+    expect(build([args, rename]).body).toBeDefined();
+    expect(build([rename]).body).toBeDefined();
+    expect(build([{ field: 'comm', op: 'eq', value: 'sshd' }]).body).toBeDefined();
+
+    const alone = build([{ field: 'comm', op: 'eq', value: 'mv' }, args]);
+    expect(alone.body).toBeUndefined();
+    expect(alone.conditionErrors).toEqual({ 1: refused });
+    expect(alone.error).toBe('Fix the highlighted conditions.');
+    expect(build([args, { ...args, value: '/etc/ld.so' }]).conditionErrors).toEqual({ 0: refused, 1: refused });
+    for (const other of [
+      { field: 'event_name', op: 'neq', value: 'rename' },
+      { field: 'event_name', op: 'in', value: 'rename' },
+      { field: 'event_name', op: 'eq', value: 'execve' },
+      { field: 'comm', op: 'eq', value: 'rename' },
+    ]) {
+      expect(build([other, args]).conditionErrors).toEqual({ 1: refused });
+    }
+
+    // A condition that already has a problem is reported alone: the rename condition may be the one that failed.
+    expect(build([{ ...rename, value: ' ' }, args]).conditionErrors).toEqual({ 0: 'Enter a value.' });
   });
 
   test('draftToBody validates values and builds typed lists', () => {

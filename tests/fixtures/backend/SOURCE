@@ -1,7 +1,7 @@
 # Copies of the JSON files in wafio-cp-backend test/frontend-fixtures/. Go tests there (internal/application,
-# internal/engine) fail when a file no longer matches the code. After a backend change, rewrite them with
-#   WAFIO_UPDATE_FRONTEND_FIXTURES=1 go test ./internal/application ./internal/engine -run TestFrontend
+# internal/domain, internal/engine) fail when a file no longer matches the code. After a backend change, rewrite them with
+#   WAFIO_UPDATE_FRONTEND_FIXTURES=1 go test ./internal/application ./internal/domain ./internal/engine -run TestFrontend
 # and copy the files here. scripts/ci-local.sh compares both sets when wafio-cp-backend sits next to this repo.
 repo: Wafio/wafio-cp-backend
 path: test/frontend-fixtures/
-files: correlation.json defaults.json maintenance.json
+files: correlation.json defaults.json delivery-checks.json maintenance.json tls-checks.json trace-keep-names.json

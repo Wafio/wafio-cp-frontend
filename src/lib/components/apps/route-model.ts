@@ -12,6 +12,7 @@
  * applies), -1 = unlimited, >0 = milliseconds.
  */
 import type { AgentRoute, AgentRouteBody, App, AppUpdateBody, ProxyConfig } from '../../api';
+import { formatDate } from '../../format';
 import { isIP, isIPOrCIDR, parseCIDR, parseList } from '../../validation';
 
 export type UpstreamType = 'http' | 'fcgi';
@@ -38,6 +39,8 @@ export interface ProxyForm {
   idleConnMs: number;
   hostMode: HostHeaderMode;
   hostValue: string;
+  /** proxy_config.strip_path_prefix: '' for none, else a path such as /shop. */
+  stripPathPrefix: string;
   /** proxy_config.trust_forwarded; absent or null = false. */
   trustForwarded: boolean;
   /** proxy_config.trusted_proxies as editable text, one IP or CIDR per line. */
@@ -60,6 +63,8 @@ export interface RouteForm {
   upstreamAddr: string;
   fcgiDocRoot: string;
   fcgiIndex: string;
+  /** Keep the FastCGI connection open between requests (the agent closes it after each reply when off). */
+  fcgiKeepConn: boolean;
   /** Bind address (IP); empty = 0.0.0.0. */
   listenHost: string;
   listenPort: number | null;
@@ -114,6 +119,7 @@ export function defaultProxyForm(): ProxyForm {
     idleConnMs: PROXY_DEFAULTS.idleConnMs,
     hostMode: 'preserve',
     hostValue: '',
+    stripPathPrefix: '',
     // A new route trusts no forwarded header: the socket is the client.
     trustForwarded: false,
     trustedProxies: '',
@@ -131,6 +137,7 @@ export function emptyRouteForm(): RouteForm {
     upstreamAddr: '',
     fcgiDocRoot: '',
     fcgiIndex: DEFAULT_FCGI_INDEX,
+    fcgiKeepConn: false,
     listenHost: '',
     listenPort: DEFAULT_LISTEN_PORT,
     mode: 'block',
@@ -189,6 +196,7 @@ export const MANAGED_PROXY_KEYS: readonly string[] = Object.freeze([
   'conn_wait_ms',
   'idle_conn_ms',
   'host_header',
+  'strip_path_prefix',
   'req_headers',
   'resp_headers',
   'trust_forwarded',
@@ -226,6 +234,7 @@ export function proxyFormFrom(pc: ProxyConfig | null | undefined): ProxyForm {
     idleConnMs: positive(cfg.idle_conn_ms, PROXY_DEFAULTS.idleConnMs),
     hostMode: mode === 'upstream' || mode === 'custom' ? mode : 'preserve',
     hostValue: cfg.host_header?.value ?? '',
+    stripPathPrefix: typeof cfg.strip_path_prefix === 'string' ? cfg.strip_path_prefix : '',
     // Absent or null means not trusted; only explicit true opts in.
     trustForwarded: cfg.trust_forwarded === true,
     trustedProxies: Array.isArray(cfg.trusted_proxies) ? cfg.trusted_proxies.filter((v): v is string => typeof v === 'string').join('\n') : '',
@@ -245,6 +254,7 @@ export function routeFormFromAgentRoute(route: AgentRoute): RouteForm {
     upstreamAddr: upstream.addr,
     fcgiDocRoot: route.fcgi_doc_root ?? '',
     fcgiIndex: route.fcgi_index || DEFAULT_FCGI_INDEX,
+    fcgiKeepConn: route.fcgi_keep_conn === true,
     listenHost: route.listen_host === '0.0.0.0' ? '' : (route.listen_host ?? ''),
     listenPort: route.listen_port > 0 ? route.listen_port : null,
     mode: route.mode === 'monitor' ? 'monitor' : 'block',
@@ -266,6 +276,7 @@ export function routeFormFromApp(app: App, route?: AgentRoute | null): RouteForm
     upstreamAddr: upstream.addr,
     fcgiDocRoot: app.fcgi_doc_root ?? '',
     fcgiIndex: app.fcgi_index || DEFAULT_FCGI_INDEX,
+    fcgiKeepConn: app.fcgi_keep_conn === true,
     listenHost: host === '0.0.0.0' ? '' : host,
     listenPort: typeof app.listen_port === 'number' && app.listen_port > 0 ? app.listen_port : null,
     mode: 'block',
@@ -308,6 +319,8 @@ export function proxyConfigFrom(p: ProxyForm): ProxyConfig {
     conn_wait_ms: p.connWaitMs,
     idle_conn_ms: p.idleConnMs,
     host_header: { mode: p.hostMode, value: p.hostMode === 'custom' ? p.hostValue.trim() : '' },
+    // Left out when empty: the save replaces the whole object, so a missing key is no prefix.
+    ...(p.stripPathPrefix.trim() ? { strip_path_prefix: p.stripPathPrefix.trim() } : {}),
     req_headers: headerRulesTo(p.reqHeaders),
     resp_headers: headerRulesTo(p.respHeaders),
     trust_forwarded: p.trustForwarded,
@@ -352,6 +365,59 @@ export function validateTrustedProxies(text: string): string | null {
 }
 
 /**
+ * Cloudflare's ranges from https://www.cloudflare.com/ips/, copied on CLOUDFLARE_RANGES_DATE. They change rarely:
+ * compare with that page before touching either.
+ */
+export const CLOUDFLARE_RANGES_DATE = '2026-11-24T12:00:00Z';
+export const CLOUDFLARE_RANGES: readonly string[] = [
+  '173.245.48.0/20',
+  '103.21.244.0/22',
+  '103.22.200.0/22',
+  '103.31.4.0/22',
+  '141.101.64.0/18',
+  '108.162.192.0/18',
+  '190.93.240.0/20',
+  '188.114.96.0/20',
+  '197.234.240.0/22',
+  '198.41.128.0/17',
+  '162.158.0.0/15',
+  '104.16.0.0/13',
+  '104.24.0.0/14',
+  '172.64.0.0/13',
+  '131.0.72.0/22',
+  '2400:cb00::/32',
+  '2606:4700::/32',
+  '2803:f800::/32',
+  '2405:b500::/32',
+  '2405:8100::/32',
+  '2a06:98c0::/29',
+  '2c0f:f248::/32',
+];
+
+/** A web server on the agent's host connects from here, so the preset keeps it beside Cloudflare's ranges. */
+const LOOPBACK = ['127.0.0.1', '::1'];
+
+/**
+ * The preset replaces the trust now in force, except Cloudflare's ranges and loopback: any other entry, or, with
+ * forwarded headers on and an empty list, the agent's default of loopback and the private ranges, asks for a confirm first.
+ */
+export function replacesTrust(p: Pick<ProxyForm, 'trustForwarded' | 'trustedProxies'>): boolean {
+  const entries = parseList(p.trustedProxies ?? '');
+  return entries.length === 0 ? p.trustForwarded : entries.some((entry) => !CLOUDFLARE_RANGES.includes(entry) && !LOOPBACK.includes(entry));
+}
+
+/** The proxy settings with forwarded headers trusted from Cloudflare's addresses and loopback only. */
+export const withCloudflare = (p: ProxyForm): ProxyForm => ({ ...p, trustForwarded: true, trustedProxies: [...CLOUDFLARE_RANGES, ...LOOPBACK].join('\n') });
+
+/** The peer of the agent is the server in front of it, not Cloudflare: one on this host is covered, one on another machine must be added. */
+const CLOUDFLARE_IN_BETWEEN = 'Loopback (127.0.0.1 and ::1) stays in the list for a web server on this host. If a web server or load balancer on another machine sits between Cloudflare and the agent, add its address to the list too.';
+
+export const cloudflareHint = (): string =>
+  `Cloudflare's addresses on ${formatDate(CLOUDFLARE_RANGES_DATE)}. Every Cloudflare customer's traffic comes from them, so another Cloudflare account may be able to set the client address WAFio sees. To accept only your zone, use a Cloudflare Tunnel and trust the address cloudflared connects from instead of this list. ${CLOUDFLARE_IN_BETWEEN}`;
+
+export const CLOUDFLARE_CONFIRM_TEXT = `Forwarded headers will be trusted from Cloudflare's addresses and loopback only. They replace the other entries now in the list or, when the list is empty, the private networks that are trusted by default. ${CLOUDFLARE_IN_BETWEEN} Without that address every visitor looks like that server. Nothing is saved until you save the routing.`;
+
+/**
  * Field of a 400 INVALID_PROXY_CONFIG message such as
  * `trusted_proxies[2]: "x" is not an IP address or CIDR`, or null.
  */
@@ -374,10 +440,14 @@ export function upstreamFrom(form: Pick<RouteForm, 'upstreamType' | 'upstreamAdd
  * (absent = keep the stored value, an empty index = index.php), so an empty
  * document root is left out instead of clearing the stored one.
  */
-function fcgiFields(form: RouteForm): { fcgi_doc_root?: string; fcgi_index?: string } {
+function fcgiFields(form: RouteForm): { fcgi_doc_root?: string; fcgi_index?: string; fcgi_keep_conn?: boolean } {
   if (form.upstreamType !== 'fcgi') return {};
   const docRoot = form.fcgiDocRoot.trim();
-  return { ...(docRoot ? { fcgi_doc_root: docRoot } : {}), fcgi_index: form.fcgiIndex.trim() || DEFAULT_FCGI_INDEX };
+  return {
+    ...(docRoot ? { fcgi_doc_root: docRoot } : {}),
+    fcgi_index: form.fcgiIndex.trim() || DEFAULT_FCGI_INDEX,
+    fcgi_keep_conn: form.fcgiKeepConn,
+  };
 }
 
 /** Body of POST/PUT …/agents/:agentId/routes[/:appId]. */
@@ -457,6 +527,7 @@ export type RouteField =
   | 'proxy.connWaitMs'
   | 'proxy.idleConnMs'
   | 'proxy.hostValue'
+  | 'proxy.stripPathPrefix'
   | 'proxy.trustedProxies'
   | 'proxy.reqHeaders'
   | 'proxy.respHeaders';
@@ -481,10 +552,20 @@ export const ROUTE_FIELD_LABELS: Record<RouteField, string> = {
   'proxy.connWaitMs': 'Connection wait timeout',
   'proxy.idleConnMs': 'Idle connection timeout',
   'proxy.hostValue': 'Custom Host value',
+  'proxy.stripPathPrefix': 'Remove path prefix',
   'proxy.trustedProxies': 'Trusted proxies',
   'proxy.reqHeaders': 'Request headers',
   'proxy.respHeaders': 'Response headers',
 };
+
+export const STRIP_PREFIX_MESSAGE = 'Enter a path that starts with /, such as /shop, without spaces, ?, #, % or . and .. parts, up to 256 characters.';
+
+/** Why a path prefix is refused (domain.CheckStripPathPrefix), or null: '/' and segments, no empty, . or .. segment, printable ASCII without space, ?, #, % or backslash, at most 256 bytes. '' is no prefix. */
+export function checkStripPathPrefix(prefix: string): string | null {
+  if (prefix === '') return null;
+  if (!prefix.startsWith('/') || prefix.length > 256 || /[^!-~]|[?#%\\]/.test(prefix)) return STRIP_PREFIX_MESSAGE;
+  return prefix.slice(1).split('/').some((segment) => segment === '' || segment === '.' || segment === '..') ? STRIP_PREFIX_MESSAGE : null;
+}
 
 /** Only [A-Za-z0-9-] (domain validHeaderName). */
 export function isProxyHeaderName(name: string): boolean {
@@ -630,6 +711,8 @@ export function validateRouteForm(form: RouteForm, opts: ValidateRouteOptions = 
     if (!p.hostValue.trim()) errors['proxy.hostValue'] = 'Enter the Host value to send upstream.';
     else if (/[\r\n]/.test(p.hostValue)) errors['proxy.hostValue'] = 'Host value must not contain line breaks.';
   }
+  const prefix = checkStripPathPrefix(p.stripPathPrefix.trim());
+  if (prefix) errors['proxy.stripPathPrefix'] = prefix;
   if (p.trustForwarded) {
     const proxies = validateTrustedProxies(p.trustedProxies);
     if (proxies) errors['proxy.trustedProxies'] = proxies;

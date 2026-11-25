@@ -38,6 +38,8 @@ export const CONFIRM_TIERS = {
   // the host count ("12 hosts") they are about to change.
   'apply-to-hosts': 'typed',
   'copy-runtime-to-hosts': 'typed',
+  // Everyone gets the same copy of a path, signed in or not: a page that shows a name or a cart shows it to other people.
+  'cache-signed-in': 'typed',
 
   // Simple: enabling Allow/Block rules, lowering protection.
   'enable-allow-rule': 'simple',
@@ -47,6 +49,17 @@ export const CONFIRM_TIERS = {
   'enter-enforce': 'simple',
   // Visitors get the maintenance page instead of the site; turning it off undoes it.
   'enable-maintenance': 'simple',
+  // The agent starts or stops serving HTTPS for an application; switching back undoes it.
+  'switch-https-mode': 'simple',
+  // Every file of a folder becomes public on the application's host names (and Not found stops its requests); choosing another folder or switching back undoes it.
+  'change-static-root': 'simple',
+  // The agent deletes the stored copies of an application; the next requests go to the application until the cache fills again.
+  'disable-cache': 'simple',
+  'purge-cache-app': 'simple',
+  // A disk space below what the copies use makes the agent remove the least used ones.
+  'shrink-cache': 'simple',
+  // Wipes the private key of every uploaded certificate of an application; uploading again restores it.
+  'delete-certificate': 'simple',
   // Reversible removals and changes: re-adding restores the previous state.
   'delete-custom-rule': 'simple',
   'delete-detection-rule': 'simple',
