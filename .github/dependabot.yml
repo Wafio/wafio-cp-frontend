@@ -14,3 +14,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # All action updates in one pull request: the CodeQL init and analyze steps must move together.
+    groups:
+      github-actions:
+        patterns: ['*']
