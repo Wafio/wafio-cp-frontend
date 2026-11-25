@@ -67,7 +67,7 @@ describe('Cache section, every part off, with an agent that knows it', () => {
     expect(section).toContain('Keep copies of answers');
     expect(section).toContain(CACHE_SWITCH_HINT);
     expect(CACHE_SWITCH_HINT).toBe(
-      'WAFio checks every request first, so a blocked request never gets a copy. It never keeps answers that set cookies, or that your application marks private or no-store. A signed-in visitor always gets a fresh answer from your application, never a stored copy. For a visitor who sends some other cookie, such as an analytics cookie, WAFio keeps an answer only when your application marks it public (Cache-Control: public or s-maxage) or it is an image, font, video, sound, style or script file.'
+      'WAFio checks every request first, so a blocked request never gets a copy. It never keeps answers that set cookies, or that your application marks private or no-store. A signed-in visitor always gets a fresh answer from your application, never a stored copy, unless a path rule has "Also for signed-in visitors". A visitor who sends some other cookie, such as an analytics cookie, gets the same stored copies as everyone, but WAFio keeps an answer made for them only when your application marks it public (Cache-Control: public or s-maxage) or it is an image, font, video, sound, style or script file.'
     );
     expect(section).not.toContain('Signed-in visitors need a rule');
     expect(switches(section)).toHaveLength(1);
@@ -173,11 +173,11 @@ describe('Cache section, what is saved is shown', () => {
     expect((section.match(/Never keep/g) ?? []).length).toBe(1);
     // A rule that never keeps has no time and no signed-in case to set.
     expect((section.match(/>Keep for\s*<\/label>/g) ?? []).length).toBe(2);
-    expect((section.replace(RULES_COOKIES, '').match(/Also for signed-in visitors/g) ?? []).length).toBe(2);
+    expect((section.replace(RULES_COOKIES, '').replace(CACHE_SWITCH_HINT, '').match(/Also for signed-in visitors/g) ?? []).length).toBe(2);
     expect(section).toContain(RULE_SIGNED_IN_HINT);
     expect(section).not.toContain('Only for paths that show the same page to everyone.');
     // The sentence about cookies stands once, above the rules, not once a rule.
-    expect((section.match(/A rule shares its copies between all visitors\./g) ?? []).length).toBe(1);
+    expect((section.match(/A rule sends its copies to every visitor who is not signed in/g) ?? []).length).toBe(1);
     expect((section.match(/type="checkbox"[^>]*checked|checked[^>]*type="checkbox"/g) ?? []).length).toBe(1);
     expect(section).toContain('3 of 50 rules');
     expect((section.match(/Delete rule/g) ?? []).length).toBeGreaterThanOrEqual(3);
