@@ -202,6 +202,32 @@ describe('specific round-trip defects', () => {
     expect(roundTrip({ thresholds: { log: 1, block: 2 } }).saved).not.toHaveProperty('ssrf');
   });
 
+  test('block policy target: absent and empty read as waf, and an untouched policy keeps its spelling', () => {
+    for (const bp of [{ enabled: true }, { enabled: true, target: '' }, { enabled: true, target: 'waf' }]) {
+      const rules = { block_policy: bp };
+      const { draft, saved } = roundTrip(rules);
+      expect(draft.blockPolicy.target).toBe('waf');
+      expect(saved.block_policy as Json).toEqual({ ...bp, block_after_n_blocks: 20, block_duration_sec: 60, key_fields: ['remote_addr', 'user_agent'] });
+    }
+    expect(roundTrip({}).saved).not.toHaveProperty('block_policy.target');
+  });
+
+  test('block policy target: kernel is written, and back to waf is written once the document had a target', () => {
+    const picked = draftFromRules({ block_policy: { enabled: true } });
+    picked.blockPolicy.target = 'kernel';
+    const saved = toJsonValue(rulesFromDraft(picked, { block_policy: { enabled: true } }));
+    expect((saved.block_policy as Json).target).toBe('kernel');
+    expect(draftFromRules(saved).blockPolicy.target).toBe('kernel');
+    expect(roundTrip(saved).saved).toEqual(saved);
+
+    const back = draftFromRules(saved);
+    back.blockPolicy.target = 'waf';
+    expect((toJsonValue(rulesFromDraft(back, saved)).block_policy as Json).target).toBe('waf');
+    // Never written for a document that had none.
+    const fresh = draftFromRules({});
+    expect((toJsonValue(rulesFromDraft(fresh, {})).block_policy as Json)).not.toHaveProperty('target');
+  });
+
   test('JA3 hashes stay in the JA3 lists (not copied into JA4)', () => {
     const rules = { bot_protection: { enabled: true, mode: 'log', ja3_blocklist: ['e7d705a3286e19ea42f587b344ee6865'] } };
     const { draft, saved } = roundTrip(rules);
@@ -312,6 +338,19 @@ describe('specific round-trip defects', () => {
 });
 
 describe('validation', () => {
+  test('block policy target accepts waf and kernel only', () => {
+    const targetIssue = (value: string) => {
+      const draft = draftFromRules({ block_policy: { target: value } });
+      return validatePolicy(draft).find((issue) => issue.path === 'blockPolicy.target');
+    };
+    expect(targetIssue('waf')).toBeUndefined();
+    expect(targetIssue('kernel')).toBeUndefined();
+    expect(targetIssue('')).toBeUndefined();
+    const bad = targetIssue('firewall');
+    expect(bad?.section).toBe('rate-limits');
+    expect(bad?.message).toContain('"firewall"');
+  });
+
   test('reports every invalid field at once with field ids and sections', () => {
     const draft = draftFromRules({});
     draft.geo.allowIps = '10.0.0.1\n1::2::3';

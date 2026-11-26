@@ -157,6 +157,8 @@ export function validatePolicy(draft: PolicyDraft, ctx: ValidationContext = {}):
   add('blockPolicy.afterN', 'rate-limits', intRange(draft.blockPolicy.afterN, 1, 999, 'Block after'));
   add('blockPolicy.durationSec', 'rate-limits', intRange(draft.blockPolicy.durationSec, 1, 604800, 'Block duration'));
   add('blockPolicy.keyFields', 'rate-limits', keyFieldError(draft.blockPolicy.keyFields, 'Client key'));
+  const target = draft.blockPolicy.target;
+  add('blockPolicy.target', 'rate-limits', target === 'waf' || target === 'kernel' ? null : `Where the block applies: "${target}" is not a choice. Use WAFio only or WAFio and the server firewall.`);
   if (draft.flood.enabled) {
     add('flood.maxRequests', 'rate-limits', intRange(draft.flood.maxRequests, 1, 100000, 'Maximum requests'));
     add('flood.windowSec', 'rate-limits', intRange(draft.flood.windowSec, 1, 86400, 'Period'));

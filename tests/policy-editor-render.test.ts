@@ -19,6 +19,7 @@ const { WafPolicyForm } = await import('../src/lib/components/waf-policy/waf-pol
 const { default: InspectionOptions } = await import('../src/lib/components/waf-policy/InspectionOptions.svelte');
 const { default: EngineTable } = await import('../src/lib/components/waf-policy/EngineTable.svelte');
 const { default: ProtectionSection } = await import('../src/lib/components/waf-policy/ProtectionSection.svelte');
+const { default: RateLimitSection } = await import('../src/lib/components/waf-policy/RateLimitSection.svelte');
 const { default: PathRuleEditor } = await import('../src/lib/components/waf-policy/PathRuleEditor.svelte');
 
 const OLD_WORDS = /crs|coraza|rule.?set|rule-based|detection level|confidence|paranoia|semantic.only/i;
@@ -80,5 +81,36 @@ describe('path rule editor', () => {
     expect(html).toContain('Rule path settings');
     expect(html).toContain('Inspection');
     expect(html).not.toMatch(OLD_WORDS);
+  });
+});
+
+describe('block policy target', () => {
+  const WARNING = 'Test attacks from an address you do not use to manage the server: a blocked address loses SSH until the block ends.';
+  const render = (blockPolicy: Record<string, unknown>) =>
+    renderComponent(RateLimitSection, { form: WafPolicyForm.fromRules({ block_policy: blockPolicy }) } as never);
+
+  test('both choices are shown, waf is picked for a policy without a target, and there is no warning', async () => {
+    const html = await render({ enabled: true });
+    expect(html).toContain('Where the block applies');
+    expect(html).toContain('WAFio only');
+    expect(html).toContain('WAFio and the server firewall');
+    expect(html).toContain('The client gets 403 from WAFio on this application until the block ends.');
+    expect(html).toContain('SSH included, is untouched.');
+    expect(html).toContain('Needs the host agent on the same server.');
+    expect(html).toContain('only the WAFio block applies.');
+    expect(html.match(/type="radio" name="wp-block-target"/g)).toHaveLength(2);
+    expect(html).toMatch(/<input type="radio" name="wp-block-target" value="waf" checked/);
+    expect(html).not.toContain(WARNING);
+  });
+
+  test('kernel shows the warning', async () => {
+    const html = await render({ enabled: true, target: 'kernel' });
+    expect(html).toMatch(/<input type="radio" name="wp-block-target" value="kernel" checked/);
+    expect(html).toContain(WARNING);
+  });
+
+  test('the choice is disabled while repeat-offender blocking is off', async () => {
+    expect(await render({ enabled: false })).toMatch(/<fieldset[^>]*disabled[^>]*>\s*<legend[^>]*>Where the block applies/);
+    expect(await render({ enabled: true })).not.toMatch(/<fieldset[^>]*disabled[^>]*>\s*<legend[^>]*>Where the block applies/);
   });
 });
